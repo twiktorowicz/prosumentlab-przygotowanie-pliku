@@ -138,7 +138,7 @@ test("pojedynczy wiersz 03:00 a para w drugim pliku: wartość musi być jedną 
 });
 
 test("jeden wiersz 03:00 w środku serii (drugiego brak): miesiąc niepełny", () => {
-  const linie = new TextDecoder("windows-1250").decode(generuj({ od: "2025-10-01", do: "2025-10-31", ziarno: 11 }).surowy).split("\r\n");
+  const linie = new TextDecoder("iso-8859-2").decode(generuj({ od: "2025-10-01", do: "2025-10-31", ziarno: 11 }).surowy).split("\r\n");
   const bezDrugich = linie.filter((l, i) => {
     if (!l.includes(";2025-10-26 03:00;")) return true;
     return linie.slice(0, i).every((p) => !p.includes(l.split(";")[2] + ";2025-10-26 03:00;"));

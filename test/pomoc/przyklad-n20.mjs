@@ -24,7 +24,7 @@ export function przykladN20() {
     pliki: [{
       nazwa: "pomiary_1.csv",
       wariant_wejscia: "surowy",
-      kodowanie_wejscia: "windows-1250",
+      kodowanie_wejscia: "iso-8859-2",
       wiersze_danych: 96,
       pierwszy_znacznik: "2025-06-06 01:00",
       ostatni_znacznik: "2025-06-08 00:00",

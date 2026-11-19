@@ -25,7 +25,7 @@ const KORZEN = fileURLToPath(new URL("..", import.meta.url));
 const WZORZEC_N1 = join(KORZEN, "test", "wzorce", "n1_wyjscie.csv");
 const PARAMETRY_N1 = { od: "2025-06-06", do: "2025-06-07", taryfa: "G13", ziarno: 1 };
 
-const dekodujCp1250 = (bajty) => new TextDecoder("windows-1250").decode(bajty);
+const dekodujIso = (bajty) => new TextDecoder("iso-8859-2").decode(bajty);
 const dekodujUtf8 = (bajty) => new TextDecoder("utf-8", { fatal: true }).decode(bajty);
 
 // Wiersze danych pliku zanonimizowanego jako tablice pól, bez nagłówka.
@@ -65,10 +65,10 @@ test("fikcyjni płatnicy mają 8 cyfr", () => {
   for (const p of PLATNICY_FIKCYJNI) assert.match(p, /^\d{8}$/);
 });
 
-test("plik surowy: Windows-1250, CRLF, 7 kolumn, polskie znaki w etykietach stref", () => {
+test("plik surowy: ISO-8859-2, CRLF, 7 kolumn, polskie znaki w etykietach stref", () => {
   const wynik = generuj(PARAMETRY_N1);
   assert.throws(() => dekodujUtf8(wynik.surowy), "plik surowy nie jest poprawnym UTF-8");
-  const tekst = dekodujCp1250(wynik.surowy);
+  const tekst = dekodujIso(wynik.surowy);
   assert.ok(tekst.endsWith("\r\n"));
   const linie = tekst.slice(0, -2).split("\r\n");
   assert.equal(linie[0], NAGLOWEK_SUROWY);
@@ -80,8 +80,16 @@ test("plik surowy: Windows-1250, CRLF, 7 kolumn, polskie znaki w etykietach stre
     assert.equal(pola[1], `PPE:${PPE_FIKCYJNE[0]}`, "kolumna PPE jak w eLiczniku");
   }
   assert.ok(tekst.includes("Szczyt przedpołudniowy"));
-  // Bajt 0xB3 to „ł” w Windows-1250.
+  // Bajt 0xB3 to „ł” w ISO-8859-2 (tak samo w Windows-1250).
   assert.ok(wynik.surowy.includes(0xb3));
+});
+
+test("tablica ISO-8859-2: każda polska litera odczytana niezależnym dekoderem wychodzi bez zmian", () => {
+  const litery = "ąćęłńóśźżĄĆĘŁŃÓŚŹŻ";
+  const wynik = generuj({ od: "2025-02-03", do: "2025-02-03", ziarno: 1, podmien: [{ znacznik: "2025-02-03 05:00", seria: "pobor", pole: "strefa", tekst: litery }] });
+  assert.ok(dekodujIso(wynik.surowy).includes(`;${litery};`));
+  // Dwie litery widziane na prawdziwym pliku: „ł” = B3, „ś” = B6.
+  assert.ok(wynik.surowy.includes(0xb3) && wynik.surowy.includes(0xb6));
 });
 
 test("N1, wzorzec: dwie doby G13 dają zapisany plik zanonimizowany (UTF-8, LF)", () => {
@@ -91,7 +99,7 @@ test("N1, wzorzec: dwie doby G13 dają zapisany plik zanonimizowany (UTF-8, LF)"
 
 test("wariant zanonimizowany to surowy bez dwóch pierwszych kolumn", () => {
   const wynik = generuj(PARAMETRY_N1);
-  const surowe = dekodujCp1250(wynik.surowy).slice(0, -2).split("\r\n").slice(1);
+  const surowe = dekodujIso(wynik.surowy).slice(0, -2).split("\r\n").slice(1);
   const anonim = wiersze(wynik);
   assert.equal(surowe.length, anonim.length);
   surowe.forEach((l, i) => assert.deepEqual(l.split(";").slice(2), anonim[i]));
@@ -266,7 +274,7 @@ test("psucie: powtórzony wiersz z tą samą albo inną wartością", () => {
 });
 
 test("psucie: drugi PPE od połowy pliku i PPE w kolumnie Strefa", () => {
-  const dwa = dekodujCp1250(generuj({ od: "2025-02-03", do: "2025-02-03", ziarno: 1, drugiPpe: true }).surowy)
+  const dwa = dekodujIso(generuj({ od: "2025-02-03", do: "2025-02-03", ziarno: 1, drugiPpe: true }).surowy)
     .slice(0, -2)
     .split("\r\n")
     .slice(1)
@@ -298,7 +306,7 @@ test("energia bierna: dwie serie pod nazwami z eLicznika, bloki w kolejności al
 });
 
 test("plik surowy w UTF-8, z BOM i z LF", () => {
-  const cp = dekodujCp1250(generuj(PARAMETRY_N1).surowy);
+  const cp = dekodujIso(generuj(PARAMETRY_N1).surowy);
   const utf8 = generuj({ ...PARAMETRY_N1, kodowanie: "utf-8" }).surowy;
   assert.equal(dekodujUtf8(utf8), cp);
   const bom = generuj({ ...PARAMETRY_N1, kodowanie: "utf-8-bom" }).surowy;

@@ -26,15 +26,15 @@ function czytaj(bajty) {
 
 // Numer linii (od 1) pierwszej linii pliku surowego, która zawiera `fragment` po `znacznik`.
 function liniaZ(bajty, znacznik, seria) {
-  const linie = new TextDecoder("windows-1250").decode(bajty).split("\r\n");
+  const linie = new TextDecoder("iso-8859-2").decode(bajty).split("\r\n");
   return linie.findIndex((l) => l.includes(`;${seria};${znacznik};`)) + 1;
 }
 
-test("N1: plik surowy Windows-1250, CRLF, 2 doby G13 daje plik wzorcowy co do bajtu", () => {
+test("N1: plik surowy ISO-8859-2, CRLF, 2 doby G13 daje plik wzorcowy co do bajtu", () => {
   const w = czytaj(generuj(N1).surowy);
   assert.equal(w.ok, true);
   assert.equal(w.wariant, "surowy");
-  assert.equal(w.kodowanie, "windows-1250");
+  assert.equal(w.kodowanie, "iso-8859-2");
   assert.deepEqual(Buffer.from(utf8(w.wynik)), WZORZEC_N1);
   assert.deepEqual(w.identyfikatory, { platnik: PLATNICY_FIKCYJNI[0], ppe: `PPE:${PPE_FIKCYJNE[0]}` });
   assert.deepEqual(w.usunieteKolumny, ["Nr platnika", "Nr punktu poboru energii"]);
@@ -64,6 +64,32 @@ test("N3: plik z BOM UTF-8 i plik surowy w UTF-8 dają ten sam wynik co N1", () 
   for (const w of [bom, bezBom, lf]) assert.deepEqual(Buffer.from(utf8(w.wynik)), WZORZEC_N1);
   const anonimBom = new Uint8Array([0xef, 0xbb, 0xbf, ...generuj(N1).zanonimizowany]);
   assert.deepEqual(Buffer.from(utf8(czytaj(anonimBom).wynik)), WZORZEC_N1);
+});
+
+// eLicznik zapisuje pliki w ISO-8859-2: „ś” to bajt B6, „ł” to B3. W Windows-1250 „ś” to 9C,
+// a B6 to znak akapitu. Bajty podane wprost, bez tablicy kodowania z generatora.
+function plikZBajtami(bajtS) {
+  const ascii = (t) => [...t].map((z) => z.charCodeAt(0));
+  const linie = [
+    ascii("Rodzaj energii;Data i godzina;Strefa;Wartosc[kWh/kvar];Kompletnosc[%]"),
+    [...ascii("energia bierna pojemno"), bajtS, ...ascii("ciowa pobrana;2025-06-06 01:00;Reszta dnia;0,012;100,00")],
+    [...ascii("energia czynna oddana netto;2025-06-06 01:00;Szczyt popo"), 0xb3, ...ascii("udniowy;0,000;100,00")],
+    ascii("energia czynna pobrana netto;2025-06-06 01:00;Reszta dnia;0,315;100,00"),
+  ];
+  return new Uint8Array(linie.flatMap((l) => [...l, 0x0d, 0x0a]));
+}
+
+test("kodowanie eLicznika ISO-8859-2: „ś” jako bajt B6 przyjęte z uwagą o energii biernej", () => {
+  const w = czytaj(plikZBajtami(0xb6));
+  assert.equal(w.ok, true, JSON.stringify(w));
+  assert.equal(w.kodowanie, "iso-8859-2");
+  assert.deepEqual(w.uwagi, [{ kod: "UWAGA_BIERNA" }]);
+  assert.ok(w.wynik.includes("energia bierna pojemnościowa pobrana;2025-06-06 01:00;"));
+  assert.ok(w.wynik.includes(";Szczyt popołudniowy;"));
+});
+
+test("ten sam plik z bajtem 9C (Windows-1250, np. po zapisie w arkuszu) dostaje blad_seria", () => {
+  assert.deepEqual(czytaj(plikZBajtami(0x9c)), { ok: false, kod: "blad_seria", wiersz: 2 });
 });
 
 test("N4: BOM UTF-16 LE i BE odrzucony przed dekodowaniem", () => {
@@ -102,7 +128,7 @@ test("pusty plik: zero bajtów albo same puste linie dają blad_nieznany", () =>
 
 test("N5: drugi PPE w środku pliku to blokada blad_wiele_ppe", () => {
   assert.deepEqual(czytaj(generuj({ ...DZIEN, drugiPpe: true }).surowy), { ok: false, kod: "blad_wiele_ppe", blokada: true });
-  const linie = new TextDecoder("windows-1250").decode(generuj(DZIEN).surowy).split("\r\n");
+  const linie = new TextDecoder("iso-8859-2").decode(generuj(DZIEN).surowy).split("\r\n");
   const ostatni = linie.length - 2; // po ostatnim CRLF zostaje pusty element
   assert.match(linie[ostatni], /^10000001;/);
   linie[ostatni] = linie[ostatni].replace(/^10000001;/, `${PLATNICY_FIKCYJNI[1]};`);
@@ -241,7 +267,7 @@ test("nazwa serii: dokładnie jedna z czterech nazw z eLicznika, każda inna to 
     "energia czynna pobrana netto ",
   ]) {
     const b = bajty(nazwa);
-    const linia = new TextDecoder("windows-1250").decode(b).split("\r\n").findIndex((l) => l.includes(`;${nazwa};${z};`)) + 1;
+    const linia = new TextDecoder("iso-8859-2").decode(b).split("\r\n").findIndex((l) => l.includes(`;${nazwa};${z};`)) + 1;
     assert.ok(linia > 1, nazwa);
     assert.deepEqual(czytaj(b), { ok: false, kod: "blad_seria", wiersz: linia }, nazwa);
   }
@@ -324,7 +350,7 @@ test("wystąpienia godziny 03:00 w dobie 25-godzinnej według sąsiedniego wiers
   // Plik zaczyna się od drugiego wiersza 03:00: następny wiersz serii to 04:00.
   assert.deepEqual(wyst({ od: "2025-10-26", do: "2025-10-26", obetnijPoczatek: 3 }), [2]);
   // Jeden wiersz 03:00 w środku, między 02:00 a 04:00: pierwsze wystąpienie, drugiego brak.
-  const bezDrugiego = new TextDecoder("windows-1250")
+  const bezDrugiego = new TextDecoder("iso-8859-2")
     .decode(generuj({ od: "2025-10-26", do: "2025-10-26", ziarno: 3 }).surowy)
     .split("\r\n");
   const druga = bezDrugiego.findLastIndex((l) => l.includes("pobrana netto;2025-10-26 03:00;"));

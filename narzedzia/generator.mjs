@@ -5,9 +5,29 @@
 // plików. Kalendarz jest tu zaimplementowany osobno i prościej niż w app/lib, żeby testy
 // narzędzia nie porównywały kodu z nim samym.
 //
-// Format pliku surowego, jak z eLicznika:
-// - nagłówek z 7 kolumnami, separator średnik, bez cudzysłowów;
-// - Windows-1250 i CRLF (opcjonalnie UTF-8, UTF-8 z BOM, LF);
+// Format pliku surowego, jak z eLicznika. Generator odtwarza nasze wyobrażenie o pliku, więc
+// przy każdej cesze zaznaczamy, skąd ją znamy.
+//
+// Potwierdzone na prawdziwych plikach z eLicznika (według specyfikacji narzędzia):
+// - nagłówek z 7 kolumnami i ich nazwy, separator średnik, bez cudzysłowów;
+// - kolumna numeru płatnika: 8 cyfr; kolumna PPE: „PPE:” i 18 cyfr, bez spacji;
+// - nazwy serii („energia czynna oddana netto” itd.) i bloki serii w kolejności alfabetycznej
+//   nazw, więc seria oddania przed serią poboru;
+// - znacznik „RRRR-MM-DD GG:MM” jako koniec godziny, północ jako 00:00 następnego dnia;
+// - wartość z trzema miejscami po przecinku („0,000”), kompletność „100,00”;
+// - etykiety stref G13 i ich rozkład, dni ustawowo wolne jako „Reszta dnia”, Wigilia od 2025 r.;
+// - kodowanie ISO-8859-2, ale tylko dla liter, które widzieliśmy w plikach: „ł” (bajt B3)
+//   i „ś” (bajt B6).
+//
+// Założenia, niesprawdzone na prawdziwym pliku:
+// - bajty pozostałych polskich liter: przyjęte według normy ISO-8859-2;
+// - koniec linii CRLF;
+// - etykiety stref dla G11 („Reszta dnia” we wszystkich godzinach);
+// - postać kompletności poniżej 100 (np. „87,50”);
+// - wartości godzinowe i serie energii biernej: profil zmyślony, tylko format jest z eLicznika;
+// - w dobie zmiany czasu na zimowy dwa wiersze 03:00 stoją w każdej serii jeden po drugim.
+//
+// Wyjście: ISO-8859-2 i CRLF (opcjonalnie UTF-8, UTF-8 z BOM, LF);
 // - seria oddania przed serią poboru, w każdej serii godziny po kolei;
 // - znacznik "RRRR-MM-DD GG:MM" oznacza koniec godziny w czasie lokalnym, północ to 00:00
 //   następnego dnia; doba zmiany czasu na letni nie ma znacznika 03:00, doba zmiany na zimowy
@@ -193,28 +213,29 @@ const kwh = (wh) => `${Math.floor(wh / 1000)},${String(wh % 1000).padStart(3, "0
 
 // --- Kodowanie -------------------------------------------------------------------------------
 
-// Polskie litery (i twarda spacja) w Windows-1250; pozostałe znaki w plikach eLicznika są ASCII.
-const CP1250 = new Map(
+// Polskie litery (i twarda spacja) w ISO-8859-2; pozostałe znaki w plikach eLicznika są ASCII.
+// Na prawdziwym pliku widzieliśmy tylko „ł” (B3) i „ś” (B6); reszta według normy.
+const ISO_8859_2 = new Map(
   Object.entries({
-    ą: 0xb9, ć: 0xe6, ę: 0xea, ł: 0xb3, ń: 0xf1, ó: 0xf3, ś: 0x9c, ź: 0x9f, ż: 0xbf,
-    Ą: 0xa5, Ć: 0xc6, Ę: 0xca, Ł: 0xa3, Ń: 0xd1, Ó: 0xd3, Ś: 0x8c, Ź: 0x8f, Ż: 0xaf,
+    ą: 0xb1, ć: 0xe6, ę: 0xea, ł: 0xb3, ń: 0xf1, ó: 0xf3, ś: 0xb6, ź: 0xbc, ż: 0xbf,
+    Ą: 0xa1, Ć: 0xc6, Ę: 0xca, Ł: 0xa3, Ń: 0xd1, Ó: 0xd3, Ś: 0xa6, Ź: 0xac, Ż: 0xaf,
     "\u00a0": 0xa0, // twarda spacja, do testów psucia pól
   }),
 );
 
-function kodujCp1250(tekst) {
+function kodujIso88592(tekst) {
   const wynik = new Uint8Array(tekst.length);
   for (let i = 0; i < tekst.length; i++) {
     const kod = tekst.charCodeAt(i);
     if (kod < 0x80) wynik[i] = kod;
-    else if (CP1250.has(tekst[i])) wynik[i] = CP1250.get(tekst[i]);
-    else throw new Error(`znak spoza obsługiwanej części Windows-1250: U+${kod.toString(16)}`);
+    else if (ISO_8859_2.has(tekst[i])) wynik[i] = ISO_8859_2.get(tekst[i]);
+    else throw new Error(`znak spoza obsługiwanej części ISO-8859-2: U+${kod.toString(16)}`);
   }
   return wynik;
 }
 
 function koduj(tekst, kodowanie) {
-  if (kodowanie === "windows-1250") return kodujCp1250(tekst);
+  if (kodowanie === "iso-8859-2") return kodujIso88592(tekst);
   const utf8 = new TextEncoder().encode(tekst);
   if (kodowanie === "utf-8") return utf8;
   if (kodowanie === "utf-8-bom") {
@@ -250,7 +271,7 @@ export function generuj(opcje = {}) {
     ziarno = 1,
     ppe = PPE_FIKCYJNE[0],
     platnik = PLATNICY_FIKCYJNI[0],
-    kodowanie = "windows-1250",
+    kodowanie = "iso-8859-2",
     koniecLinii = "\r\n",
     obetnijPoczatek = 0,
     obetnijKoniec = 0,
@@ -365,7 +386,7 @@ Opcje:
   --taryfa           G13 (domyślnie) albo G11
   --ziarno           liczba całkowita, domyślnie 1
   --wariant          surowy (domyślnie) albo zanonimizowany
-  --kodowanie        windows-1250 (domyślnie), utf-8, utf-8-bom (tylko wariant surowy)
+  --kodowanie        iso-8859-2 (domyślnie, jak eLicznik), utf-8, utf-8-bom (tylko wariant surowy)
   --lf               koniec linii LF zamiast CRLF (tylko wariant surowy)
   --drugi-ppe        drugi fikcyjny PPE od połowy pliku
   --bierna           dodaje dwie serie energii biernej
@@ -384,7 +405,7 @@ function wierszPolecen(argumenty) {
       taryfa: { type: "string", default: "G13" },
       ziarno: { type: "string", default: "1" },
       wariant: { type: "string", default: "surowy" },
-      kodowanie: { type: "string", default: "windows-1250" },
+      kodowanie: { type: "string", default: "iso-8859-2" },
       lf: { type: "boolean", default: false },
       "drugi-ppe": { type: "boolean", default: false },
       bierna: { type: "boolean", default: false },

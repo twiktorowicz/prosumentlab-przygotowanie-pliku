@@ -98,7 +98,7 @@ test("pełna ścieżka: plik surowy, faktura, instalacja i zgoda dają ZIP z czt
     pliki: [{
       nazwa: "pomiary_1.csv",
       wariant_wejscia: "surowy",
-      kodowanie_wejscia: "windows-1250",
+      kodowanie_wejscia: "iso-8859-2",
       wiersze_danych: 96,
       pierwszy_znacznik: "2025-06-06 01:00",
       ostatni_znacznik: "2025-06-08 00:00",
@@ -226,8 +226,10 @@ test("podgląd: pierwsze 5 wierszy danych dokładnie jak w pliku wyjściowym, su
 
 // Scenariusz z trzema plikami (dwa zachodzą na siebie, jeden bez numerów) i pełnym formularzem.
 // Skrót ZIP-a zapisany przed podziałem przetwarzania na pliki i formularz (spec. 004, sek. 19.11):
-// podział nie może zmienić ani jednego bajtu.
-const SKROT_PRZED_PODZIALEM = "d89dd4038a9292fa773dd0df8644a3020bc64d221c381e101e9ba23d7c88f617";
+// podział nie może zmienić ani jednego bajtu. Skrót zmieniony raz, przy przejściu na ISO-8859-2
+// (sek. 19.16): jedyna różnica to dwa wystąpienia "kodowanie_wejscia" w zgloszenie.json
+// („windows-1250” na „iso-8859-2”); pomiary, faktura i instalacja bez zmian.
+const SKROT_PRZED_PODZIALEM = "b2bf530bb269b642c9618eb1208d07f1212349a34ea7d030e4700835feb23e45";
 function scenariuszPelny() {
   return {
     pliki: [

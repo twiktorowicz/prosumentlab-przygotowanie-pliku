@@ -1,11 +1,14 @@
 // Rozpoznanie rodzaju pliku i dekodowanie tekstu.
 // Kolejność:
 // 1. plik większy niż 10 MB: odrzucony;
-// 2. znacznik BOM UTF-16 (LE albo BE): odrzucony przed dekodowaniem, bo Windows-1250 przyjąłby
-//    prawie każdy ciąg bajtów i dał nieczytelny tekst;
+// 2. znacznik BOM UTF-16 (LE albo BE): odrzucony przed dekodowaniem, bo ISO-8859-2 przyjąłby
+//    każdy ciąg bajtów i dał nieczytelny tekst;
 // 3. arkusz rozpoznany po pierwszych bajtach: „PK” (.xlsx, .ods) albo D0 CF 11 E0 (.xls);
 // 4. bajt zerowy w pierwszych 8 KB: inny plik binarny;
-// 5. ścisłe dekodowanie UTF-8 (z obsługą BOM), a gdy się nie uda, Windows-1250.
+// 5. ścisłe dekodowanie UTF-8 (z obsługą BOM), a gdy się nie uda, ISO-8859-2: w tym kodowaniu
+//    eLicznik zapisuje pliki („ś” to bajt B6, „ł” to B3). Plik zapisany ponownie w Windows-1250
+//    (np. z arkusza) ma inne bajty niektórych liter; wtedy nazwa serii albo strefy nie przejdzie
+//    sprawdzenia i plik zostanie odrzucony, zgodnie z radą, żeby nie zapisywać go w arkuszu.
 
 export const LIMIT_BAJTOW = 10 * 1024 * 1024;
 
@@ -23,6 +26,6 @@ export function dekoduj(bajty) {
     const tekst = new TextDecoder("utf-8", { fatal: true }).decode(bajty);
     return { ok: true, tekst, kodowanie: bom ? "utf-8-bom" : "utf-8" };
   } catch {
-    return { ok: true, tekst: new TextDecoder("windows-1250").decode(bajty), kodowanie: "windows-1250" };
+    return { ok: true, tekst: new TextDecoder("iso-8859-2").decode(bajty), kodowanie: "iso-8859-2" };
   }
 }
