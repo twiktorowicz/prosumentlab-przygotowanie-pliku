@@ -12,6 +12,7 @@
 // - znacznik "RRRR-MM-DD GG:MM" oznacza koniec godziny w czasie lokalnym, północ to 00:00
 //   następnego dnia; doba zmiany czasu na letni nie ma znacznika 03:00, doba zmiany na zimowy
 //   ma go dwa razy;
+// - kolumna numeru punktu poboru w postaci "PPE:" i 18 cyfr, bez spacji;
 // - wartość w kWh zawsze z trzema miejscami po przecinku ("2,141", zero to "0,000");
 // - kompletność "100,00".
 //
@@ -233,7 +234,7 @@ const KOLUMNA = { seria: 2, znacznik: 3, strefa: 4, wartosc: 5, kompletnosc: 6 }
  * - zanonimizowany: bajty wariantu bez dwóch pierwszych kolumn, UTF-8, LF, LF na końcu
  *   (postać, jaką ma dać narzędzie).
  *
- * Opcje: od, do (RRRR-MM-DD, włącznie), taryfa ("G11" | "G13"), ziarno, ppe, platnik,
+ * Opcje: od, do (RRRR-MM-DD, włącznie), taryfa ("G11" | "G13"), ziarno, ppe (18 cyfr), platnik,
  * kodowanie, koniecLinii, zmianaTaryfy {od, taryfa}, obetnijPoczatek, obetnijKoniec (liczba
  * godzin), bierna (seria energii biernej po seriach czynnych).
  * Psucie: niepelne [{znacznik, kompletnosc}], luka {znacznik, godzin}, powtorz {znacznik,
@@ -255,6 +256,8 @@ export function generuj(opcje = {}) {
   const od = czytajDate(opcje.od, "od");
   const doDnia = czytajDate(opcje.do, "do");
   if (porownajDaty(od, doDnia) > 0) throw new Error("od jest późniejsze niż do");
+  // Kolumna PPE w eLiczniku ma postać "PPE:" i 18 cyfr; opcja `ppe` podaje same cyfry.
+  const kolumnaPpe = `PPE:${ppe}`;
   const zmiana = opcje.zmianaTaryfy ? { ...opcje.zmianaTaryfy, od: czytajDate(opcje.zmianaTaryfy.od, "zmianaTaryfy.od") } : null;
   for (const t of [taryfa, zmiana?.taryfa].filter(Boolean)) {
     if (!TARYFY.has(t)) throw new Error(`nieznana taryfa: ${t} (generator zna G11 i G13)`);
@@ -291,11 +294,11 @@ export function generuj(opcje = {}) {
 
   // Wiersze w serii: [płatnik, PPE, seria, znacznik, strefa, wartość, kompletność].
   const serie = {
-    oddanie: godziny.map((g) => [platnik, ppe, SERIA_ODDANIE, g.znacznik, g.strefa, kwh(g.oddanie), g.kompletnosc]),
-    pobor: godziny.map((g) => [platnik, ppe, SERIA_POBOR, g.znacznik, g.strefa, kwh(g.pobor), g.kompletnosc]),
+    oddanie: godziny.map((g) => [platnik, kolumnaPpe, SERIA_ODDANIE, g.znacznik, g.strefa, kwh(g.oddanie), g.kompletnosc]),
+    pobor: godziny.map((g) => [platnik, kolumnaPpe, SERIA_POBOR, g.znacznik, g.strefa, kwh(g.pobor), g.kompletnosc]),
   };
   if (opcje.bierna) {
-    serie.bierna = godziny.map((g) => [platnik, ppe, SERIA_BIERNA, g.znacznik, g.strefa, kwh(g.bierna), g.kompletnosc]);
+    serie.bierna = godziny.map((g) => [platnik, kolumnaPpe, SERIA_BIERNA, g.znacznik, g.strefa, kwh(g.bierna), g.kompletnosc]);
   }
 
   const znajdz = (nazwaSerii, z) => {
@@ -325,7 +328,7 @@ export function generuj(opcje = {}) {
   }
   if (opcje.ppeWStrefie) {
     const { s, i } = znajdz(opcje.ppeWStrefie.seria ?? "pobor", opcje.ppeWStrefie.znacznik);
-    s[i][KOLUMNA.strefa] = ppe;
+    s[i][KOLUMNA.strefa] = kolumnaPpe;
   }
   for (const { znacznik: z, seria = "pobor", pole, tekst } of opcje.podmien ?? []) {
     if (!(pole in KOLUMNA)) throw new Error(`podmien: nieznane pole ${pole}`);
@@ -336,7 +339,7 @@ export function generuj(opcje = {}) {
   const wiersze = [...serie.oddanie, ...serie.pobor, ...(serie.bierna ?? [])];
   if (opcje.drugiPpe) {
     const drugi = opcje.drugiPpe === true ? PPE_FIKCYJNE[1] : opcje.drugiPpe;
-    for (let i = Math.floor(wiersze.length / 2); i < wiersze.length; i++) wiersze[i][1] = drugi;
+    for (let i = Math.floor(wiersze.length / 2); i < wiersze.length; i++) wiersze[i][1] = `PPE:${drugi}`;
   }
 
   const surowyTekst = [NAGLOWEK_SUROWY, ...wiersze.map((w) => w.join(";"))].join(koniecLinii) + koniecLinii;

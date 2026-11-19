@@ -1,4 +1,6 @@
 # Wyniki prób lokalnych: pliki z generatora i zapisane ZIP-y nie trafiają do repozytorium.
 /proby/
 *.zip
+# Wyjątek: wzorce testów (dane syntetyczne).
+!/test/wzorce/*.zip
 .DS_Store

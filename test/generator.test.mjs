@@ -77,7 +77,7 @@ test("plik surowy: Windows-1250, CRLF, 7 kolumn, polskie znaki w etykietach stre
     const pola = l.split(";");
     assert.equal(pola.length, 7);
     assert.equal(pola[0], PLATNICY_FIKCYJNI[0]);
-    assert.equal(pola[1], PPE_FIKCYJNE[0]);
+    assert.equal(pola[1], `PPE:${PPE_FIKCYJNE[0]}`, "kolumna PPE jak w eLiczniku");
   }
   assert.ok(tekst.includes("Szczyt przedpołudniowy"));
   // Bajt 0xB3 to „ł” w Windows-1250.
@@ -271,10 +271,10 @@ test("psucie: drugi PPE od połowy pliku i PPE w kolumnie Strefa", () => {
     .split("\r\n")
     .slice(1)
     .map((l) => l.split(";")[1]);
-  assert.deepEqual(dwa, [...Array(24).fill(PPE_FIKCYJNE[0]), ...Array(24).fill(PPE_FIKCYJNE[1])]);
+  assert.deepEqual(dwa, [...Array(24).fill(`PPE:${PPE_FIKCYJNE[0]}`), ...Array(24).fill(`PPE:${PPE_FIKCYJNE[1]}`)]);
 
   const wStrefie = wiersze(generuj({ od: "2025-02-03", do: "2025-02-03", ziarno: 1, ppeWStrefie: { znacznik: "2025-02-03 05:00", seria: "pobor" } }));
-  const trafione = wStrefie.filter((p) => p[2] === PPE_FIKCYJNE[0]);
+  const trafione = wStrefie.filter((p) => p[2] === `PPE:${PPE_FIKCYJNE[0]}`);
   assert.equal(trafione.length, 1);
   assert.deepEqual(trafione[0].slice(0, 2), [SERIA_POBOR, "2025-02-03 05:00"]);
 });

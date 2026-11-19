@@ -18,6 +18,15 @@ Działa w przeglądarce i niczego nie wysyła.
 Wszystko dzieje się w pamięci przeglądarki. Narzędzie nie używa `fetch`, `localStorage` ani
 ciasteczek; strona ma politykę treści z `connect-src 'none'`.
 
+## Narzędzie a AI
+
+- Kod tego narzędzia powstaje z pomocą asystenta AI (Claude). Autor przegląda zmiany przed ich
+  przyjęciem, a działanie sprawdzają testy z tego repozytorium.
+- Narzędzie działa w Twojej przeglądarce i niczego nie wysyła: ani do nas, ani do żadnej usługi AI.
+  Możesz to sprawdzić w kodzie albo odłączyć sieć po otwarciu strony.
+- Co dzieje się z plikiem ZIP, który wyślesz nam mailem, opisuje informacja o przetwarzaniu
+  danych: https://prosumentlab.pl/prywatnosc/ (punkt 2).
+
 ## Jak uruchomić lokalnie
 
 Potrzebny jest Node (wersja z `.github/workflows/ci.yml`). Bez npm i bez instalowania czegokolwiek.
