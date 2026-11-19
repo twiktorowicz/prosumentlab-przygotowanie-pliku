@@ -147,9 +147,11 @@ function czytajInstalacje(f, bledy) {
   if (r.magazyn === "tak") {
     liczba("magazyn_pojemnosc_kwh", { calkowitych: 4, miejsc: 2, dodatnia: true });
     if (!pusty(f.magazyn_od)) {
+      // Strona podaje wybór z dwóch list; „RRRR-” albo „-MM” znaczy, że wybrano tylko jedną część.
+      const niepelny = typeof f.magazyn_od === "string" && /^(\d{4}-|-\d{2})$/.test(f.magazyn_od.trim());
       const m = typeof f.magazyn_od === "string" ? czytajMiesiac(f.magazyn_od) : { ok: false };
       if (m.ok) r.magazyn_od = m.wartosc;
-      else bledy.push({ pole: "magazyn_od", kod: "instalacja_miesiac_format" });
+      else bledy.push({ pole: "magazyn_od", kod: niepelny ? "instalacja_miesiac_niepelny" : "instalacja_miesiac_format" });
     }
   }
   wybor("pierwsze_oddanie");

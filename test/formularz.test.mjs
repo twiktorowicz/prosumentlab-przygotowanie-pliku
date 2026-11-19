@@ -161,6 +161,14 @@ test("instalacja: wszystkie pola, kolejność kluczy, normalizacja liczb", () =>
   ]);
 });
 
+test("instalacja: niepełny wybór miesiąca i roku magazynu to błąd instalacja_miesiac_niepelny", () => {
+  for (const niepelny of ["2023-", "-08"]) {
+    const w = czytajFormularz({ instalacja: { magazyn: "tak", magazyn_od: niepelny } });
+    assert.deepEqual(w.bledy, [{ pole: "magazyn_od", kod: "instalacja_miesiac_niepelny" }], niepelny);
+    assert.equal("magazyn_od" in w.instalacja, false);
+  }
+});
+
 test("instalacja: dane magazynu tylko przy „tak”", () => {
   const w = czytajFormularz({ instalacja: { magazyn: "nie", magazyn_pojemnosc_kwh: "10", magazyn_od: "2023-08" } });
   assert.deepEqual(w.instalacja, { magazyn: "nie" });

@@ -31,10 +31,13 @@ function rozbierz(tekst) {
   return { calkowite, ulamek: m[2] };
 }
 
-// Kwota w złotych: od 0 do 2 miejsc po przecinku, zapis uzupełniony do dwóch miejsc.
-// „12,34” -> "12.34", „10” -> "10.00", „1 234,5” -> "1234.50"; 3 i więcej miejsc to błąd.
+// Kwota w złotych, zapis z dwoma miejscami po przecinku: „12,34” -> "12.34", „10” -> "10.00",
+// „1 234,5” -> "1234.50". Dalsze miejsca są dozwolone tylko jako zera, bo opłaty stałe stoją
+// na fakturze w kolumnie „Cena netto (zł)” z pięcioma miejscami: „24,05000” -> "24.05".
+// Cyfra inna niż zero na trzecim i dalszym miejscu to błąd („24,051”), bo nie wiadomo,
+// czy to pomyłka.
 export function czytajKwote(tekst) {
-  return czytajDziesietna(tekst, { miejsc: 2 });
+  return czytajDziesietna(tekst, { miejsc: 2, zeraNaKoncu: true });
 }
 
 // Cena za kWh: od 2 do 6 miejsc po przecinku, zapis bez dopisywania zer.
@@ -53,11 +56,13 @@ export function czytajEnergie(tekst) {
 }
 
 // Liczba dziesiętna z najwyżej `miejsc` miejscami po przecinku, zapis uzupełniony do `miejsc`.
-// `calkowitych` ogranicza liczbę cyfr przed przecinkiem, `dodatnia` odrzuca zero.
-export function czytajDziesietna(tekst, { miejsc, calkowitych = 15, dodatnia = false }) {
+// `calkowitych` ogranicza liczbę cyfr przed przecinkiem, `dodatnia` odrzuca zero,
+// `zeraNaKoncu` pozwala na dalsze miejsca, jeśli są samymi zerami.
+export function czytajDziesietna(tekst, { miejsc, calkowitych = 15, dodatnia = false, zeraNaKoncu = false }) {
   const c = rozbierz(tekst);
   if (!c) return blad;
-  const ulamek = c.ulamek ?? "";
+  let ulamek = c.ulamek ?? "";
+  if (zeraNaKoncu && ulamek.length > miejsc && /^0+$/.test(ulamek.slice(miejsc))) ulamek = ulamek.slice(0, miejsc);
   if (ulamek.length > miejsc || c.calkowite.length > calkowitych) return blad;
   const uzupelniony = ulamek.padEnd(miejsc, "0");
   if (dodatnia && /^0+$/.test(c.calkowite + uzupelniony)) return blad;

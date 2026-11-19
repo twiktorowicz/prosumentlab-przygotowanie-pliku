@@ -63,14 +63,10 @@ function czytajPliki(bajtyPlikow) {
   });
 }
 
-/**
- * @param {object} p
- * @param {Uint8Array[]} p.pliki bajty plików w kolejności wyboru
- * @param {object} p.formularz surowe wartości pól (formularz.js)
- * @param {string} p.numer numer zgłoszenia XXXX-XXXX
- * @param {string} p.utworzono dzień RRRR-MM-DD z zegara urządzenia, tylko informacja
- */
-export function przygotujZgloszenie({ pliki: bajtyPlikow, formularz, numer, utworzono }) {
+// Część zależna tylko od plików: odczyt, kolejność w ZIP-ie, zakres i blokady plików. Strona
+// liczy ją raz po zmianie listy plików, a przy zmianie pola formularza tylko składa zgłoszenie
+// (zlozZgloszenie). Wynik nie przechowuje bajtów wejściowych i nie jest później zmieniany.
+export function przygotujPliki(bajtyPlikow) {
   const pliki = czytajPliki(bajtyPlikow);
   const blokady = pliki
     .filter((p) => p.stan === "blokada")
@@ -86,6 +82,25 @@ export function przygotujZgloszenie({ pliki: bajtyPlikow, formularz, numer, utwo
 
   const analiza = przyjete.length > 0 ? analizujZakres(przyjete.map((p) => p.odczyt)) : null;
   if (analiza) blokady.push(...analiza.blokady);
+  return { pliki, przyjete, analiza, blokady };
+}
+
+/**
+ * Całe zgłoszenie z bajtów plików (wiersz poleceń i testy).
+ * @param {object} p
+ * @param {Uint8Array[]} p.pliki bajty plików w kolejności wyboru
+ * @param {object} p.formularz surowe wartości pól (formularz.js)
+ * @param {string} p.numer numer zgłoszenia XXXX-XXXX
+ * @param {string} p.utworzono dzień RRRR-MM-DD z zegara urządzenia, tylko informacja
+ */
+export function przygotujZgloszenie({ pliki, formularz, numer, utworzono }) {
+  return zlozZgloszenie({ przygotowane: przygotujPliki(pliki), formularz, numer, utworzono });
+}
+
+// Zgłoszenie z przygotowanych plików (przygotujPliki) i formularza.
+export function zlozZgloszenie({ przygotowane, formularz, numer, utworzono }) {
+  const { pliki, przyjete, analiza } = przygotowane;
+  const blokady = [...przygotowane.blokady];
 
   const form = czytajFormularz(formularz);
 

@@ -21,11 +21,20 @@ test("N16: kwoty", () => {
     ["12.34", "12.34"],
     ["1 234,5", "1234.50"],
     ["10", "10.00"],
-    ["12,340", "błąd"],
+    ["12,340", "12.34"], // zera na końcu są dozwolone (spec. 004, sek. 19.11)
     ["12,3,4", "błąd"],
     ["-3,00", "błąd"],
   ];
   for (const [wejscie, oczekiwane] of przypadki) assert.equal(wartosc(czytajKwote(wejscie)), oczekiwane, wejscie);
+});
+
+test("kwoty: zera na końcu jak w kolumnie „Cena netto (zł)” na fakturze, zapis z dwoma miejscami", () => {
+  assert.equal(wartosc(czytajKwote("24,05000")), "24.05");
+  assert.equal(wartosc(czytajKwote("0,00000")), "0.00");
+  assert.equal(wartosc(czytajKwote("4,50000")), "4.50");
+  assert.equal(wartosc(czytajKwote("24,051")), "błąd");
+  assert.equal(wartosc(czytajKwote("24,05001")), "błąd");
+  assert.equal(wartosc(czytajKwote("24,0500,0")), "błąd");
 });
 
 test("kwoty: separator tysięcy tylko w grupach po trzy cyfry, także twarda spacja", () => {

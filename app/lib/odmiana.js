@@ -14,11 +14,14 @@ export function formaLiczby(n) {
   return d >= 2 && d <= 4 && (s < 12 || s > 14) ? "kilka" : "wiele";
 }
 
+// Wstawka kończąca się kropką (skrót „r.” w dacie) przed kropką kończącą zdanie: zostaje jedna
+// kropka, jak w polskiej typografii („do stycznia 2026 r. To wystarczy”).
 export function wypelnij(szablon, wstawki = {}) {
-  return szablon.replace(/\{([^{}]*)\}/g, (_, nazwa) => {
+  return szablon.replace(/\{([^{}]*)\}(\.?)/g, (_, nazwa, kropka) => {
     if (!WSTAWKI.has(nazwa)) throw new Error(`nieznana wstawka {${nazwa}}`);
     if (!(nazwa in wstawki)) throw new Error(`brak wartości wstawki {${nazwa}}`);
-    return String(wstawki[nazwa]);
+    const wartosc = String(wstawki[nazwa]);
+    return kropka && wartosc.endsWith(".") ? wartosc : wartosc + kropka;
   });
 }
 

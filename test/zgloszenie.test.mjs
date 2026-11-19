@@ -7,7 +7,8 @@ import { readFileSync, existsSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
-import { przygotujZgloszenie, odnosnikMailto, nazwaZip, WERSJA } from "../app/lib/zgloszenie.js";
+import { przygotujZgloszenie, przygotujPliki, zlozZgloszenie, odnosnikMailto, nazwaZip, WERSJA } from "../app/lib/zgloszenie.js";
+import { createHash } from "node:crypto";
 import { tekst } from "../app/lib/odmiana.js";
 import { TEKSTY } from "../app/teksty.js";
 import { czytajZip } from "./pomoc/czytnik-zip.mjs";
@@ -221,6 +222,65 @@ test("podgląd: pierwsze 5 wierszy danych dokładnie jak w pliku wyjściowym, su
   assert.deepEqual(w.pliki[0].pierwszeWiersze, WZORZEC_N1.toString("utf8").split("\n").slice(1, 6));
   assert.equal(w.miesiace.length, 1);
   assert.equal(w.miesiace[0].miesiac, 6);
+});
+
+// Scenariusz z trzema plikami (dwa zachodzą na siebie, jeden bez numerów) i pełnym formularzem.
+// Skrót ZIP-a zapisany przed podziałem przetwarzania na pliki i formularz (spec. 004, sek. 19.11):
+// podział nie może zmienić ani jednego bajtu.
+const SKROT_PRZED_PODZIALEM = "d89dd4038a9292fa773dd0df8644a3020bc64d221c381e101e9ba23d7c88f617";
+function scenariuszPelny() {
+  return {
+    pliki: [
+      generuj({ od: "2025-02-20", do: "2025-03-31", ziarno: 8 }).surowy,
+      generuj({ od: "2025-01-01", do: "2025-02-21", ziarno: 8 }).surowy,
+      generuj({ od: "2025-03-25", do: "2025-04-10", ziarno: 8 }).zanonimizowany,
+    ],
+    formularz: {
+      faktura: {
+        sprzedawca: "tauron_sprzedaz", operator_dystrybucyjny: "tauron_dystrybucja", taryfa: "g13", okres_od: "2025-03-01", okres_do: "2025-03-31",
+        rodzaj_faktury: "rozliczeniowa", system_rozliczenia: "net_billing_rce", rodzaj_ceny: "stala", cena_energii_netto_zl_kwh: ["0,60000", "0,70000", "0,40000"],
+        oplata_mocowa_zl_mies: "12,34", oplata_abonamentowa_zl_mies: "5,67", oplata_stala_sieciowa_zl_mies: "8,9", oplata_przejsciowa_zl_mies: "0",
+        oplaty_stale_inne: [{ nazwa: "Opłata handlowa", kwota_zl_mies: "9,99" }],
+      },
+      instalacja: {
+        moc_pv_kwp: "9,9", magazyn: "tak", magazyn_pojemnosc_kwh: "10", magazyn_od: "2023-08", pierwsze_oddanie: "przed_2024_07_01",
+        zmiany: [{ rodzaj: "pompa_ciepla", miesiac: "2025-02" }, { rodzaj: "", miesiac: "" }],
+      },
+      zgoda: true,
+    },
+    numer: NUMER,
+    utworzono: DATA,
+  };
+}
+const sha256 = (b) => createHash("sha256").update(b).digest("hex");
+
+function zamroz(o) {
+  if (o && typeof o === "object" && !Object.isFrozen(o)) {
+    Object.freeze(o);
+    for (const w of Object.values(o)) zamroz(w);
+  }
+  return o;
+}
+
+test("podział: ZIP bajt w bajt taki sam jak przed podziałem, z przygotujZgloszenie i z części", () => {
+  const dane = scenariuszPelny();
+  assert.equal(sha256(przygotujZgloszenie(dane).zip), SKROT_PRZED_PODZIALEM);
+  const przygotowane = przygotujPliki(dane.pliki);
+  assert.equal(sha256(zlozZgloszenie({ przygotowane, formularz: dane.formularz, numer: NUMER, utworzono: DATA }).zip), SKROT_PRZED_PODZIALEM);
+});
+
+test("podział: przygotowane pliki składa się wiele razy bez ich zmiany i bez ponownego czytania bajtów", () => {
+  const dane = scenariuszPelny();
+  const przygotowane = zamroz(przygotujPliki(dane.pliki));
+  const a = zlozZgloszenie({ przygotowane, formularz: dane.formularz, numer: NUMER, utworzono: DATA });
+  const b = zlozZgloszenie({ przygotowane, formularz: {}, numer: NUMER, utworzono: DATA });
+  const c = zlozZgloszenie({ przygotowane, formularz: dane.formularz, numer: NUMER, utworzono: DATA });
+  assert.equal(sha256(a.zip), SKROT_PRZED_PODZIALEM);
+  assert.deepEqual(c.zip, a.zip);
+  assert.deepEqual(b.zawartosc.map((p) => p.nazwa), ["zgloszenie.json", "pomiary_1.csv", "pomiary_2.csv", "pomiary_3.csv"]);
+  // W przygotowanych plikach nie zostają bajty wejściowe: złożenie korzysta tylko z odczytu.
+  const zostaly = JSON.stringify(przygotowane, (k, v) => (v instanceof Uint8Array ? "BAJTY" : v));
+  assert.equal(zostaly.includes("BAJTY"), false);
 });
 
 test("wzorzec N20 istnieje w repozytorium", () => {

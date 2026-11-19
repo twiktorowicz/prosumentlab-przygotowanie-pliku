@@ -26,6 +26,13 @@ test("wstawki: wszystkie podane, nieznana albo brakująca to błąd", () => {
   assert.throws(() => wypelnij("Plik {nieznana}.", { nieznana: "x" }));
 });
 
+test("wstawka zakończona skrótem „r.” na końcu zdania: bez podwójnej kropki", () => {
+  assert.equal(wypelnij("od {od} do {do}. To wystarczy.", { od: "stycznia 2025 r.", do: "stycznia 2026 r." }), "od stycznia 2025 r. do stycznia 2026 r. To wystarczy.");
+  assert.equal(wypelnij("Dane od {od} do {do}.", { od: "1.07.2024 r.", do: "31.07.2024 r." }), "Dane od 1.07.2024 r. do 31.07.2024 r.");
+  assert.equal(wypelnij("Plik {plik}.", { plik: "a.zip" }), "Plik a.zip.", "zwykła wstawka zachowuje kropkę");
+  assert.equal(wypelnij("({data}).", { data: "25.10.2026 r., 03:00" }), "(25.10.2026 r., 03:00).");
+});
+
 test("tekst z formami liczby", () => {
   const TEKSTY = {
     zakres: { jeden: "{n} pełny miesiąc", kilka: "{n} pełne miesiące", wiele: "{n} pełnych miesięcy" },

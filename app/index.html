@@ -1,0 +1,238 @@
+<!doctype html>
+<html lang="pl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; font-src 'self'; connect-src 'none'; form-action 'none'; base-uri 'none'">
+<meta name="referrer" content="no-referrer">
+<title>Narzędzie do przygotowania pliku</title>
+<link rel="stylesheet" href="style.css">
+<script type="module" src="main.js"></script>
+</head>
+<body>
+<noscript>Narzędzie do przygotowania pliku działa tylko z włączonym JavaScriptem. Włącz go w ustawieniach przeglądarki.</noscript>
+
+<header class="naglowek">
+  <div class="tresc">
+    <h1 data-tekst="wstep_tytul"></h1>
+    <p class="wstep" data-tekst="wstep_opis"></p>
+  </div>
+</header>
+
+<div class="tresc uklad">
+  <aside class="panel">
+    <section class="panel-czesc">
+      <h2 data-tekst="panel_zostaje_tytul"></h2>
+      <ul data-tekst="panel_zostaje_lista"></ul>
+    </section>
+    <section class="panel-czesc">
+      <h2 data-tekst="panel_trafia_tytul"></h2>
+      <ul data-tekst="panel_trafia_lista"></ul>
+    </section>
+    <p class="drobny" data-tekst="panel_uwaga"></p>
+  </aside>
+
+  <main class="kroki">
+    <section class="krok" id="krok-pliki">
+      <h2 data-tekst="krok_pliki"></h2>
+      <p data-tekst="pliki_wybor"></p>
+      <input class="ukryte-pole" type="file" id="wybor-plikow" multiple accept=".csv,text/csv,text/plain">
+      <label class="przycisk przycisk-drugi" for="wybor-plikow" data-tekst="pliki_dodaj"></label>
+      <ul class="lista-plikow" id="lista-plikow" aria-live="polite"></ul>
+      <div id="blokady" aria-live="polite"></div>
+    </section>
+
+    <section class="krok" id="krok-zakres">
+      <h2 data-tekst="krok_zakres"></h2>
+      <div id="zakres" aria-live="polite"></div>
+    </section>
+
+    <section class="krok" id="krok-faktura">
+      <h2 data-tekst="krok_faktura"></h2>
+      <figure class="rysunek">
+        <div class="rysunek-strony" id="rysunek-faktury" role="img">
+          <img src="faktura-strona-1.svg" width="262" height="305" alt="">
+          <img src="faktura-strona-2.svg" width="262" height="305" alt="">
+        </div>
+        <figcaption>
+          <ol class="legenda" data-tekst="faktura_legenda"></ol>
+          <p class="drobny" data-tekst="faktura_rysunek_zakres"></p>
+        </figcaption>
+      </figure>
+
+      <fieldset class="pole" data-pole="sprzedawca" data-opcje="opcje_sprzedawca">
+        <legend data-tekst="faktura_sprzedawca"></legend>
+        <div class="opcje"></div>
+        <p class="blad" hidden></p>
+      </fieldset>
+      <div class="pole" data-pole="sprzedawca_nazwa" data-warunek="sprzedawca=inny" hidden>
+        <label for="p-sprzedawca_nazwa" data-tekst="faktura_sprzedawca_nazwa"></label>
+        <input type="text" id="p-sprzedawca_nazwa" maxlength="60" autocomplete="off">
+        <p class="blad" hidden></p>
+      </div>
+
+      <fieldset class="pole" data-pole="operator_dystrybucyjny" data-opcje="opcje_operator">
+        <legend data-tekst="faktura_operator"></legend>
+        <p class="podpowiedz" data-tekst="faktura_operator_podpowiedz"></p>
+        <div class="opcje"></div>
+        <p class="blad" hidden></p>
+      </fieldset>
+
+      <fieldset class="pole" data-pole="taryfa" data-opcje="opcje_taryfa">
+        <legend data-tekst="faktura_taryfa"></legend>
+        <div class="opcje"></div>
+        <p class="blad" hidden></p>
+      </fieldset>
+      <div class="pole" data-pole="taryfa_nazwa" data-warunek="taryfa=inna" hidden>
+        <label for="p-taryfa_nazwa" data-tekst="faktura_taryfa_nazwa"></label>
+        <input type="text" id="p-taryfa_nazwa" maxlength="60" autocomplete="off">
+        <p class="blad" hidden></p>
+      </div>
+
+      <div class="pole-para">
+        <div class="pole" data-pole="okres_od">
+          <label for="p-okres_od" data-tekst="faktura_okres_od"></label>
+          <input type="date" id="p-okres_od" min="2020-01-01" max="2099-12-31">
+          <p class="blad" hidden></p>
+        </div>
+        <div class="pole" data-pole="okres_do">
+          <label for="p-okres_do" data-tekst="faktura_okres_do"></label>
+          <input type="date" id="p-okres_do" min="2020-01-01" max="2099-12-31">
+          <p class="blad" hidden></p>
+        </div>
+      </div>
+      <p class="uwaga" id="faktura-poza-zakresem" data-tekst="faktura_r_poza_zakresem" hidden></p>
+
+      <fieldset class="pole" data-pole="rodzaj_faktury" data-opcje="opcje_rodzaj_faktury">
+        <legend data-tekst="faktura_rodzaj"></legend>
+        <div class="opcje"></div>
+        <p class="podpowiedz" data-tekst="faktura_korekta" data-warunek="rodzaj_faktury=korekta" hidden></p>
+        <p class="blad" hidden></p>
+      </fieldset>
+
+      <fieldset class="pole" data-pole="system_rozliczenia" data-opcje="opcje_system">
+        <legend data-tekst="faktura_system"></legend>
+        <div class="opcje"></div>
+        <p class="uwaga" data-tekst="faktura_opusty" data-warunek="system_rozliczenia=opusty" hidden></p>
+        <p class="blad" hidden></p>
+      </fieldset>
+
+      <fieldset class="pole" data-pole="rodzaj_ceny" data-opcje="opcje_rodzaj_ceny">
+        <legend data-tekst="faktura_rodzaj_ceny"></legend>
+        <div class="opcje"></div>
+        <p class="blad" hidden></p>
+      </fieldset>
+
+      <fieldset class="pole" data-pole="cena_energii_netto_zl_kwh">
+        <legend data-tekst="faktura_cena"></legend>
+        <div class="opcje" id="cena-tryb" hidden>
+          <label class="opcja"><input type="radio" name="cena_tryb" value="jedna" checked><span data-tekst="faktura_cena_jedna"></span></label>
+          <label class="opcja"><input type="radio" name="cena_tryb" value="strefy"><span data-tekst="faktura_cena_strefy"></span></label>
+        </div>
+        <div class="pola-stref" id="cena-pola"></div>
+        <button type="button" class="przycisk przycisk-drugi" id="dodaj-strefe" data-tekst="faktura_dodaj_strefe" hidden></button>
+        <p class="podpowiedz" id="strefy-kolejnosc" data-tekst="faktura_strefy_kolejnosc" hidden></p>
+        <p class="podpowiedz" data-tekst="faktura_cena_kilka"></p>
+        <p class="blad" hidden></p>
+      </fieldset>
+
+      <div class="pole" data-pole="oplata_mocowa_zl_mies">
+        <label for="p-oplata_mocowa_zl_mies" data-tekst="faktura_mocowa"></label>
+        <input type="text" id="p-oplata_mocowa_zl_mies" inputmode="decimal" autocomplete="off">
+        <p class="blad" hidden></p>
+      </div>
+      <div class="pole" data-pole="oplata_abonamentowa_zl_mies">
+        <label for="p-oplata_abonamentowa_zl_mies" data-tekst="faktura_abonamentowa"></label>
+        <input type="text" id="p-oplata_abonamentowa_zl_mies" inputmode="decimal" autocomplete="off">
+        <p class="blad" hidden></p>
+      </div>
+      <div class="pole" data-pole="oplata_stala_sieciowa_zl_mies">
+        <label for="p-oplata_stala_sieciowa_zl_mies" data-tekst="faktura_stala"></label>
+        <input type="text" id="p-oplata_stala_sieciowa_zl_mies" inputmode="decimal" autocomplete="off">
+        <p class="blad" hidden></p>
+      </div>
+      <div class="pole" data-pole="oplata_przejsciowa_zl_mies">
+        <label for="p-oplata_przejsciowa_zl_mies" data-tekst="faktura_przejsciowa"></label>
+        <input type="text" id="p-oplata_przejsciowa_zl_mies" inputmode="decimal" autocomplete="off">
+        <p class="blad" hidden></p>
+      </div>
+
+      <fieldset class="pole" data-pole="oplaty_stale_inne">
+        <legend data-tekst="faktura_inne"></legend>
+        <div id="oplaty-inne"></div>
+        <button type="button" class="przycisk przycisk-drugi" id="dodaj-oplate" data-tekst="faktura_dodaj_oplate"></button>
+      </fieldset>
+
+      <p class="uwaga" id="faktura-brak" hidden></p>
+    </section>
+
+    <section class="krok" id="krok-instalacja">
+      <h2 data-tekst="krok_instalacja"></h2>
+      <p data-tekst="instalacja_wstep"></p>
+
+      <div class="pole" data-pole="moc_pv_kwp">
+        <label for="p-moc_pv_kwp" data-tekst="instalacja_moc"></label>
+        <input type="text" id="p-moc_pv_kwp" inputmode="decimal" autocomplete="off">
+        <p class="blad" hidden></p>
+      </div>
+
+      <fieldset class="pole" data-pole="magazyn" data-opcje="opcje_magazyn">
+        <legend data-tekst="instalacja_magazyn"></legend>
+        <div class="opcje"></div>
+        <p class="blad" hidden></p>
+      </fieldset>
+      <div class="pole" data-pole="magazyn_pojemnosc_kwh" data-warunek="magazyn=tak" hidden>
+        <label for="p-magazyn_pojemnosc_kwh" data-tekst="instalacja_pojemnosc"></label>
+        <input type="text" id="p-magazyn_pojemnosc_kwh" inputmode="decimal" autocomplete="off">
+        <p class="blad" hidden></p>
+      </div>
+      <fieldset class="pole" data-pole="magazyn_od" data-warunek="magazyn=tak" hidden>
+        <legend data-tekst="instalacja_magazyn_od"></legend>
+        <div class="miesiac-rok" data-miesiac="magazyn_od"></div>
+        <p class="blad" hidden></p>
+      </fieldset>
+
+      <fieldset class="pole" data-pole="pierwsze_oddanie" data-opcje="opcje_pierwsze_oddanie">
+        <legend data-tekst="instalacja_pierwsze_oddanie"></legend>
+        <div class="opcje"></div>
+        <p class="blad" hidden></p>
+      </fieldset>
+
+      <fieldset class="pole" data-pole="zmiany">
+        <legend data-tekst="instalacja_zmiany"></legend>
+        <div id="zmiany"></div>
+      </fieldset>
+    </section>
+
+    <section class="krok" id="krok-zgoda">
+      <h2 data-tekst="krok_zgoda"></h2>
+      <div class="zgoda">
+        <input type="checkbox" id="p-zgoda">
+        <label for="p-zgoda" id="zgoda-etykieta"></label>
+        <span id="zgoda-wiecej"></span>
+      </div>
+      <p class="numer" id="numer"></p>
+    </section>
+
+    <section class="krok" id="krok-podglad">
+      <h2 data-tekst="podglad_tytul"></h2>
+      <div id="podglad"></div>
+    </section>
+
+    <section class="krok" id="krok-zapis">
+      <h2 data-tekst="krok_zapis"></h2>
+      <button type="button" class="przycisk" id="zapisz" data-tekst="zapisz_przycisk"></button>
+      <p class="uwaga" id="zapis-powod" aria-live="polite" hidden></p>
+      <div id="po-zapisie" aria-live="polite" hidden>
+        <p id="po-zapisie-tekst"></p>
+        <a class="przycisk przycisk-drugi" id="mailto" data-tekst="mailto_przycisk"></a>
+      </div>
+    </section>
+  </main>
+</div>
+
+<footer class="stopka">
+  <div class="tresc"><p class="drobny" id="wersja"></p></div>
+</footer>
+</body>
+</html>
