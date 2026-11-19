@@ -78,3 +78,20 @@ test("w repozytorium nie ma adresów e-mail poza adresem zgłoszeń i domeną ex
   }
   assert.deepEqual(trafienia, []);
 });
+
+// Znaki niewidoczne w źródłach utrudniają przegląd: twarda spacja wygląda jak zwykła, znak
+// sterujący może zmienić znaczenie tekstu. W kodzie piszemy je jako sekwencje \u.
+test("w plikach tekstowych nie ma znaków niewidocznych ani sterujących (poza tabulatorem i końcem linii)", () => {
+  const ZAKAZANE = /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f\u00a0\u00ad\u2000-\u200f\u2028-\u202f\u205f-\u206f\ufeff]/u;
+  const BINARNE = /\.(zip|woff2|png|ico)$/;
+  const trafienia = [];
+  for (const sciezka of plikiRepo()) {
+    if (BINARNE.test(sciezka)) continue;
+    const tresc = readFileSync(sciezka, "utf8");
+    tresc.split("\n").forEach((linia, i) => {
+      const bezCr = linia.endsWith("\r") ? linia.slice(0, -1) : linia;
+      if (ZAKAZANE.test(bezCr)) trafienia.push(`${wzgledna(sciezka)}:${i + 1}`);
+    });
+  }
+  assert.deepEqual(trafienia, []);
+});

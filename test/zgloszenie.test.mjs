@@ -8,7 +8,8 @@ import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
 import { przygotujZgloszenie, odnosnikMailto, nazwaZip, WERSJA } from "../app/lib/zgloszenie.js";
-import { wypelnij } from "../app/lib/odmiana.js";
+import { tekst } from "../app/lib/odmiana.js";
+import { TEKSTY } from "../app/teksty.js";
 import { czytajZip } from "./pomoc/czytnik-zip.mjs";
 import { przykladN20 } from "./pomoc/przyklad-n20.mjs";
 import { generuj, PPE_FIKCYJNE } from "../narzedzia/generator.mjs";
@@ -62,13 +63,13 @@ test("N20: zewnętrzny program unzip potwierdza poprawność, jeśli jest w syst
 });
 
 test("N25: odnośnik mailto dla numeru K7M3-Q9TX", () => {
-  const temat = wypelnij("Dane do darmowego raportu, zgłoszenie {numer}", { numer: NUMER });
-  const tresc = wypelnij("W załączniku plik {plik}.", { plik: nazwaZip(NUMER) });
+  const temat = tekst(TEKSTY, "mailto_temat", { numer: NUMER });
+  const tresc = tekst(TEKSTY, "mailto_tresc", { plik: nazwaZip(NUMER) });
   assert.equal(
     odnosnikMailto(temat, tresc),
     "mailto:raporty@prosumentlab.pl" +
       "?subject=Dane%20do%20darmowego%20raportu%2C%20zg%C5%82oszenie%20K7M3-Q9TX" +
-      "&body=W%20za%C5%82%C4%85czniku%20plik%20prosumentlab_K7M3-Q9TX.zip.",
+      "&body=Za%C5%82%C4%85czam%20plik%20prosumentlab_K7M3-Q9TX.zip.",
   );
 });
 
