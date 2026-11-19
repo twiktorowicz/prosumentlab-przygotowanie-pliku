@@ -92,20 +92,24 @@ test("sprzeczne pliki i błąd pola: kod 1 z kodami", () => {
   assert.equal(w.stderr, "blokada: blad_sprzeczne\npole oplata_mocowa_zl_mies: faktura_kwota_format\n");
 });
 
-test("złe wywołanie: kod 2", () => {
+test("złe wywołanie: kod 2 i komunikat o tym, co jest nie tak", () => {
   const plik = zapisz("n1c.csv", generuj(N1).surowy);
   const wyjscie = join(katalog, "z.zip");
   const przypadki = [
-    [],
-    ["--numer", NUMER, "--data", DATA, "--wyjscie", wyjscie],
-    ["--numer", "K7M3-Q9TI", "--data", DATA, "--wyjscie", wyjscie, plik],
-    ["--numer", NUMER, "--data", "2026-02-30", "--wyjscie", wyjscie, plik],
-    ["--numer", NUMER, "--data", DATA, plik],
-    ["--numer", NUMER, "--data", DATA, "--wyjscie", wyjscie, "--formularz", zapisz("zepsuty.json", "{"), plik],
-    ["--numer", NUMER, "--data", DATA, "--wyjscie", wyjscie, join(katalog, "nie-ma.csv")],
-    ["--nieznana", "x"],
+    [[], /^przygotuj: --numer: oczekiwany XXXX-XXXX\n$/],
+    [["--numer", NUMER, "--data", DATA, "--wyjscie", wyjscie], /^przygotuj: podaj co najmniej jeden plik\n$/],
+    [["--numer", "K7M3-Q9TI", "--data", DATA, "--wyjscie", wyjscie, plik], /^przygotuj: --numer: oczekiwany XXXX-XXXX\n$/],
+    [["--numer", NUMER, "--data", "2026-02-30", "--wyjscie", wyjscie, plik], /^przygotuj: --data: oczekiwany istniejący dzień RRRR-MM-DD\n$/],
+    [["--numer", NUMER, "--data", DATA, plik], /^przygotuj: --wyjscie: wymagane\n$/],
+    [["--numer", NUMER, "--data", DATA, "--wyjscie", wyjscie, "--formularz", zapisz("zepsuty.json", "{"), plik], /^przygotuj: --formularz: nie da się odczytać pliku JSON\n$/],
+    [["--numer", NUMER, "--data", DATA, "--wyjscie", wyjscie, join(katalog, "nie-ma.csv")], /^przygotuj: nie da się odczytać pliku wejściowego\n$/],
+    [["--nieznana", "x"], /^przygotuj: .*--nieznana/],
   ];
-  for (const argumenty of przypadki) assert.equal(uruchom(argumenty).kod, 2, argumenty.join(" "));
+  for (const [argumenty, komunikat] of przypadki) {
+    const w = uruchom(argumenty);
+    assert.equal(w.kod, 2, argumenty.join(" "));
+    assert.match(w.stderr, komunikat, argumenty.join(" "));
+  }
   assert.equal(existsSync(wyjscie), false);
 });
 

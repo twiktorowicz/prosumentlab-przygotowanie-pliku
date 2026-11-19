@@ -4,7 +4,7 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync, readdirSync, existsSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -35,7 +35,11 @@ test("N22: część po „export const TEKSTY = ” to poprawny JSON równy eksp
   assert.ok(ZRODLO.endsWith("};\n"));
   const json = ZRODLO.slice(i + poczatek.length, -2);
   assert.deepEqual(JSON.parse(json), TEKSTY);
-  assert.equal(ZRODLO.slice(0, i), "// Teksty narzędzia do przygotowania pliku. Pisane według docs/strona/styl-tekstow.md (repo prywatne).\n");
+  // Przed eksportem tylko komentarz z zasadami pisania, bez odsyłaczy do plików spoza repozytorium.
+  const komentarz = ZRODLO.slice(0, i).split("\n");
+  assert.equal(komentarz.pop(), "");
+  assert.ok(komentarz.length > 0 && komentarz.every((l) => l.startsWith("// ")), "same linie komentarza");
+  assert.doesNotMatch(ZRODLO.slice(0, i), /\.md\b|docs\/|prywatn/, "bez ścieżek do innych repozytoriów");
 });
 
 test("N22: wartości to tekst, lista tekstów, formy liczby albo mapa opcji", () => {
@@ -94,18 +98,15 @@ test("N22: opcje list wyboru mają tekst dla każdej wartości z formularza", as
 
 test("N22: każdy klucz użyty na stronie istnieje", () => {
   const uzyte = new Set();
-  const html = join(APP, "index.html");
-  const main = join(APP, "main.js");
-  if (existsSync(html)) for (const m of readFileSync(html, "utf8").matchAll(/data-tekst="([^"]+)"/g)) uzyte.add(m[1]);
-  if (existsSync(main)) for (const m of readFileSync(main, "utf8").matchAll(/\b(?:tekst|t)\(\s*"([a-z0-9_]+)"/g)) uzyte.add(m[1]);
+  for (const m of readFileSync(join(APP, "index.html"), "utf8").matchAll(/data-tekst="([^"]+)"/g)) uzyte.add(m[1]);
+  for (const m of readFileSync(join(APP, "main.js"), "utf8").matchAll(/\b(?:tekst|t)\(\s*"([a-z0-9_]+)"/g)) uzyte.add(m[1]);
+  assert.ok(uzyte.size > 0, "znaleziono klucze na stronie");
   const brak = [...uzyte].filter((k) => !(k in TEKSTY));
   assert.deepEqual(brak, []);
 });
 
-test("N22: <title> i <noscript> w index.html równe tekstom", (t) => {
-  const html = join(APP, "index.html");
-  if (!existsSync(html)) return t.skip("index.html powstaje w kroku 6");
-  const zrodlo = readFileSync(html, "utf8");
+test("N22: <title> i <noscript> w index.html równe tekstom", () => {
+  const zrodlo = readFileSync(join(APP, "index.html"), "utf8");
   assert.equal(/<title>([^<]*)<\/title>/.exec(zrodlo)?.[1], TEKSTY.tytul_strony);
   assert.equal(/<noscript>([^<]*)<\/noscript>/.exec(zrodlo)?.[1].trim(), TEKSTY.noscript);
 });

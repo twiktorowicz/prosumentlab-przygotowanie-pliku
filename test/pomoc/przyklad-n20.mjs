@@ -1,4 +1,4 @@
-// Przykład do testu N20: struktura faktury i zgłoszenia ze specyfikacji, wartości zmyślone,
+// Przykład do testu N20: pełna struktura faktury i zgłoszenia (z sekcją weryfikacji), wartości zmyślone,
 // plik pomiarów z generatora. Osobny moduł, żeby wzorzec test/wzorce/n20.zip dało się
 // odtworzyć poza testem.
 

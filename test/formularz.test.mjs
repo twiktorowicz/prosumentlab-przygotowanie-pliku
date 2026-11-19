@@ -142,27 +142,27 @@ test("wartość spoza listy to błąd wyboru", () => {
 test("instalacja: wszystkie pola, kolejność kluczy, normalizacja liczb", () => {
   const w = czytajFormularz({
     instalacja: {
-      moc_pv_kwp: "9,9",
+      moc_pv_kwp: "7,2",
       magazyn: "tak",
       magazyn_pojemnosc_kwh: "10",
-      magazyn_od: "2023-08",
-      pierwsze_oddanie: "przed_2024_07_01",
-      zmiany: [{ rodzaj: "pompa_ciepla", miesiac: "2025-10" }],
+      magazyn_od: "2022-04",
+      pierwsze_oddanie: "nie_wiem",
+      zmiany: [{ rodzaj: "pompa_ciepla", miesiac: "2024-11" }],
     },
   });
   assert.deepEqual(w.bledy, []);
   assert.deepEqual(Object.entries(w.instalacja), [
-    ["moc_pv_kwp", "9.90"],
+    ["moc_pv_kwp", "7.20"],
     ["magazyn", "tak"],
     ["magazyn_pojemnosc_kwh", "10.00"],
-    ["magazyn_od", "2023-08"],
-    ["pierwsze_oddanie", "przed_2024_07_01"],
-    ["zmiany", [{ rodzaj: "pompa_ciepla", miesiac: "2025-10" }]],
+    ["magazyn_od", "2022-04"],
+    ["pierwsze_oddanie", "nie_wiem"],
+    ["zmiany", [{ rodzaj: "pompa_ciepla", miesiac: "2024-11" }]],
   ]);
 });
 
 test("instalacja: niepełny wybór miesiąca i roku magazynu to błąd instalacja_miesiac_niepelny", () => {
-  for (const niepelny of ["2023-", "-08"]) {
+  for (const niepelny of ["2022-", "-04"]) {
     const w = czytajFormularz({ instalacja: { magazyn: "tak", magazyn_od: niepelny } });
     assert.deepEqual(w.bledy, [{ pole: "magazyn_od", kod: "instalacja_miesiac_niepelny" }], niepelny);
     assert.equal("magazyn_od" in w.instalacja, false);
@@ -170,7 +170,7 @@ test("instalacja: niepełny wybór miesiąca i roku magazynu to błąd instalacj
 });
 
 test("instalacja: dane magazynu tylko przy „tak”", () => {
-  const w = czytajFormularz({ instalacja: { magazyn: "nie", magazyn_pojemnosc_kwh: "10", magazyn_od: "2023-08" } });
+  const w = czytajFormularz({ instalacja: { magazyn: "nie", magazyn_pojemnosc_kwh: "10", magazyn_od: "2022-04" } });
   assert.deepEqual(w.instalacja, { magazyn: "nie" });
 });
 
@@ -180,7 +180,7 @@ test("instalacja: błędy liczb, miesięcy i zmian", () => {
       moc_pv_kwp: "0",
       magazyn: "tak",
       magazyn_pojemnosc_kwh: "10,555",
-      magazyn_od: "2023-13",
+      magazyn_od: "2022-13",
       zmiany: [
         { rodzaj: "samochod_elektryczny", miesiac: "" },
         { rodzaj: "pompa_ciepla", miesiac: "2025-1" },

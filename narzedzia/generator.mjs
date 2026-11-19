@@ -8,33 +8,34 @@
 // Format pliku surowego, jak z eLicznika. Generator odtwarza nasze wyobrażenie o pliku, więc
 // przy każdej cesze zaznaczamy, skąd ją znamy.
 //
-// Potwierdzone na prawdziwych plikach z eLicznika (według specyfikacji narzędzia):
-// - nagłówek z 7 kolumnami i ich nazwy, separator średnik, bez cudzysłowów;
-// - kolumna numeru płatnika: 8 cyfr; kolumna PPE: „PPE:” i 18 cyfr, bez spacji;
-// - nazwy serii („energia czynna oddana netto” itd.) i bloki serii w kolejności alfabetycznej
-//   nazw, więc seria oddania przed serią poboru;
-// - znacznik „RRRR-MM-DD GG:MM” jako koniec godziny, północ jako 00:00 następnego dnia;
-// - wartość z trzema miejscami po przecinku („0,000”), kompletność „100,00”;
-// - etykiety stref G13 i ich rozkład, dni ustawowo wolne jako „Reszta dnia”, Wigilia od 2025 r.;
-// - kodowanie ISO-8859-2, ale tylko dla liter, które widzieliśmy w plikach: „ł” (bajt B3)
-//   i „ś” (bajt B6).
+// Potwierdzone na prawdziwych plikach z eLicznika:
+// - nagłówek z siedmioma kolumnami (NAGLOWEK_SUROWY), separator średnik, bez cudzysłowów;
+//   numer płatnika: 8 cyfr; numer punktu poboru: „PPE:” i 18 cyfr, bez spacji;
+// - sześć nazw serii, dokładnie w tym brzmieniu: „energia czynna pobrana netto”, „energia czynna
+//   oddana netto”, „energia czynna pobrana”, „energia czynna oddana”, „energia bierna indukcyjna
+//   pobrana” i „energia bierna pojemnościowa pobrana”, czyli z końcówką „pobrana” w obu seriach
+//   energii biernej. Generator tworzy obie serie „netto” i na życzenie dwie serie energii biernej;
+// - serie stoją blokami w kolejności alfabetycznej nazw, wiersze serii rosnąco według czasu;
+// - znacznik „RRRR-MM-DD GG:MM” oznacza koniec godziny w czasie lokalnym, północ to „00:00”
+//   następnego dnia;
+// - wartość z trzema miejscami po przecinku („2,141”, zero to „0,000”), kompletność „100,00”;
+// - etykiety stref G13 i ich rozkład; w dni ustawowo wolne (Wigilia od 2025 r.) cała doba to
+//   „Reszta dnia”;
+// - kodowanie ISO-8859-2 dla liter „ł” (bajt B3) i „ś” (bajt B6); koniec linii CRLF, także po
+//   ostatnim wierszu;
+// - doba zmiany czasu na zimowy: dwa wiersze „03:00” w każdej serii, jeden po drugim, między
+//   „02:00” a „04:00” (widziane w latach 2023, 2024 i 2025); doba zmiany czasu na letni: jest
+//   „02:00”, nie ma „03:00”.
 //
 // Założenia, niesprawdzone na prawdziwym pliku:
-// - bajty pozostałych polskich liter: przyjęte według normy ISO-8859-2;
-// - koniec linii CRLF;
-// - etykiety stref dla G11 („Reszta dnia” we wszystkich godzinach);
+// - bajty pozostałych polskich liter: według normy ISO-8859-2;
+// - etykiety stref G11 i G12 (generator zna tylko G11: „Reszta dnia” we wszystkich godzinach);
 // - postać kompletności poniżej 100 (np. „87,50”);
-// - wartości godzinowe i serie energii biernej: profil zmyślony, tylko format jest z eLicznika;
-// - w dobie zmiany czasu na zimowy dwa wiersze 03:00 stoją w każdej serii jeden po drugim.
+// - która z dwóch godzin „03:00” jest pierwsza: przyjmujemy, że pierwszy wiersz w pliku to
+//   godzina jeszcze w czasie letnim, a drugi już w zimowym;
+// - profil wartości, także energii biernej: zmyślony, tylko format jest z eLicznika.
 //
-// Wyjście: ISO-8859-2 i CRLF (opcjonalnie UTF-8, UTF-8 z BOM, LF);
-// - seria oddania przed serią poboru, w każdej serii godziny po kolei;
-// - znacznik "RRRR-MM-DD GG:MM" oznacza koniec godziny w czasie lokalnym, północ to 00:00
-//   następnego dnia; doba zmiany czasu na letni nie ma znacznika 03:00, doba zmiany na zimowy
-//   ma go dwa razy;
-// - kolumna numeru punktu poboru w postaci "PPE:" i 18 cyfr, bez spacji;
-// - wartość w kWh zawsze z trzema miejscami po przecinku ("2,141", zero to "0,000");
-// - kompletność "100,00".
+// Wyjście: ISO-8859-2 i CRLF, jak w eLiczniku (do testów także UTF-8, UTF-8 z BOM i LF).
 //
 // Profil jest prosty: w dzień oddanie, w nocy pobór, w każdej godzinie tylko jedno z nich
 // niezerowe (bilans godzinowy). Wartość godziny zależy tylko od ziarna i od samej godziny,
@@ -55,8 +56,9 @@ export const NAGLOWEK_ZANONIMIZOWANY = "Rodzaj energii;Data i godzina;Strefa;War
 
 export const SERIA_ODDANIE = "energia czynna oddana netto";
 export const SERIA_POBOR = "energia czynna pobrana netto";
-// Serie energii biernej pod nazwami z eLicznika (pola „Energia bierna indukcyjna”
-// i „Energia bierna pojemnościowa”). W pliku serie stoją blokami w kolejności alfabetycznej nazw.
+// Serie energii biernej pod nazwami z pliku eLicznika (w formularzu raportu pola „Energia bierna
+// indukcyjna” i „Energia bierna pojemnościowa”). W pliku serie stoją blokami w kolejności
+// alfabetycznej nazw.
 export const SERIE_BIERNE = ["energia bierna indukcyjna pobrana", "energia bierna pojemnościowa pobrana"];
 
 const STREFA_PRZED = "Szczyt przedpołudniowy";

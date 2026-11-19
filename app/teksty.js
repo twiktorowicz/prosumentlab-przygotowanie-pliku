@@ -1,4 +1,8 @@
-// Teksty narzędzia do przygotowania pliku. Pisane według docs/strona/styl-tekstow.md (repo prywatne).
+// Teksty narzędzia do przygotowania pliku dla klienta. Zasady: zwracamy się do klienta per Ty
+// (Ty, Twój wielką literą), krótkimi zdaniami i prostym językiem, bez słów z naszej kuchni
+// (import, weryfikacja, OSD i podobnych), bez pauz i wykrzykników. Mówimy „narzędzie do
+// przygotowania pliku”, nigdy „anonimizator” ani „anonimizacja”. Nowy albo zmieniony tekst
+// zatwierdza właściciel.
 export const TEKSTY = {
   "tytul_strony": "Narzędzie do przygotowania pliku",
   "wstep_tytul": "Przygotuj plik do wysłania",
@@ -187,10 +191,10 @@ export const TEKSTY = {
   "opcje_magazyn": { "tak": "tak", "nie": "nie", "nie_wiem": "nie wiem" },
   "opcje_pierwsze_oddanie": { "przed_2024_07_01": "przed 1.07.2024 r.", "od_2024_07_01": "od 1.07.2024 r.", "nie_wiem": "nie wiem" },
   "opcje_zmiany": { "pompa_ciepla": "pompa ciepła", "samochod_elektryczny": "samochód elektryczny", "rozbudowa_pv": "większa instalacja fotowoltaiczna" },
-  "instalacja_liczba_format": "Wpisz liczbę z najwyżej dwoma miejscami po przecinku, na przykład 9,9.",
+  "instalacja_liczba_format": "Wpisz liczbę z najwyżej dwoma miejscami po przecinku, na przykład 6,5.",
   "instalacja_miesiac_brak": "Wybierz miesiąc i rok albo odznacz tę zmianę.",
   "instalacja_miesiac_niepelny": "Wybierz miesiąc i rok albo zostaw oba pola puste.",
-  "instalacja_miesiac_format": "Wpisz rok i miesiąc w postaci RRRR-MM, na przykład 2023-08.",
+  "instalacja_miesiac_format": "Wpisz rok i miesiąc w postaci RRRR-MM, na przykład 2024-05.",
   "instalacja_miesiac_poza_zakresem": "Ten miesiąc nie mieści się w okresie objętym plikami. Sprawdź, czy jest wpisany dobrze.",
 
   "krok_zgoda": "Zgoda i numer zgłoszenia",

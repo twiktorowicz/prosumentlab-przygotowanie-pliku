@@ -63,8 +63,8 @@ test("kWh do wyświetlenia: zaokrąglenie połówek w górę, odstęp tysięcy o
   assert.equal(kwhDoWyswietlenia(0), "0");
   assert.equal(kwhDoWyswietlenia(499), "0");
   assert.equal(kwhDoWyswietlenia(500), "1");
-  assert.equal(kwhDoWyswietlenia(246047), "246");
-  assert.equal(kwhDoWyswietlenia(2880400), "2880");
+  assert.equal(kwhDoWyswietlenia(357049), "357");
+  assert.equal(kwhDoWyswietlenia(4321400), "4321");
   assert.equal(kwhDoWyswietlenia(16000000), "16 000");
   assert.equal(kwhDoWyswietlenia(1234567890), "1 234 568");
 });

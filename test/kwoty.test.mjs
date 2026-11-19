@@ -21,7 +21,7 @@ test("N16: kwoty", () => {
     ["12.34", "12.34"],
     ["1 234,5", "1234.50"],
     ["10", "10.00"],
-    ["12,340", "12.34"], // zera na końcu są dozwolone (spec. 004, sek. 19.11)
+    ["12,340", "12.34"], // zera na końcu są dozwolone, jak w kolumnie cen na fakturze
     ["12,3,4", "błąd"],
     ["-3,00", "błąd"],
   ];
@@ -29,12 +29,12 @@ test("N16: kwoty", () => {
 });
 
 test("kwoty: zera na końcu jak w kolumnie „Cena netto (zł)” na fakturze, zapis z dwoma miejscami", () => {
-  assert.equal(wartosc(czytajKwote("24,05000")), "24.05");
+  assert.equal(wartosc(czytajKwote("12,34000")), "12.34");
   assert.equal(wartosc(czytajKwote("0,00000")), "0.00");
   assert.equal(wartosc(czytajKwote("4,50000")), "4.50");
-  assert.equal(wartosc(czytajKwote("24,051")), "błąd");
-  assert.equal(wartosc(czytajKwote("24,05001")), "błąd");
-  assert.equal(wartosc(czytajKwote("24,0500,0")), "błąd");
+  assert.equal(wartosc(czytajKwote("12,341")), "błąd");
+  assert.equal(wartosc(czytajKwote("12,34001")), "błąd");
+  assert.equal(wartosc(czytajKwote("12,3400,0")), "błąd");
 });
 
 test("kwoty: separator tysięcy tylko w grupach po trzy cyfry, także twarda spacja", () => {
@@ -68,22 +68,22 @@ test("ceny: bez dopisywania zer, od 2 do 6 miejsc", () => {
 });
 
 test("energia: liczba całkowita, spacje w grupach po trzy", () => {
-  assert.equal(wartosc(czytajEnergie("246")), 246);
-  assert.equal(wartosc(czytajEnergie("1 719")), 1719);
+  assert.equal(wartosc(czytajEnergie("357")), 357);
+  assert.equal(wartosc(czytajEnergie("1 482")), 1482);
   assert.equal(czytajEnergie("12,5").ok, false);
   assert.equal(czytajEnergie("-4").ok, false);
 });
 
 test("liczby z sekcji o instalacji: do 2 miejsc, najwyżej 3 cyfry przed przecinkiem, większe od zera", () => {
   const moc = (t) => wartosc(czytajDziesietna(t, { calkowitych: 3, miejsc: 2, dodatnia: true }));
-  assert.equal(moc("9,9"), "9.90");
+  assert.equal(moc("7,2"), "7.20");
   assert.equal(moc("12"), "12.00");
   assert.equal(moc("999,99"), "999.99");
   assert.equal(moc("1000"), "błąd");
   assert.equal(moc("0"), "błąd");
   assert.equal(moc("0,00"), "błąd");
   assert.equal(moc("0,01"), "0.01");
-  assert.equal(moc("9,999"), "błąd");
+  assert.equal(moc("7,255"), "błąd");
 });
 
 test("N18: pola na dowolny tekst", () => {

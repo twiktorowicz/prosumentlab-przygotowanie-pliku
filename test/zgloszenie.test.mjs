@@ -3,7 +3,7 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync, existsSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
@@ -39,7 +39,7 @@ const FAKTURA = {
   oplata_stala_sieciowa_zl_mies: "8,90",
   oplaty_stale_inne: [{ nazwa: "Opłata handlowa", kwota_zl_mies: "9,99" }],
 };
-const INSTALACJA = { moc_pv_kwp: "9,9", magazyn: "nie", pierwsze_oddanie: "od_2024_07_01" };
+const INSTALACJA = { moc_pv_kwp: "7,2", magazyn: "nie", pierwsze_oddanie: "od_2024_07_01" };
 
 test("N20: ZIP o strukturze z przykładów, numer i data podane: bajty równe wzorcowi", () => {
   const zip = przykladN20();
@@ -108,7 +108,7 @@ test("pełna ścieżka: plik surowy, faktura, instalacja i zgoda dają ZIP z czt
     uwagi: [{ kod: "ZAKRES_NIEPELNY", gdzie: "zakres" }],
   });
   assert.deepEqual(JSON.parse(tekstPliku(pliki[2])), {
-    format: "prosumentlab/instalacja", wersja_formatu: 1, moc_pv_kwp: "9.90", magazyn: "nie", pierwsze_oddanie: "od_2024_07_01",
+    format: "prosumentlab/instalacja", wersja_formatu: 1, moc_pv_kwp: "7.20", magazyn: "nie", pierwsze_oddanie: "od_2024_07_01",
   });
   const faktury = JSON.parse(tekstPliku(pliki[1]));
   assert.deepEqual(faktury.raport.cena_energii_netto_zl_kwh, ["0.60000", "0.70000", "0.40000"]);
@@ -225,11 +225,11 @@ test("podgląd: pierwsze 5 wierszy danych dokładnie jak w pliku wyjściowym, su
 });
 
 // Scenariusz z trzema plikami (dwa zachodzą na siebie, jeden bez numerów) i pełnym formularzem.
-// Skrót ZIP-a zapisany przed podziałem przetwarzania na pliki i formularz (spec. 004, sek. 19.11):
-// podział nie może zmienić ani jednego bajtu. Skrót zmieniony raz, przy przejściu na ISO-8859-2
-// (sek. 19.16): jedyna różnica to dwa wystąpienia "kodowanie_wejscia" w zgloszenie.json
-// („windows-1250” na „iso-8859-2”); pomiary, faktura i instalacja bez zmian.
-const SKROT_PRZED_PODZIALEM = "b2bf530bb269b642c9618eb1208d07f1212349a34ea7d030e4700835feb23e45";
+// Przetwarzanie jest podzielone na dwie części: przygotowanie plików (przygotujPliki) i złożenie
+// zgłoszenia z formularzem (zlozZgloszenie). ZIP złożony z części ma być bajt w bajt taki sam jak
+// ZIP z całości (przygotujZgloszenie). Zapisany skrót to zrzut wyniku obecnego kodu: pilnuje, żeby
+// żadna zmiana nie przesunęła ani jednego bajtu bez świadomego przeliczenia skrótu.
+const SKROT_SCENARIUSZA = "68fd2700d42972f3e82e95f3820c61985e419cfa812bea709ce6333817d574a6";
 function scenariuszPelny() {
   return {
     pliki: [
@@ -245,7 +245,7 @@ function scenariuszPelny() {
         oplaty_stale_inne: [{ nazwa: "Opłata handlowa", kwota_zl_mies: "9,99" }],
       },
       instalacja: {
-        moc_pv_kwp: "9,9", magazyn: "tak", magazyn_pojemnosc_kwh: "10", magazyn_od: "2023-08", pierwsze_oddanie: "przed_2024_07_01",
+        moc_pv_kwp: "7,2", magazyn: "tak", magazyn_pojemnosc_kwh: "10", magazyn_od: "2022-04", pierwsze_oddanie: "nie_wiem",
         zmiany: [{ rodzaj: "pompa_ciepla", miesiac: "2025-02" }, { rodzaj: "", miesiac: "" }],
       },
       zgoda: true,
@@ -264,11 +264,13 @@ function zamroz(o) {
   return o;
 }
 
-test("podział: ZIP bajt w bajt taki sam jak przed podziałem, z przygotujZgloszenie i z części", () => {
+test("podział: ZIP złożony z części równy ZIP-owi z całości i zapisanemu skrótowi", () => {
   const dane = scenariuszPelny();
-  assert.equal(sha256(przygotujZgloszenie(dane).zip), SKROT_PRZED_PODZIALEM);
+  const zCalosci = przygotujZgloszenie(dane).zip;
   const przygotowane = przygotujPliki(dane.pliki);
-  assert.equal(sha256(zlozZgloszenie({ przygotowane, formularz: dane.formularz, numer: NUMER, utworzono: DATA }).zip), SKROT_PRZED_PODZIALEM);
+  const zCzesci = zlozZgloszenie({ przygotowane, formularz: dane.formularz, numer: NUMER, utworzono: DATA }).zip;
+  assert.deepEqual(zCzesci, zCalosci);
+  assert.equal(sha256(zCalosci), SKROT_SCENARIUSZA);
 });
 
 test("podział: przygotowane pliki składa się wiele razy bez ich zmiany i bez ponownego czytania bajtów", () => {
@@ -277,14 +279,23 @@ test("podział: przygotowane pliki składa się wiele razy bez ich zmiany i bez 
   const a = zlozZgloszenie({ przygotowane, formularz: dane.formularz, numer: NUMER, utworzono: DATA });
   const b = zlozZgloszenie({ przygotowane, formularz: {}, numer: NUMER, utworzono: DATA });
   const c = zlozZgloszenie({ przygotowane, formularz: dane.formularz, numer: NUMER, utworzono: DATA });
-  assert.equal(sha256(a.zip), SKROT_PRZED_PODZIALEM);
+  assert.equal(sha256(a.zip), SKROT_SCENARIUSZA);
   assert.deepEqual(c.zip, a.zip);
   assert.deepEqual(b.zawartosc.map((p) => p.nazwa), ["zgloszenie.json", "pomiary_1.csv", "pomiary_2.csv", "pomiary_3.csv"]);
-  // W przygotowanych plikach nie zostają bajty wejściowe: złożenie korzysta tylko z odczytu.
-  const zostaly = JSON.stringify(przygotowane, (k, v) => (v instanceof Uint8Array ? "BAJTY" : v));
-  assert.equal(zostaly.includes("BAJTY"), false);
-});
-
-test("wzorzec N20 istnieje w repozytorium", () => {
-  assert.ok(existsSync(SCIEZKA_N20));
+  // W przygotowanych plikach nie zostają bajty wejściowe w żadnej postaci: złożenie korzysta tylko
+  // z odczytu. Przeglądamy obiekty sami, bo JSON.stringify zamienia Buffer przez toJSON, zanim
+  // zobaczy go funkcja zastępująca, a ArrayBuffer zapisuje jako pusty obiekt.
+  const bajty = [];
+  const przejdz = (v, sciezka) => {
+    if (v instanceof ArrayBuffer || ArrayBuffer.isView(v)) bajty.push(sciezka);
+    else if (v && typeof v === "object") for (const [k, w] of Object.entries(v)) przejdz(w, `${sciezka}.${k}`);
+  };
+  przejdz(przygotowane, "przygotowane");
+  assert.deepEqual(bajty, []);
+  // Sprawdzenie samo musi wykrywać każdą z tych postaci.
+  for (const wzor of [new Uint8Array(1), Buffer.from("x"), new ArrayBuffer(1), new DataView(new ArrayBuffer(1))]) {
+    bajty.length = 0;
+    przejdz({ pliki: [{ wejscie: wzor }] }, "proba");
+    assert.deepEqual(bajty, ["proba.pliki.0.wejscie"], wzor.constructor.name);
+  }
 });

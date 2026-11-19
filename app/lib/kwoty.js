@@ -33,8 +33,8 @@ function rozbierz(tekst) {
 
 // Kwota w złotych, zapis z dwoma miejscami po przecinku: „12,34” -> "12.34", „10” -> "10.00",
 // „1 234,5” -> "1234.50". Dalsze miejsca są dozwolone tylko jako zera, bo opłaty stałe stoją
-// na fakturze w kolumnie „Cena netto (zł)” z pięcioma miejscami: „24,05000” -> "24.05".
-// Cyfra inna niż zero na trzecim i dalszym miejscu to błąd („24,051”), bo nie wiadomo,
+// na fakturze w kolumnie „Cena netto (zł)” z pięcioma miejscami: „12,34000” -> "12.34".
+// Cyfra inna niż zero na trzecim i dalszym miejscu to błąd („12,341”), bo nie wiadomo,
 // czy to pomyłka.
 export function czytajKwote(tekst) {
   return czytajDziesietna(tekst, { miejsc: 2, zeraNaKoncu: true });

@@ -24,7 +24,7 @@ function czytaj(bajty) {
   return w.ok ? { ...w, kodowanie: d.kodowanie } : w;
 }
 
-// Numer linii (od 1) pierwszej linii pliku surowego, która zawiera `fragment` po `znacznik`.
+// Numer linii (od 1) pierwszej linii pliku surowego z daną serią i znacznikiem.
 function liniaZ(bajty, znacznik, seria) {
   const linie = new TextDecoder("iso-8859-2").decode(bajty).split("\r\n");
   return linie.findIndex((l) => l.includes(`;${seria};${znacznik};`)) + 1;
@@ -143,7 +143,9 @@ test("N7: PPE w kolumnie Strefa, słowo PPE, ciąg 12 cyfr, adres e-mail: każdy
     "słowo PPE": { podmien: [{ znacznik: z, seria: "pobor", pole: "strefa", tekst: "Reszta dnia PPE" }] },
     "słowo ppe małymi literami": { podmien: [{ znacznik: z, seria: "pobor", pole: "strefa", tekst: "nr ppe" }] },
     "ciąg 12 cyfr": { podmien: [{ znacznik: z, seria: "pobor", pole: "strefa", tekst: "7".repeat(12) }] },
-    "adres e-mail": { podmien: [{ znacznik: z, seria: "pobor", pole: "strefa", tekst: ["jan", "przyklad.pl"].join("@") }] },
+    "adres e-mail": { podmien: [{ znacznik: z, seria: "pobor", pole: "strefa", tekst: ["jan", "example.invalid"].join("@") }] },
+    // Ciąg udający PPE składany z części, żeby nie stał w kodzie jako 18 cyfr. Cyfra kontrolna
+    // GS1 jest celowo błędna (poprawna byłaby 9, a jest 5), więc to nie jest numer żadnego punktu.
     "PPE GS1 ze spacjami": { podmien: [{ znacznik: z, seria: "pobor", pole: "strefa", tekst: ["590", "1234", "5678", "9012", "345"].join(" ") }] },
     "PPE GS1 z myślnikami": { podmien: [{ znacznik: z, seria: "pobor", pole: "strefa", tekst: ["590", "1234", "5678", "9012", "345"].join("-") }] },
   };
@@ -200,7 +202,7 @@ test("bezpiecznik: reguły osobno, w tym usunięte wartości od 6 znaków i gran
   assert.equal(sprawdzBezpiecznik(linie("PPEX;1", "PPEŁ;1", "APPE;1"), []), null);
   assert.deepEqual(sprawdzBezpiecznik(linie("1;2", `a;${"1".repeat(13)};b`), []), { linia: 2 });
   assert.equal(sprawdzBezpiecznik(linie(`a;${"1".repeat(11)};b`), []), null, "11 cyfr nie blokuje");
-  assert.deepEqual(sprawdzBezpiecznik(linie(`x;${["a.b", "c.pl"].join("@")}`), []), { linia: 1 });
+  assert.deepEqual(sprawdzBezpiecznik(linie(`x;${["a.b", "example.invalid"].join("@")}`), []), { linia: 1 });
   assert.equal(sprawdzBezpiecznik(linie("x;a@b;c"), []), null);
 });
 
@@ -260,7 +262,7 @@ test("nazwa serii: dokładnie jedna z czterech nazw z eLicznika, każda inna to 
   for (const nazwa of [
     "energia bierna pobrana",
     "energia bierna indukcyjna pobrana Jan Kowalski",
-    "energia bierna indukcyjna pobrana 600 700 800",
+    "energia bierna indukcyjna pobrana 000 000 000",
     "energia bierna",
     "energia czynna pobrana",
     "Energia czynna pobrana netto",
@@ -278,7 +280,7 @@ test("kolumna strefy: tylko litery i pojedyncze spacje, 2–40 znaków; inaczej 
   const strefa = (tekst) => generuj({ ...DZIEN, podmien: [{ znacznik: z, seria: "pobor", pole: "strefa", tekst }] }).surowy;
   const przypadki = {
     "imię z adresem": "Jan Kowalski ul. Polna 5",
-    "telefon z odstępami": "600 700 800",
+    "numer telefonu z odstępami (same zera, taki nie istnieje)": "000 000 000",
     "11 cyfr": "12345678901",
     "8 cyfr innych niż numer płatnika": "87654321",
     "podwójna spacja": "Reszta  dnia",
