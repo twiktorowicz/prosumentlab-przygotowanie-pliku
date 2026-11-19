@@ -1,10 +1,11 @@
 #!/usr/bin/env node
 // Lokalny serwer plików do uruchomienia narzędzia (moduły ES nie działają z file://).
-// - Słucha tylko na 127.0.0.1, więc strona nie jest widoczna z sieci.
+// - Domyślnie słucha tylko na 127.0.0.1, więc strona nie jest widoczna z sieci. Opcja --host
+//   pozwala wystawić stronę w sieci domowej do odbioru na telefonie; wtedy serwer ostrzega.
 // - Serwuje wyłącznie katalog app/; ścieżki wychodzące poza niego dają 404.
 // - Wysyła tę samą politykę treści co strona, żeby lokalnie było widać jej naruszenia.
 //
-// Użycie: node narzedzia/serwer.mjs [--port 8000]
+// Użycie: node narzedzia/serwer.mjs [--port 8000] [--host 127.0.0.1]
 
 import { createServer } from "node:http";
 import { readFile, stat } from "node:fs/promises";
@@ -76,10 +77,30 @@ export function utworzSerwer() {
   });
 }
 
+export const HOST_DOMYSLNY = "127.0.0.1";
+
+export function komunikatStartu(host, port) {
+  const adres = `Narzędzie działa pod adresem http://${host}:${port}/ (Ctrl+C kończy).\n`;
+  if (host === HOST_DOMYSLNY) return adres;
+  return (
+    `UWAGA: serwer słucha na adresie ${host}, więc strona jest widoczna w sieci lokalnej.\n` +
+    "Używaj tylko plików z generatora (narzedzia/generator.mjs), nigdy prawdziwych plików z licznika.\n" +
+    "Po odbiorze zatrzymaj serwer.\n" +
+    adres
+  );
+}
+
 if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
-  const { values } = parseArgs({ options: { port: { type: "string", default: "8000" } } });
+  const { values } = parseArgs({
+    options: { port: { type: "string", default: "8000" }, host: { type: "string", default: HOST_DOMYSLNY } },
+  });
   const port = /^\d{1,5}$/.test(values.port) ? +values.port : 8000;
-  utworzSerwer().listen(port, "127.0.0.1", () => {
-    process.stdout.write(`Narzędzie działa pod adresem http://127.0.0.1:${port}/ (Ctrl+C kończy).\n`);
+  const serwer = utworzSerwer();
+  serwer.on("error", (blad) => {
+    process.stderr.write(`serwer: ${blad.message}\n`);
+    process.exit(2);
+  });
+  serwer.listen(port, values.host, () => {
+    process.stdout.write(komunikatStartu(values.host, serwer.address().port));
   });
 }

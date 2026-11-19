@@ -36,18 +36,76 @@ node narzedzia/serwer.mjs        # strona pod http://127.0.0.1:8000/
 node --test "test/**/*.test.mjs" # testy
 ```
 
-Moduły ES nie działają z `file://`, dlatego potrzebny jest lokalny serwer plików.
+Moduły ES nie działają z `file://`, dlatego potrzebny jest lokalny serwer plików. Serwer słucha
+tylko na `127.0.0.1` i serwuje wyłącznie katalog `app/`. Czcionek strony w repozytorium nie ma,
+więc lokalnie strona używa czcionki systemowej.
 
 Dane do prób tworzy generator danych syntetycznych:
 
 ```sh
+mkdir -p proby                   # katalog wykluczony z repozytorium
+node narzedzia/generator.mjs --od 2025-01-01 --do 2025-12-31 --wyjscie proby/rok_2025.csv
 node narzedzia/generator.mjs --help
 ```
+
+## Próba w przeglądarce na komputerze
+
+`narzedzia/proba-przegladarki.mjs` uruchamia Chrome albo Chromium bez okna i przechodzi cały
+przepływ na plikach z generatora: wybór plików, zakres, formularz, podgląd, zapis ZIP-a, odnośnik
+do wiadomości i blokady, na szerokości 1280 px i 390 px. Sprawdza też, że strona nie wysyła żadnego
+zapytania poza własne pliki, nie pisze błędów w konsoli i niczego nie zostawia w przeglądarce.
+Nie należy do `node --test` ani do CI, bo wymaga zainstalowanej przeglądarki.
+
+```sh
+CHROME="/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" node narzedzia/proba-przegladarki.mjs
+node narzedzia/proba-przegladarki.mjs --chrome /usr/bin/chromium --zostaw   # --zostaw: zrzuty ekranu
+```
+
+## Odbiór na telefonie
+
+Telefon nie sięgnie do `127.0.0.1` komputera, więc do odbioru serwer trzeba wystawić w sieci
+domowej. Używaj wyłącznie plików z generatora.
+
+1. Przygotuj pliki z generatora, na przykład cały rok i drugi plik z dwoma punktami poboru do
+   sprawdzenia blokady:
+
+   ```sh
+   mkdir -p proby
+   node narzedzia/generator.mjs --od 2025-01-01 --do 2025-12-31 --wyjscie proby/rok_2025.csv
+   node narzedzia/generator.mjs --od 2026-01-01 --do 2026-01-31 --drugi-ppe --wyjscie proby/dwa_punkty.csv
+   ```
+
+2. Przenieś oba pliki na telefon (AirDrop, wiadomość do siebie, dysk w chmurze). Na iPhonie zapisz
+   je w aplikacji Pliki, na Androidzie w Pobranych.
+3. Połącz komputer i telefon z tą samą siecią Wi-Fi. Sprawdź adres komputera w tej sieci:
+   macOS `ipconfig getifaddr en0`, Linux `hostname -I`, Windows `ipconfig` (adres IPv4).
+4. Uruchom serwer na wszystkich adresach komputera. Serwer wypisze ostrzeżenie, że strona jest
+   widoczna w sieci lokalnej. Zapora systemu może zapytać o zgodę dla Node.
+
+   ```sh
+   node narzedzia/serwer.mjs --host 0.0.0.0
+   ```
+
+5. Na telefonie otwórz `http://<adres komputera>:8000/` w Safari (iOS) albo Chrome (Android).
+6. Przejdź cały przepływ:
+   - dodaj `rok_2025.csv`: plakietka „Przyjęty”, zakres „12 pełnych miesięcy”;
+   - wypełnij pola faktury dowolnymi zmyślonymi liczbami (na przykład 12,34), zaznacz odpowiedzi
+     o instalacji, w tym miesiąc i rok magazynu, i zgodę;
+   - sprawdź podgląd i przycisk „Zapisz plik ZIP”; plik ma nazwę `prosumentlab_<numer>.zip`
+     z numerem ze strony (iOS: aplikacja Pliki, Pobrane; Android: Pobrane);
+   - dotknij „Napisz wiadomość”: aplikacja poczty otwiera się z adresem raporty@prosumentlab.pl,
+     tematem z numerem zgłoszenia i treścią z nazwą pliku; plik nie jest dołączony.
+     **Nie wysyłaj tej wiadomości**, zamknij ją bez wysyłania;
+   - dodaj `dwa_punkty.csv`: plik dostaje komunikat o kilku punktach poboru, zapis jest
+     zablokowany; po usunięciu pliku zapis znów działa;
+   - otwórz odnośnik w zgodzie: informacja o przetwarzaniu danych otwiera się w nowej karcie,
+     a dane na stronie narzędzia zostają.
+7. Zatrzymaj serwer (Ctrl+C) i usuń pliki próbne z telefonu.
 
 ## Jak sprawdzić kopię na stronie
 
 Katalog `app/` trafia na stronę bez zmian. Plik `app/SHA256SUMS` zawiera skrót SHA-256 każdego
-pliku z `app/` w formacie programu `sha256sum`.
+pliku z `app/` w formacie programu `sha256sum` (linie posortowane po bajtach ścieżki w UTF-8).
 
 ```sh
 cd app
@@ -55,8 +113,15 @@ sha256sum -c SHA256SUMS          # każdy plik: OK
 sha256sum SHA256SUMS             # suma kontrolna kopii
 ```
 
+To samo bez `sha256sum` (na przykład na macOS):
+
+```sh
+node narzedzia/sumy.mjs --sprawdz   # sprawdza listę i podaje sumę kontrolną kopii
+```
+
 Suma kontrolna kopii to skrót samego pliku `SHA256SUMS`. Opis każdego wydania na GitHubie podaje
-tę sumę; ta sama suma musi wyjść z plików pobranych ze strony.
+tę sumę; ta sama suma musi wyjść z plików pobranych ze strony. Po każdej zmianie w `app/` listę
+trzeba odświeżyć poleceniem `node narzedzia/sumy.mjs --zapisz`; CI sprawdza, że jest aktualna.
 
 ## Licencja
 

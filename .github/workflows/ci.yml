@@ -19,6 +19,8 @@ jobs:
           node-version: "26.13.1"
       - name: Testy
         run: node --test "test/**/*.test.mjs"
+      - name: Sumy kontrolne app/
+        run: node narzedzia/sumy.mjs --sprawdz
 
   gitleaks:
     runs-on: ubuntu-24.04

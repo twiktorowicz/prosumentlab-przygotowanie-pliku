@@ -282,8 +282,13 @@ sprawdz("przechowywanie w przeglądarce puste", (await js("localStorage.length +
 
 process.stdout.write(`${wyniki.join("\n")}\n\nCzas przeliczenia po zmianie pola, 4 pliki roczne: ${czas.toFixed(0)} ms (mediana z 7)\n`);
 ws.close();
-chrome.kill();
+// Przeglądarka pisze do profilu jeszcze chwilę po sygnale zakończenia: czekamy na jej wyjście,
+// dopiero potem usuwamy katalog roboczy.
+await new Promise((ok) => {
+  chrome.once("exit", ok);
+  chrome.kill();
+});
 serwer.close();
 if (values.zostaw) process.stdout.write(`Zrzuty i pliki: ${PRACA}\n`);
-else rmSync(PRACA, { recursive: true, force: true });
+else rmSync(PRACA, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
 process.exit(wyniki.some((w) => w.startsWith("BŁĄD")) ? 1 : 0);

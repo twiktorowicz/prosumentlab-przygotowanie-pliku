@@ -7,7 +7,8 @@ import { request } from "node:http";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
-import { utworzSerwer, POLITYKA } from "../narzedzia/serwer.mjs";
+import { utworzSerwer, POLITYKA, komunikatStartu } from "../narzedzia/serwer.mjs";
+import { spawn } from "node:child_process";
 
 let serwer;
 let port;
@@ -78,4 +79,38 @@ test("polityka w znaczniku meta strony jest ta sama, bez frame-ancestors", () =>
   const html = readFileSync(fileURLToPath(new URL("../app/index.html", import.meta.url)), "utf8");
   const meta = /<meta http-equiv="Content-Security-Policy" content="([^"]+)">/.exec(html)?.[1];
   assert.equal(meta, POLITYKA.replace("; frame-ancestors 'none'", ""));
+});
+
+test("komunikat startu: domyślnie 127.0.0.1 bez ostrzeżenia, inny adres z ostrzeżeniem", () => {
+  const lokalny = komunikatStartu("127.0.0.1", 8000);
+  assert.match(lokalny, /http:\/\/127\.0\.0\.1:8000\//);
+  assert.doesNotMatch(lokalny, /UWAGA/);
+  const siec = komunikatStartu("0.0.0.0", 8000);
+  assert.match(siec, /UWAGA/);
+  assert.match(siec, /sieci lokalnej/);
+  assert.match(siec, /tylko plików z generatora/);
+});
+
+test("wiersz poleceń: --host z innym adresem wypisuje ostrzeżenie, domyślnie słucha na 127.0.0.1", async () => {
+  const uruchom = (argumenty) => new Promise((wynik, blad) => {
+    const p = spawn(process.execPath, [fileURLToPath(new URL("../narzedzia/serwer.mjs", import.meta.url)), "--port", "0", ...argumenty]);
+    let wyjscie = "";
+    p.stdout.on("data", (d) => {
+      wyjscie += d;
+      if (wyjscie.includes("Ctrl+C")) {
+        p.kill();
+        wynik(wyjscie);
+      }
+    });
+    p.on("error", blad);
+    setTimeout(() => { p.kill(); blad(new Error(`brak komunikatu startu: ${wyjscie}`)); }, 5000);
+  });
+  const domyslny = await uruchom([]);
+  assert.match(domyslny, /http:\/\/127\.0\.0\.1:\d+\//);
+  assert.doesNotMatch(domyslny, /UWAGA/);
+  // „localhost” to też adres pętli zwrotnej, więc test nie otwiera serwera na sieć, a sprawdza,
+  // że każda wartość inna niż 127.0.0.1 daje ostrzeżenie.
+  const inny = await uruchom(["--host", "localhost"]);
+  assert.match(inny, /UWAGA/);
+  assert.match(inny, /localhost/);
 });
