@@ -31,8 +31,8 @@ test("N16: kwoty", () => {
 test("kwoty: separator tysięcy tylko w grupach po trzy cyfry, także twarda spacja", () => {
   assert.equal(wartosc(czytajKwote("12 34")), "błąd");
   assert.equal(wartosc(czytajKwote("1 234 567,8")), "1234567.80");
-  assert.equal(wartosc(czytajKwote("1 234,50")), "1234.50");
-  assert.equal(wartosc(czytajKwote("1 234")), "1234.00");
+  assert.equal(wartosc(czytajKwote("1\u00a0234,50")), "1234.50");
+  assert.equal(wartosc(czytajKwote("1\u202f234")), "1234.00");
   assert.equal(wartosc(czytajKwote("1234 567")), "błąd");
   assert.equal(wartosc(czytajKwote(" 7,5 ")), "7.50");
 });
@@ -101,6 +101,13 @@ test("pola na dowolny tekst: separatory między cyframi, krótkie ciągi, przyci
   assert.equal(czytajTekstWolny("a".repeat(60)).ok, true);
   assert.equal(czytajTekstWolny("ą".repeat(60)).ok, true, "limit liczony w znakach");
   assert.deepEqual(czytajTekstWolny("  Opłata handlowa "), { ok: true, wartosc: "Opłata handlowa" });
+});
+
+test("pola na dowolny tekst: bez znaków sterujących, także nowej linii i tabulatora", () => {
+  for (const zly of ["Opłata\nhandlowa", "Opłata\thandlowa", "Opłata\rhandlowa", "Opłata\u0007", "\u0000Opłata", "Opłata handlowa\n", "Opłata\u0085x"]) {
+    assert.equal(czytajTekstWolny(zly).ok, false, JSON.stringify(zly));
+  }
+  assert.equal(czytajTekstWolny("Opłata handlowa").ok, true);
 });
 
 test("grosze z kwoty i liczby z cyfr", () => {

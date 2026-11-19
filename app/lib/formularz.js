@@ -181,6 +181,60 @@ function czytajInstalacje(f, bledy) {
   return r;
 }
 
+// Budowa danych formularza z pliku (narzedzia/przygotuj.mjs). Strona zawsze buduje poprawny
+// obiekt; plik pisany ręcznie może mieć literówkę w kluczu albo zły typ, a wtedy pole zostałoby
+// po cichu pominięte. Zwraca ścieżkę pierwszego złego klucza (bez wartości) albo null.
+const TEKST = "tekst";
+const BUDOWA = {
+  faktura: {
+    sprzedawca: TEKST, sprzedawca_nazwa: TEKST, operator_dystrybucyjny: TEKST, taryfa: TEKST, taryfa_nazwa: TEKST,
+    okres_od: TEKST, okres_do: TEKST, rodzaj_faktury: TEKST, system_rozliczenia: TEKST, rodzaj_ceny: TEKST,
+    cena_energii_netto_zl_kwh: "tekst albo lista tekstów",
+    oplata_mocowa_zl_mies: TEKST, oplata_abonamentowa_zl_mies: TEKST, oplata_stala_sieciowa_zl_mies: TEKST,
+    oplata_przejsciowa_zl_mies: TEKST,
+    oplaty_stale_inne: [{ nazwa: TEKST, kwota_zl_mies: TEKST }],
+  },
+  instalacja: {
+    moc_pv_kwp: TEKST, magazyn: TEKST, magazyn_pojemnosc_kwh: TEKST, magazyn_od: TEKST, pierwsze_oddanie: TEKST,
+    zmiany: [{ rodzaj: TEKST, miesiac: TEKST }],
+  },
+  zgoda: "logiczna",
+};
+
+const obiekt = (w) => w !== null && typeof w === "object" && !Array.isArray(w);
+
+function sprawdzBudowe(wartosc, wzor, sciezka) {
+  if (wzor === TEKST) return typeof wartosc === "string" ? null : sciezka;
+  if (wzor === "logiczna") return typeof wartosc === "boolean" ? null : sciezka;
+  if (wzor === "tekst albo lista tekstów") {
+    if (typeof wartosc === "string") return null;
+    if (!Array.isArray(wartosc)) return sciezka;
+    const zly = wartosc.findIndex((w) => typeof w !== "string");
+    return zly < 0 ? null : `${sciezka}[${zly}]`;
+  }
+  if (Array.isArray(wzor)) {
+    if (!Array.isArray(wartosc)) return sciezka;
+    for (let i = 0; i < wartosc.length; i++) {
+      const blad = sprawdzBudowe(wartosc[i], wzor[0], `${sciezka}[${i}]`);
+      if (blad) return blad;
+    }
+    return null;
+  }
+  if (!obiekt(wartosc)) return sciezka;
+  for (const [klucz, w] of Object.entries(wartosc)) {
+    const pelna = sciezka ? `${sciezka}.${klucz}` : klucz;
+    if (!Object.hasOwn(wzor, klucz)) return pelna;
+    const blad = sprawdzBudowe(w, wzor[klucz], pelna);
+    if (blad) return blad;
+  }
+  return null;
+}
+
+export function bladBudowyFormularza(dane) {
+  if (!obiekt(dane)) return "formularz";
+  return sprawdzBudowe(dane, BUDOWA, "");
+}
+
 export function czytajFormularz(dane = {}) {
   const bledy = [];
   const brakujace = [];

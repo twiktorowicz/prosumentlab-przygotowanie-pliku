@@ -72,8 +72,9 @@ function przypiszWystapienia(seria) {
 export function czytajTauron(tekst) {
   const linie = tekst.split(/\r?\n/);
   let i = linie.findIndex((l) => l.trim() !== "");
-  if (i < 0) return blad("blad_inny_operator");
-  const naglowek = linie[i].replace(/^﻿/, "");
+  // Pusty plik (zero bajtów albo same puste linie) to plik, którego narzędzie nie odczytało.
+  if (i < 0) return blad("blad_nieznany");
+  const naglowek = linie[i].replace(/^\ufeff/, "");
   let wariant;
   if (naglowek === NAGLOWEK_SUROWY) wariant = "surowy";
   else if (naglowek === NAGLOWEK_ZANONIMIZOWANY) wariant = "zanonimizowany";
@@ -128,7 +129,8 @@ export function czytajTauron(tekst) {
   if (platnicy.size > 1 || punkty.size > 1) return { ok: false, kod: "blad_wiele_ppe", blokada: true };
   const identyfikatory = wariant === "surowy" ? { platnik: [...platnicy][0], ppe: [...punkty][0] } : null;
 
-  const trafienie = sprawdzBezpiecznik(wyjscie, identyfikatory ? [identyfikatory.platnik, identyfikatory.ppe] : []);
+  // W pliku wyjściowym znacznik jest drugim polem.
+  const trafienie = sprawdzBezpiecznik(wyjscie, identyfikatory ? [identyfikatory.platnik, identyfikatory.ppe] : [], { poleZnacznika: 1 });
   if (trafienie) return { ok: false, kod: "blad_bezpiecznik", wiersz: trafienie.linia, blokada: true };
 
   for (const s of ["oddanie", "pobor", "bierna"]) przypiszWystapienia(wiersze.filter((w) => w.seria === s));

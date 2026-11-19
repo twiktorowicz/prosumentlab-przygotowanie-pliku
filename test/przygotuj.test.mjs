@@ -109,6 +109,59 @@ test("złe wywołanie: kod 2", () => {
   assert.equal(existsSync(wyjscie), false);
 });
 
+test("formularz o złej budowie: kod 2 z nazwą klucza, bez wartości", () => {
+  const plik = zapisz("n1d.csv", generuj(N1).surowy);
+  const wyjscie = join(katalog, "budowa.zip");
+  const TAJNE = "WARTOSC_TAJNA";
+  const przypadki = [
+    [[], "formularz"],
+    ["tekst", "formularz"],
+    [null, "formularz"],
+    [{ fakturaa: {} }, "fakturaa"],
+    [{ faktura: TAJNE }, "faktura"],
+    [{ faktura: { oplata_mocowa: TAJNE } }, "faktura.oplata_mocowa"],
+    [{ faktura: { oplata_mocowa_zl_mies: 12.34 } }, "faktura.oplata_mocowa_zl_mies"],
+    [{ faktura: { cena_energii_netto_zl_kwh: { a: TAJNE } } }, "faktura.cena_energii_netto_zl_kwh"],
+    [{ faktura: { cena_energii_netto_zl_kwh: ["0,50", 1] } }, "faktura.cena_energii_netto_zl_kwh[1]"],
+    [{ faktura: { oplaty_stale_inne: { nazwa: TAJNE } } }, "faktura.oplaty_stale_inne"],
+    [{ faktura: { oplaty_stale_inne: [{ nazwa: TAJNE, kwota: "1,00" }] } }, "faktura.oplaty_stale_inne[0].kwota"],
+    [{ faktura: { oplaty_stale_inne: [TAJNE] } }, "faktura.oplaty_stale_inne[0]"],
+    [{ instalacja: { moc: TAJNE } }, "instalacja.moc"],
+    [{ instalacja: { zmiany: [{ rodzaj: "pompa_ciepla", miesiac: 202510 }] } }, "instalacja.zmiany[0].miesiac"],
+    [{ instalacja: { zmiany: TAJNE } }, "instalacja.zmiany"],
+    [{ zgoda: "true" }, "zgoda"],
+    [{ zgoda: 1 }, "zgoda"],
+  ];
+  for (const [formularz, klucz] of przypadki) {
+    const sciezka = zapisz("budowa.json", JSON.stringify(formularz));
+    const w = uruchom(["--numer", NUMER, "--data", DATA, "--formularz", sciezka, "--wyjscie", wyjscie, plik]);
+    assert.equal(w.kod, 2, JSON.stringify(formularz));
+    assert.ok(w.stderr.includes(klucz), `${JSON.stringify(formularz)}: ${w.stderr}`);
+    assert.equal(w.stderr.includes(TAJNE), false, "bez wartości na stderr");
+  }
+  assert.equal(existsSync(wyjscie), false);
+});
+
+test("formularz poprawnej budowy z każdym kluczem przechodzi", () => {
+  const plik = zapisz("n1e.csv", generuj(N1).surowy);
+  const formularz = {
+    faktura: {
+      sprzedawca: "inny", sprzedawca_nazwa: "Sprzedawca", operator_dystrybucyjny: "inny", taryfa: "inna", taryfa_nazwa: "Taryfa",
+      okres_od: "2025-06-06", okres_do: "2025-06-07", rodzaj_faktury: "korekta", system_rozliczenia: "nie_wiem",
+      rodzaj_ceny: "stala", cena_energii_netto_zl_kwh: ["0,50", "0,40"], oplata_mocowa_zl_mies: "1,00",
+      oplata_abonamentowa_zl_mies: "1,00", oplata_stala_sieciowa_zl_mies: "1,00", oplata_przejsciowa_zl_mies: "",
+      oplaty_stale_inne: [{ nazwa: "Opłata handlowa", kwota_zl_mies: "9,99" }],
+    },
+    instalacja: {
+      moc_pv_kwp: "5", magazyn: "tak", magazyn_pojemnosc_kwh: "5", magazyn_od: "2025-01",
+      pierwsze_oddanie: "nie_wiem", zmiany: [{ rodzaj: "rozbudowa_pv", miesiac: "2025-06" }],
+    },
+    zgoda: false,
+  };
+  const w = uruchom(["--numer", NUMER, "--data", DATA, "--formularz", zapisz("pelny.json", JSON.stringify(formularz)), "--wyjscie", join(katalog, "pelny.zip"), plik]);
+  assert.equal(w.kod, 0, w.stderr);
+});
+
 test("pomoc", () => {
   const w = uruchom(["--help"]);
   assert.equal(w.kod, 0);

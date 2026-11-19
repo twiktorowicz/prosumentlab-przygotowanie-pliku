@@ -92,7 +92,12 @@ test("N33: nagłówek innego operatora i inny raport z eLicznika", () => {
     czytaj(utf8("Rodzaj energii;Data;Wartosc[kWh/kvar]\nenergia czynna pobrana netto;2025-01-01;1,000\n")),
     { ok: false, kod: "blad_naglowek" },
   );
-  assert.deepEqual(czytaj(utf8("")), { ok: false, kod: "blad_inny_operator" });
+});
+
+test("pusty plik: zero bajtów albo same puste linie dają blad_nieznany", () => {
+  assert.deepEqual(czytaj(new Uint8Array(0)), { ok: false, kod: "blad_nieznany" });
+  assert.deepEqual(czytaj(utf8("\n\r\n   \n\t\n")), { ok: false, kod: "blad_nieznany" });
+  assert.deepEqual(czytaj(new Uint8Array([0xef, 0xbb, 0xbf])), { ok: false, kod: "blad_nieznany" }, "sam znacznik BOM");
 });
 
 test("N5: drugi PPE w środku pliku to blokada blad_wiele_ppe", () => {
@@ -124,6 +129,32 @@ test("N7: PPE w kolumnie Strefa, słowo PPE, ciąg 12 cyfr, adres e-mail: każdy
   }
 });
 
+test("reguła 6: numer zapisany z odstępami albo kropkami w innym polu blokuje", () => {
+  const z = "2025-02-03 05:00";
+  const wStrefie = (tekst) => generuj({ ...DZIEN, podmien: [{ znacznik: z, seria: "pobor", pole: "strefa", tekst }] }).surowy;
+  const przypadki = {
+    "numer płatnika z odstępami": PLATNICY_FIKCYJNI[0].match(/.{2}/g).join(" "),
+    "PPE z kropkami co cztery cyfry": PPE_FIKCYJNE[0].match(/.{1,4}/g).join("."),
+    "12 cyfr w grupach po cztery": ["7777", "7777", "7777"].join(" "),
+    "numer płatnika z ukośnikami": PLATNICY_FIKCYJNI[0].match(/.{4}/g).join("/"),
+  };
+  for (const [nazwa, tekst] of Object.entries(przypadki)) {
+    const bajty = wStrefie(tekst);
+    const linia = liniaZ(bajty, z, "energia czynna pobrana netto");
+    assert.deepEqual(czytaj(bajty), { ok: false, kod: "blad_bezpiecznik", wiersz: linia, blokada: true }, nazwa);
+  }
+});
+
+test("reguła 6: zwykłe pliki z generatora nadal przechodzą", () => {
+  for (const opcje of [
+    { od: "2025-01-01", do: "2025-12-31", ziarno: 21 },
+    { od: "2024-01-01", do: "2024-12-31", ziarno: 22, bierna: true },
+    { od: "2025-01-01", do: "2025-03-31", ziarno: 23, ppe: PPE_FIKCYJNE[1], platnik: PLATNICY_FIKCYJNI[1] },
+  ]) {
+    assert.equal(czytaj(generuj(opcje).surowy).ok, true, JSON.stringify(opcje));
+  }
+});
+
 test("same cyfry PPE w kolumnie wartości: plik odrzucony wcześniej, nie trafia do ZIP-a", () => {
   const bajty = generuj({ ...DZIEN, podmien: [{ znacznik: "2025-02-03 05:00", seria: "pobor", pole: "wartosc", tekst: PPE_FIKCYJNE[0] }] }).surowy;
   assert.equal(czytaj(bajty).kod, "blad_wartosc");
@@ -145,6 +176,22 @@ test("bezpiecznik: reguły osobno, w tym usunięte wartości od 6 znaków i gran
   assert.equal(sprawdzBezpiecznik(linie(`a;${"1".repeat(11)};b`), []), null, "11 cyfr nie blokuje");
   assert.deepEqual(sprawdzBezpiecznik(linie(`x;${["a.b", "c.pl"].join("@")}`), []), { linia: 1 });
   assert.equal(sprawdzBezpiecznik(linie("x;a@b;c"), []), null);
+});
+
+test("bezpiecznik, reguła 6: cyfry w każdym polu poza znacznikiem", () => {
+  const linie = (...t) => t.map((tekst, i) => ({ tekst, linia: i + 1 }));
+  const opcje = { poleZnacznika: 1 };
+  // Znacznik daje 12 cyfr i mógłby przypadkiem zawierać usunięty numer, więc jest pominięty.
+  assert.equal(sprawdzBezpiecznik(linie("seria;2025-06-06 01:00;Reszta dnia;0,500;100,00"), ["06060100"], opcje), null);
+  assert.deepEqual(
+    sprawdzBezpiecznik(linie("seria;2025-06-06 01:00;06.06.01.00;0,500;100,00"), ["06060100"], opcje),
+    { linia: 1 },
+    "te same cyfry w polu strefy blokują",
+  );
+  assert.deepEqual(sprawdzBezpiecznik(linie("a;b", "s;2025-01-01 01:00;12-34-56;1,000;100,00"), ["PPE:123456"], opcje), { linia: 2 });
+  assert.equal(sprawdzBezpiecznik(linie("s;2025-01-01 01:00;12-34-5;1,000;100,00"), ["PPE:123456"], opcje), null, "5 cyfr to za mało");
+  assert.deepEqual(sprawdzBezpiecznik(linie("s;2025-01-01 01:00;1.2.3.4.5.6.7.8.9.0.1.2;1,000;100,00"), [], opcje), { linia: 1 });
+  assert.equal(sprawdzBezpiecznik(linie("s;2025-01-01 01:00;1.2.3.4.5.6.7.8.9.0.1;1,000;100,00"), [], opcje), null);
 });
 
 test("wiersz z inną liczbą kolumn: blad_wiersz z numerem linii pliku", () => {

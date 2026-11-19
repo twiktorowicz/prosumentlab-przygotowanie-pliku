@@ -7,7 +7,11 @@
 // 3. słowa „PPE” jako całego słowa, bez względu na wielkość liter;
 // 4. kodu PPE w standardzie GS1 (590 i 15 cyfr), także z pojedynczymi spacjami albo myślnikami
 //    między cyframi;
-// 5. adresu e-mail.
+// 5. adresu e-mail;
+// 6. w żadnym polu poza polem znacznika, po usunięciu wszystkiego, co nie jest cyfrą: cyfr
+//    żadnej z usuniętych wartości (od 6 cyfr) ani 12 i więcej cyfr z rzędu. Łapie numer zapisany
+//    z odstępami, kropkami albo ukośnikami. Pole znacznika jest pominięte, bo data i godzina dają
+//    12 cyfr i mogłyby przypadkiem zawierać numer.
 // Wynik podaje tylko numer wiersza, nigdy treść.
 
 const REGULY = [
@@ -18,16 +22,28 @@ const REGULY = [
 ];
 
 // `linie`: [{tekst, linia}], gdzie `linia` to numer linii w pliku wejściowym.
-export function sprawdzBezpiecznik(linie, usunieteWartosci) {
+// `poleZnacznika`: numer pola (od 0, separator średnik) pomijanego w regule 6.
+export function sprawdzBezpiecznik(linie, usunieteWartosci, { poleZnacznika = -1 } = {}) {
   const szukane = new Set();
+  const cyfryUsunietych = new Set();
   for (const w of usunieteWartosci) {
     const cyfry = w.replace(/\D/g, "");
     if (w.length >= 6) szukane.add(w);
-    if (cyfry.length >= 6) szukane.add(cyfry);
+    if (cyfry.length >= 6) {
+      szukane.add(cyfry);
+      cyfryUsunietych.add(cyfry);
+    }
   }
   const lista = [...szukane];
+  const listaCyfr = [...cyfryUsunietych];
+  const regula6 = (tekst) =>
+    tekst.split(";").some((pole, i) => {
+      if (i === poleZnacznika) return false;
+      const cyfry = pole.replace(/\D/g, "");
+      return cyfry.length >= 12 || listaCyfr.some((w) => cyfry.includes(w));
+    });
   for (const { tekst, linia } of linie) {
-    if (lista.some((w) => tekst.includes(w)) || REGULY.some((r) => r.test(tekst))) return { linia };
+    if (lista.some((w) => tekst.includes(w)) || REGULY.some((r) => r.test(tekst)) || regula6(tekst)) return { linia };
   }
   return null;
 }

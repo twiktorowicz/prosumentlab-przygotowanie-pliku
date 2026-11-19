@@ -12,6 +12,7 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import { parseArgs } from "node:util";
 import { przygotujZgloszenie } from "../app/lib/zgloszenie.js";
+import { bladBudowyFormularza } from "../app/lib/formularz.js";
 import { poprawnaDoba } from "../app/lib/kalendarz.js";
 import { liczbaZCyfr } from "../app/lib/kwoty.js";
 
@@ -25,7 +26,9 @@ Opcje:
   --numer       numer zgłoszenia, 8 znaków z alfabetu 0-9 A-Z bez I, L, O, U, zapis XXXX-XXXX
   --data        dzień utworzenia zapisywany w zgloszenie.json
   --formularz   plik JSON z surowymi wartościami pól: {"faktura": {…}, "instalacja": {…},
-                "zgoda": true}; bez tej opcji formularz jest pusty
+                "zgoda": true}; wartości pól to tekst (cena może być listą tekstów), zgoda
+                true albo false; nieznany klucz albo zły typ to złe wywołanie (kod 2);
+                bez tej opcji formularz jest pusty
   --wyjscie     ścieżka pliku ZIP
   --help        ta pomoc
 
@@ -70,6 +73,9 @@ function argumenty(lista) {
     } catch {
       throw new ZleWywolanie("--formularz: nie da się odczytać pliku JSON");
     }
+    // Zła budowa to złe wywołanie: test nie może przejść przez literówkę w kluczu.
+    const zlyKlucz = bladBudowyFormularza(formularz);
+    if (zlyKlucz) throw new ZleWywolanie(`--formularz: nieznany klucz albo zły typ wartości: ${zlyKlucz}`);
   }
   let pliki;
   try {
