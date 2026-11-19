@@ -1,0 +1,47 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  testy:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "26.13.1"
+      - name: Testy
+        run: node --test "test/**/*.test.mjs"
+
+  gitleaks:
+    runs-on: ubuntu-24.04
+    env:
+      GITLEAKS_WERSJA: "8.30.1"
+      GITLEAKS_SHA256: "551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Pobranie gitleaks i sprawdzenie sumy
+        run: |
+          plik="gitleaks_${GITLEAKS_WERSJA}_linux_x64.tar.gz"
+          curl -sSfL -o "$RUNNER_TEMP/$plik" \
+            "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_WERSJA}/$plik"
+          echo "${GITLEAKS_SHA256}  $RUNNER_TEMP/$plik" | sha256sum -c -
+          tar -xzf "$RUNNER_TEMP/$plik" -C "$RUNNER_TEMP" gitleaks
+      - name: Gitleaks na całej historii
+        run: >
+          "$RUNNER_TEMP/gitleaks" git
+          --config .gitleaks.toml
+          --log-opts="--all"
+          --redact
+          --exit-code 1
+          .

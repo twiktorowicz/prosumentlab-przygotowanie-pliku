@@ -1,0 +1,4 @@
+# Wyniki prób lokalnych: pliki z generatora i zapisane ZIP-y nie trafiają do repozytorium.
+/proby/
+*.zip
+.DS_Store

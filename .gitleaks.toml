@@ -1,0 +1,36 @@
+title = "prosumentlab-anonimizator"
+
+# Domyślne reguły gitleaks plus reguły na dane, które w tym repozytorium nie mogą się pojawić:
+# długie numery (PPE, numery klienta, PESEL) i adresy e-mail. Jedyne dozwolone ciągi 12 i więcej
+# cyfr to dwa fikcyjne numery PPE z celowo błędną cyfrą kontrolną.
+
+[extend]
+useDefault = true
+
+[[rules]]
+id = "ciag-12-cyfr"
+description = "Ciąg 12 i więcej cyfr (możliwy numer PPE, klienta albo licznika)"
+regex = '''\d{12,}'''
+
+  [[rules.allowlists]]
+  regexes = ['''^(590000000000000010|590000000000000021)$''']
+
+  [[rules.allowlists]]
+  # Skróty SHA-256 w pliku sum kontrolnych to zapis szesnastkowy, nie numery.
+  paths = ['''(^|/)SHA256SUMS$''']
+
+[[rules]]
+id = "ppe-gs1-rozdzielony"
+description = "Numer PPE w standardzie GS1 (590 i 15 cyfr) ze spacjami albo myślnikami"
+regex = '''590(?:[ -]?\d){15}'''
+
+  [[rules.allowlists]]
+  regexes = ['''^(590000000000000010|590000000000000021)$''']
+
+[[rules]]
+id = "adres-e-mail"
+description = "Adres e-mail"
+regex = '''[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}'''
+
+  [[rules.allowlists]]
+  regexes = ['''^raporty@prosumentlab\.pl$''', '''@example\.invalid$''']
