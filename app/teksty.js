@@ -1,8 +1,8 @@
 // Teksty narzędzia do przygotowania pliku dla klienta. Zasady: zwracamy się do klienta per Ty
 // (Ty, Twój wielką literą), krótkimi zdaniami i prostym językiem, bez słów z naszej kuchni
-// (import, weryfikacja, OSD i podobnych), bez pauz i wykrzykników. Mówimy „narzędzie do
-// przygotowania pliku”, nigdy „anonimizator” ani „anonimizacja”. Nowy albo zmieniony tekst
-// zatwierdza właściciel.
+// (import, weryfikacja, OSD i podobnych), bez pauz i wykrzykników. Narzędzie nazywamy
+// „narzędziem do przygotowania pliku” i żadną inną nazwą. Nowy albo zmieniony tekst zatwierdza
+// właściciel.
 export const TEKSTY = {
   "tytul_strony": "Narzędzie do przygotowania pliku",
   "wstep_tytul": "Przygotuj plik do wysłania",
