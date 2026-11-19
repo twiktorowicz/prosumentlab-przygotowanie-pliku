@@ -23,7 +23,19 @@ export const NAGLOWEK_ZANONIMIZOWANY = "Rodzaj energii;Data i godzina;Strefa;War
 export const USUNIETE_KOLUMNY = ["Nr platnika", "Nr punktu poboru energii"];
 export const LIMIT_WIERSZY = 50000;
 
-const SERIE = { "energia czynna oddana netto": "oddanie", "energia czynna pobrana netto": "pobor" };
+// Dokładnie te cztery nazwy serii; każda inna to błąd. Dwie serie energii biernej przechodzą
+// do wyniku bez zmian (z uwagą), bo eLicznik dołącza je, gdy klient zaznaczy te pola.
+const SERIE = {
+  "energia czynna oddana netto": "oddanie",
+  "energia czynna pobrana netto": "pobor",
+  "energia bierna indukcyjna pobrana": "bierna",
+  "energia bierna pojemnościowa pobrana": "bierna",
+};
+// Etykieta strefy: same litery i pojedyncze spacje, od 2 do 40 znaków, najwyżej 8 różnych
+// etykiet w pliku. Prawdziwe etykiety z eLicznika to nazwy stref („Reszta dnia”); w tej kolumnie
+// nie może przejść numer, adres ani inny tekst, który trafiłby do ZIP-a.
+const STREFA = /^\p{L}+(?: \p{L}+)*$/u;
+const MAKS_ETYKIET = 8;
 const WARTOSC = /^(\d{1,9})(?:,(\d{1,3}))?$/;
 const KOMPLETNOSC = /^(\d{1,3})(?:,\d{1,2})?$/;
 
@@ -97,12 +109,9 @@ export function czytajTauron(tekst) {
     if (wiersze.length >= LIMIT_WIERSZY) return blad("blad_za_duzy");
     const [nazwaSerii, znacznik, strefa, wartosc, kompletnosc] = pola.slice(przesuniecie);
 
-    let seria = SERIE[nazwaSerii];
-    if (!seria) {
-      if (!nazwaSerii.startsWith("energia bierna")) return blad("blad_seria", nr);
-      seria = "bierna";
-      bierna = true;
-    }
+    const seria = SERIE[nazwaSerii];
+    if (!seria) return blad("blad_seria", nr);
+    if (seria === "bierna") bierna = true;
     const z = rozbierzZnacznik(znacznik);
     if (!z.ok) return blad(z.kod === "nie_godzinowe" ? "blad_nie_godzinowe" : "blad_data", nr);
     const mw = WARTOSC.exec(wartosc);
@@ -132,6 +141,16 @@ export function czytajTauron(tekst) {
   // W pliku wyjściowym znacznik jest drugim polem.
   const trafienie = sprawdzBezpiecznik(wyjscie, identyfikatory ? [identyfikatory.platnik, identyfikatory.ppe] : [], { poleZnacznika: 1 });
   if (trafienie) return { ok: false, kod: "blad_bezpiecznik", wiersz: trafienie.linia, blokada: true };
+
+  // Kolumna strefy po bezpieczniku: to, co wygląda na numer albo adres e-mail, blokuje z jego
+  // komunikatem; reszta tekstu spoza dozwolonej postaci odrzuca plik.
+  const etykiety = new Set();
+  for (const w of wiersze) {
+    const dlugosc = [...w.strefa].length;
+    if (!STREFA.test(w.strefa) || dlugosc < 2 || dlugosc > 40) return blad("blad_strefa", w.linia);
+    etykiety.add(w.strefa);
+    if (etykiety.size > MAKS_ETYKIET) return blad("blad_strefa", w.linia);
+  }
 
   for (const s of ["oddanie", "pobor", "bierna"]) przypiszWystapienia(wiersze.filter((w) => w.seria === s));
 

@@ -77,15 +77,18 @@ export function naGrosze(kwota) {
   return m[1] ? -grosze : grosze;
 }
 
-// Pole na dowolny tekst (nazwa sprzedawcy, taryfy, opłaty): najwyżej 60 znaków, bez „@”
-// i bez znaków sterujących (także nowej linii i tabulatora).
+// Pole na dowolny tekst (nazwa sprzedawcy, taryfy, opłaty): najwyżej 60 znaków. Dozwolone są
+// tylko litery, cyfry ASCII, spacja i znaki . , - / ( ) + & ' %. Lista dozwolonych zamiast
+// zakazanych zamyka drogę numerom z niewidocznymi znakami, cyframi pełnej szerokości albo
+// znakami zmiany kierunku pisma. Tekst jest najpierw składany (NFC), więc litera zapisana jako
+// litera i znak łączący też przechodzi.
 // Ciągi cyfr liczone po pominięciu spacji, myślników, kropek i ukośników między cyframi:
 // 5 i więcej cyfr to błąd (kod pocztowy, telefon, numer klienta), 4 cyfry tylko jako rok
 // 2000–2099, krótsze ciągi są dozwolone.
 export function czytajTekstWolny(tekst) {
-  if (typeof tekst !== "string" || /\p{Cc}/u.test(tekst)) return blad;
-  const t = tekst.trim();
-  if ([...t].length > 60 || t.includes("@")) return blad;
+  if (typeof tekst !== "string") return blad;
+  const t = tekst.normalize("NFC").replace(/^ +| +$/g, "");
+  if ([...t].length > 60 || !/^[\p{L}0-9 .,\-/()+&'%]*$/u.test(t)) return blad;
   for (const ciag of t.matchAll(/\d(?:[ \u00a0\-./]*\d)*/g)) {
     const cyfry = ciag[0].replace(/\D/g, "");
     if (cyfry.length >= 5) return blad;

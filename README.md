@@ -11,7 +11,7 @@ Działa w przeglądarce i niczego nie wysyła.
 - Sprawdza, czy w wyniku nie zostało nic, co wygląda na numer PPE, długi numer albo adres e-mail.
   Jeśli zostało, nie tworzy pliku ZIP.
 - Liczy, ile pełnych miesięcy obejmują dane, i porównuje pliki, które na siebie zachodzą.
-- Zbiera kilkanaście liczb przepisanych z faktury i nieobowiązkowe odpowiedzi o instalacji.
+- Zbiera liczby i nazwy przepisane z faktury oraz nieobowiązkowe odpowiedzi o instalacji.
 - Pokazuje podgląd wszystkiego, co trafi do pliku ZIP, i zapisuje ZIP na urządzeniu.
   Plik wysyła się samodzielnie, mailem.
 

@@ -18,7 +18,7 @@ import {
   NAGLOWEK_ZANONIMIZOWANY,
   SERIA_ODDANIE,
   SERIA_POBOR,
-  SERIA_BIERNA,
+  SERIE_BIERNE,
 } from "../narzedzia/generator.mjs";
 
 const KORZEN = fileURLToPath(new URL("..", import.meta.url));
@@ -288,10 +288,13 @@ test("psucie: podmiana dowolnego pola wiersza", () => {
   assert.equal(p[3], "1.5");
 });
 
-test("seria energii biernej po seriach czynnych", () => {
+test("energia bierna: dwie serie pod nazwami z eLicznika, bloki w kolejności alfabetycznej nazw", () => {
+  assert.deepEqual(SERIE_BIERNE, ["energia bierna indukcyjna pobrana", "energia bierna pojemnościowa pobrana"]);
   const w = wiersze(generuj({ od: "2025-02-03", do: "2025-02-03", ziarno: 1, bierna: true }));
-  assert.equal(w.length, 72);
-  assert.ok(w.slice(48).every((p) => p[0] === SERIA_BIERNA));
+  assert.equal(w.length, 96);
+  const kolejnosc = [...new Set(w.map((p) => p[0]))];
+  assert.deepEqual(kolejnosc, [...SERIE_BIERNE, SERIA_ODDANIE, SERIA_POBOR]);
+  assert.deepEqual(kolejnosc, [...kolejnosc].sort());
 });
 
 test("plik surowy w UTF-8, z BOM i z LF", () => {

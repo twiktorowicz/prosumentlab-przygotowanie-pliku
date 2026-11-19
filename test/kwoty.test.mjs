@@ -119,6 +119,28 @@ test("pola na dowolny tekst: bez znaków sterujących, także nowej linii i tabu
   assert.equal(czytajTekstWolny("Opłata handlowa").ok, true);
 });
 
+test("pola na dowolny tekst: tylko litery, cyfry ASCII, spacja i znaki . , - / ( ) + & ' %", () => {
+  const zle = {
+    "cyfry z niewidocznym znakiem między nimi": "Nr 123\u200b45",
+    "cyfry z niewidocznym łącznikiem": "Nr 12\u2060345",
+    "cyfry pełnej szerokości": "Nr \uff11\uff12\uff13\uff14\uff15",
+    "znak zmiany kierunku pisma": "Opłata \u202ehandlowa",
+    "znak kierunku pisma (izolacja)": "Opłata \u2066handlowa",
+    "twarda spacja w środku": "Opłata\u00a0handlowa",
+    "podkreślenie": "Opłata_handlowa",
+    "krzyżyk": "Opłata #1",
+    "dwukropek": "Opłata: handlowa",
+    "cyfry arabsko-indyjskie": "Nr \u0661\u0662\u0663",
+    "emoji": "Opłata \u{1F4A1}",
+  };
+  for (const [nazwa, tekst] of Object.entries(zle)) assert.equal(czytajTekstWolny(tekst).ok, false, nazwa);
+  for (const dobry of ["Opłata handlowa", "Taryfa G12w", "Opłata (stała) 50%", "A&B Energia", "Prąd + gaz", "Opłata d'Arc", "Sprzedawca, S.A.", "Plan 1/2"]) {
+    assert.equal(czytajTekstWolny(dobry).ok, true, dobry);
+  }
+  // Litera zapisana jako litera i znak łączący (np. z kopiowania) jest przyjęta po złożeniu.
+  assert.deepEqual(czytajTekstWolny("Opa\u0328ta"), { ok: true, wartosc: "Opąta" });
+});
+
 test("grosze z kwoty i liczby z cyfr", () => {
   assert.equal(naGrosze("12.34"), 1234);
   assert.equal(naGrosze("0.05"), 5);

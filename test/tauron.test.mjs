@@ -224,7 +224,62 @@ test("błędy wartości, znacznika i serii", () => {
   assert.equal(przypadek("znacznik", "2025-02-30 05:00").kod, "blad_data");
   assert.equal(przypadek("znacznik", "03.02.2025 05:00").kod, "blad_data");
   assert.equal(przypadek("seria", "energia czynna inna").kod, "blad_seria");
-  assert.equal(przypadek("seria", "energia bierna oddana").ok, true, "seria bierna nie jest błędem");
+  assert.equal(przypadek("seria", "energia bierna indukcyjna pobrana").ok, true, "seria bierna z eLicznika nie jest błędem");
+  assert.equal(przypadek("seria", "energia bierna pojemnościowa pobrana").ok, true, "seria bierna z eLicznika nie jest błędem");
+});
+
+test("nazwa serii: dokładnie jedna z czterech nazw z eLicznika, każda inna to blad_seria z numerem wiersza", () => {
+  const z = "2025-02-03 05:00";
+  const bajty = (nazwa) => generuj({ ...DZIEN, podmien: [{ znacznik: z, seria: "pobor", pole: "seria", tekst: nazwa }] }).surowy;
+  for (const nazwa of [
+    "energia bierna pobrana",
+    "energia bierna indukcyjna pobrana Jan Kowalski",
+    "energia bierna indukcyjna pobrana 600 700 800",
+    "energia bierna",
+    "energia czynna pobrana",
+    "Energia czynna pobrana netto",
+    "energia czynna pobrana netto ",
+  ]) {
+    const b = bajty(nazwa);
+    const linia = new TextDecoder("windows-1250").decode(b).split("\r\n").findIndex((l) => l.includes(`;${nazwa};${z};`)) + 1;
+    assert.ok(linia > 1, nazwa);
+    assert.deepEqual(czytaj(b), { ok: false, kod: "blad_seria", wiersz: linia }, nazwa);
+  }
+});
+
+test("kolumna strefy: tylko litery i pojedyncze spacje, 2–40 znaków; inaczej blad_strefa z numerem wiersza", () => {
+  const z = "2025-02-03 05:00";
+  const strefa = (tekst) => generuj({ ...DZIEN, podmien: [{ znacznik: z, seria: "pobor", pole: "strefa", tekst }] }).surowy;
+  const przypadki = {
+    "imię z adresem": "Jan Kowalski ul. Polna 5",
+    "telefon z odstępami": "600 700 800",
+    "11 cyfr": "12345678901",
+    "8 cyfr innych niż numer płatnika": "87654321",
+    "podwójna spacja": "Reszta  dnia",
+    "spacja na początku": " Reszta dnia",
+    "jeden znak": "A",
+    "41 liter": "a".repeat(41),
+    "znak spoza liter": "Reszta_dnia",
+    "twarda spacja": "Reszta\u00a0dnia",
+  };
+  for (const [nazwa, tekst] of Object.entries(przypadki)) {
+    const b = strefa(tekst);
+    const linia = liniaZ(b, z, "energia czynna pobrana netto");
+    assert.deepEqual(czytaj(b), { ok: false, kod: "blad_strefa", wiersz: linia }, nazwa);
+  }
+  for (const dobra of ["Reszta dnia", "Szczyt przedpołudniowy", "ab", "a".repeat(40), "Strefa nocna"]) {
+    assert.equal(czytaj(strefa(dobra)).ok, true, dobra);
+  }
+});
+
+test("kolumna strefy: najwyżej 8 różnych etykiet w pliku; dziewiąta to blad_strefa w jej wierszu", () => {
+  const nazwy = ["Alfa", "Beta", "Gamma", "Delta", "Epsilon", "Zeta"];
+  // Plik G13 ma już 3 etykiety; 5 nowych daje 8, szósta nowa to dziewiąta etykieta w pliku.
+  const podmien = (ile) => nazwy.slice(0, ile).map((tekst, i) => ({ znacznik: `2025-02-03 0${i + 1}:00`, seria: "pobor", pole: "strefa", tekst }));
+  assert.equal(czytaj(generuj({ ...DZIEN, podmien: podmien(5) }).surowy).ok, true, "8 etykiet");
+  const b = generuj({ ...DZIEN, podmien: podmien(6) }).surowy;
+  const linia = liniaZ(b, "2025-02-03 06:00", "energia czynna pobrana netto");
+  assert.deepEqual(czytaj(b), { ok: false, kod: "blad_strefa", wiersz: linia });
 });
 
 test("brak jednej z serii czynnych: blad_brak_serii", () => {
@@ -233,11 +288,12 @@ test("brak jednej z serii czynnych: blad_brak_serii", () => {
   assert.deepEqual(czytajTauron(bezPoboru), { ok: false, kod: "blad_brak_serii" });
 });
 
-test("seria bierna zostaje w wyniku bez zmian, z uwagą", () => {
+test("serie energii biernej zostają w wyniku bez zmian, z uwagą", () => {
   const w = czytaj(generuj({ ...DZIEN, bierna: true }).surowy);
   assert.equal(w.ok, true);
-  assert.equal(w.wierszeDanych, 72);
-  assert.ok(w.wynik.includes("energia bierna pobrana;2025-02-03 01:00;"));
+  assert.equal(w.wierszeDanych, 96);
+  assert.ok(w.wynik.includes("energia bierna indukcyjna pobrana;2025-02-03 01:00;"));
+  assert.ok(w.wynik.includes("energia bierna pojemnościowa pobrana;2025-02-03 01:00;"));
   assert.deepEqual(w.uwagi, [{ kod: "UWAGA_BIERNA" }]);
 });
 

@@ -32,6 +32,7 @@ export const TEKSTY = {
   "blad_data": "W wierszu {wiersz} jest data, której narzędzie nie odczytało. Pobierz plik jeszcze raz z eLicznika i nie otwieraj go wcześniej w arkuszu kalkulacyjnym.",
   "blad_wartosc": "W wierszu {wiersz} jest wartość, której narzędzie nie odczytało. Pobierz plik jeszcze raz z eLicznika i nie otwieraj go wcześniej w arkuszu kalkulacyjnym.",
   "blad_seria": "W wierszu {wiersz} jest rodzaj energii, którego narzędzie nie przyjmuje. Zleć raport jeszcze raz i zaznacz tylko „Energia pobrana po zbilansowaniu” oraz „Energia oddana po zbilansowaniu”.",
+  "blad_strefa": "W wierszu {wiersz} kolumna strefy ma wartość, której narzędzie nie przyjmuje. Napisz na adres raporty@prosumentlab.pl, bez załącznika, a ustalimy, co dalej.",
   "blad_brak_serii": "W pliku brakuje energii pobranej albo oddanej. Zleć raport jeszcze raz i zaznacz „Energia pobrana po zbilansowaniu” oraz „Energia oddana po zbilansowaniu”.",
   "blad_nie_godzinowe": "To nie są dane godzinowe. W eLiczniku zleć „Raport godzinowy”.",
   "blad_wiele_ppe": "Ten plik zawiera dane więcej niż jednego punktu poboru. Pobierz w eLiczniku osobny plik dla każdego punktu i przygotuj każdy osobno.",

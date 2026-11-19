@@ -35,8 +35,9 @@ export const NAGLOWEK_ZANONIMIZOWANY = "Rodzaj energii;Data i godzina;Strefa;War
 
 export const SERIA_ODDANIE = "energia czynna oddana netto";
 export const SERIA_POBOR = "energia czynna pobrana netto";
-// Nazwa serii energii biernej to założenie: znany jest tylko początek "energia bierna".
-export const SERIA_BIERNA = "energia bierna pobrana";
+// Serie energii biernej pod nazwami z eLicznika (pola „Energia bierna indukcyjna”
+// i „Energia bierna pojemnościowa”). W pliku serie stoją blokami w kolejności alfabetycznej nazw.
+export const SERIE_BIERNE = ["energia bierna indukcyjna pobrana", "energia bierna pojemnościowa pobrana"];
 
 const STREFA_PRZED = "Szczyt przedpołudniowy";
 const STREFA_POPO = "Szczyt popołudniowy";
@@ -192,11 +193,12 @@ const kwh = (wh) => `${Math.floor(wh / 1000)},${String(wh % 1000).padStart(3, "0
 
 // --- Kodowanie -------------------------------------------------------------------------------
 
-// Polskie litery w Windows-1250; pozostałe znaki w plikach eLicznika są ASCII.
+// Polskie litery (i twarda spacja) w Windows-1250; pozostałe znaki w plikach eLicznika są ASCII.
 const CP1250 = new Map(
   Object.entries({
     ą: 0xb9, ć: 0xe6, ę: 0xea, ł: 0xb3, ń: 0xf1, ó: 0xf3, ś: 0x9c, ź: 0x9f, ż: 0xbf,
     Ą: 0xa5, Ć: 0xc6, Ę: 0xca, Ł: 0xa3, Ń: 0xd1, Ó: 0xd3, Ś: 0x8c, Ź: 0x8f, Ż: 0xaf,
+    "\u00a0": 0xa0, // twarda spacja, do testów psucia pól
   }),
 );
 
@@ -236,7 +238,7 @@ const KOLUMNA = { seria: 2, znacznik: 3, strefa: 4, wartosc: 5, kompletnosc: 6 }
  *
  * Opcje: od, do (RRRR-MM-DD, włącznie), taryfa ("G11" | "G13"), ziarno, ppe (18 cyfr), platnik,
  * kodowanie, koniecLinii, zmianaTaryfy {od, taryfa}, obetnijPoczatek, obetnijKoniec (liczba
- * godzin), bierna (seria energii biernej po seriach czynnych).
+ * godzin), bierna (dwie serie energii biernej przed seriami czynnymi, w kolejności alfabetycznej).
  * Psucie: niepelne [{znacznik, kompletnosc}], luka {znacznik, godzin}, powtorz {znacznik,
  * seria, wartoscWh}, odwrocPare (true), drugiPpe (true albo numer), ppeWStrefie {znacznik,
  * seria}, podmien [{znacznik, seria, pole, tekst}].
@@ -298,7 +300,8 @@ export function generuj(opcje = {}) {
     pobor: godziny.map((g) => [platnik, kolumnaPpe, SERIA_POBOR, g.znacznik, g.strefa, kwh(g.pobor), g.kompletnosc]),
   };
   if (opcje.bierna) {
-    serie.bierna = godziny.map((g) => [platnik, kolumnaPpe, SERIA_BIERNA, g.znacznik, g.strefa, kwh(g.bierna), g.kompletnosc]);
+    serie.bierna = SERIE_BIERNE.flatMap((nazwa, i) =>
+      godziny.map((g) => [platnik, kolumnaPpe, nazwa, g.znacznik, g.strefa, kwh((g.bierna * (i + 1)) % 500), g.kompletnosc]));
   }
 
   const znajdz = (nazwaSerii, z) => {
@@ -336,7 +339,7 @@ export function generuj(opcje = {}) {
     s[i][KOLUMNA[pole]] = tekst;
   }
 
-  const wiersze = [...serie.oddanie, ...serie.pobor, ...(serie.bierna ?? [])];
+  const wiersze = [...(serie.bierna ?? []), ...serie.oddanie, ...serie.pobor];
   if (opcje.drugiPpe) {
     const drugi = opcje.drugiPpe === true ? PPE_FIKCYJNE[1] : opcje.drugiPpe;
     for (let i = Math.floor(wiersze.length / 2); i < wiersze.length; i++) wiersze[i][1] = `PPE:${drugi}`;
@@ -365,7 +368,7 @@ Opcje:
   --kodowanie        windows-1250 (domyślnie), utf-8, utf-8-bom (tylko wariant surowy)
   --lf               koniec linii LF zamiast CRLF (tylko wariant surowy)
   --drugi-ppe        drugi fikcyjny PPE od połowy pliku
-  --bierna           dodaje serię energii biernej
+  --bierna           dodaje dwie serie energii biernej
   --wyjscie          plik wynikowy; bez tej opcji wynik idzie na standardowe wyjście
   --help             ta pomoc
 
