@@ -128,13 +128,13 @@ test("te same dane, numer i data dają ten sam ZIP; inny numer daje inny", () =>
 });
 
 test("bez pól z faktury i bez odpowiedzi: tylko zgloszenie.json i pomiary", () => {
-  const w = przygotujZgloszenie({ pliki: [generuj(N1).zanonimizowany], formularz: {}, numer: NUMER, utworzono: DATA });
+  const w = przygotujZgloszenie({ pliki: [generuj(N1).bezNumerow], formularz: {}, numer: NUMER, utworzono: DATA });
   assert.equal(w.moznaZapisac, true);
   assert.deepEqual(w.zawartosc.map((p) => p.nazwa), ["zgloszenie.json", "pomiary_1.csv"]);
   const z = jsonPliku(w, "zgloszenie.json");
   assert.equal(z.ppe_porownane, false);
   assert.equal("usuniete_kolumny" in z.pliki[0], false);
-  assert.equal(z.pliki[0].wariant_wejscia, "zanonimizowany");
+  assert.equal(z.pliki[0].wariant_wejscia, "bez_numerow");
   assert.deepEqual(z.uwagi, [{ kod: "ZAKRES_NIEPELNY", gdzie: "zakres" }, { kod: "FAKTURA_BRAK_OBOWIAZKOWYCH", gdzie: "raport" }]);
 });
 
@@ -250,13 +250,13 @@ test("podgląd: pierwsze 5 wierszy danych dokładnie jak w pliku wyjściowym, su
 // zgłoszenia z formularzem (zlozZgloszenie). ZIP złożony z części ma być bajt w bajt taki sam jak
 // ZIP z całości (przygotujZgloszenie). Zapisany skrót to zrzut wyniku obecnego kodu: pilnuje, żeby
 // żadna zmiana nie przesunęła ani jednego bajtu bez świadomego przeliczenia skrótu.
-const SKROT_SCENARIUSZA = "68fd2700d42972f3e82e95f3820c61985e419cfa812bea709ce6333817d574a6";
+const SKROT_SCENARIUSZA = "5be337d471193a4d28cb5fd708478c65afb159a520ac2b3d69ddfd2357025823";
 function scenariuszPelny() {
   return {
     pliki: [
       generuj({ od: "2025-02-20", do: "2025-03-31", ziarno: 8 }).surowy,
       generuj({ od: "2025-01-01", do: "2025-02-21", ziarno: 8 }).surowy,
-      generuj({ od: "2025-03-25", do: "2025-04-10", ziarno: 8 }).zanonimizowany,
+      generuj({ od: "2025-03-25", do: "2025-04-10", ziarno: 8 }).bezNumerow,
     ],
     formularz: {
       faktura: {
@@ -370,7 +370,7 @@ test("bezpiecznik w plikach JSON: słowo PPE w polu wpisanym ręcznie blokuje za
 
 test("więcej niż jeden przyjęty plik i punkty poboru nieporównane: uwaga bez numerów, JSON bez zmian", () => {
   const surowy = generuj({ od: "2025-01-01", do: "2025-01-10", ziarno: 2 }).surowy;
-  const bezNumerow = generuj({ od: "2025-01-11", do: "2025-01-20", ziarno: 2 }).zanonimizowany;
+  const bezNumerow = generuj({ od: "2025-01-11", do: "2025-01-20", ziarno: 2 }).bezNumerow;
   const dwa = przygotujZgloszenie({ pliki: [surowy, bezNumerow], formularz: {}, numer: NUMER, utworzono: DATA });
   assert.equal(dwa.uwagaBezNumerow, true);
   assert.equal(dwa.moznaZapisac, true);
@@ -390,11 +390,11 @@ test("ten sam plik dwa razy: drugi odrzucony z blad_duplikat, poza ZIP-em i anal
   assert.deepEqual(czytajZip(w.zip).map((p) => p.nazwa), ["zgloszenie.json", "pomiary_1.csv"]);
   assert.equal(jsonPliku(w, "zgloszenie.json").pliki.length, 1);
   // Plik bez numerów o tym samym wyniku co plik surowy wcześniej na liście też jest duplikatem.
-  const zBezNumerow = przygotujZgloszenie({ pliki: [plik, generuj(N1).zanonimizowany], formularz: {}, numer: NUMER, utworzono: DATA });
+  const zBezNumerow = przygotujZgloszenie({ pliki: [plik, generuj(N1).bezNumerow], formularz: {}, numer: NUMER, utworzono: DATA });
   assert.equal(zBezNumerow.pliki[1].kod, "blad_duplikat");
   assert.equal(jsonPliku(zBezNumerow, "zgloszenie.json").ppe_porownane, true, "duplikat nie bierze udziału w porównaniu punktów");
   // Rozstrzyga kolejność na liście, nie pierwsza godzina.
-  const odwrotnie = przygotujZgloszenie({ pliki: [generuj(N1).zanonimizowany, plik], formularz: {}, numer: NUMER, utworzono: DATA });
+  const odwrotnie = przygotujZgloszenie({ pliki: [generuj(N1).bezNumerow, plik], formularz: {}, numer: NUMER, utworzono: DATA });
   assert.equal(odwrotnie.pliki[0].stan, "przyjety");
   assert.equal(odwrotnie.pliki[1].kod, "blad_duplikat");
 });

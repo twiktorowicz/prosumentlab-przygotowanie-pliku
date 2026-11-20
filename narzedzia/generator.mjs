@@ -52,7 +52,7 @@ export const PLATNICY_FIKCYJNI = ["10000001", "10000002"];
 
 export const NAGLOWEK_SUROWY =
   "Nr platnika;Nr punktu poboru energii;Rodzaj energii;Data i godzina;Strefa;Wartosc[kWh/kvar];Kompletnosc[%]";
-export const NAGLOWEK_ZANONIMIZOWANY = "Rodzaj energii;Data i godzina;Strefa;Wartosc[kWh/kvar];Kompletnosc[%]";
+export const NAGLOWEK_BEZ_NUMEROW = "Rodzaj energii;Data i godzina;Strefa;Wartosc[kWh/kvar];Kompletnosc[%]";
 
 export const SERIA_ODDANIE = "energia czynna oddana netto";
 export const SERIA_POBOR = "energia czynna pobrana netto";
@@ -256,7 +256,7 @@ const KOLUMNA = { seria: 2, znacznik: 3, strefa: 4, wartosc: 5, kompletnosc: 6 }
 /**
  * Tworzy plik godzinowy. Zwraca:
  * - surowy: bajty pliku w wariancie surowym (7 kolumn), kodowanie i koniec linii z opcji;
- * - zanonimizowany: bajty wariantu bez dwóch pierwszych kolumn, UTF-8, LF, LF na końcu
+ * - bezNumerow: bajty wariantu bez dwóch pierwszych kolumn, UTF-8, LF, LF na końcu
  *   (postać, jaką ma dać narzędzie).
  *
  * Opcje: od, do (RRRR-MM-DD, włącznie), taryfa ("G11" | "G13"), ziarno, ppe (18 cyfr; pusty tekst
@@ -371,10 +371,10 @@ export function generuj(opcje = {}) {
   }
 
   const surowyTekst = [NAGLOWEK_SUROWY, ...wiersze.map((w) => w.join(";"))].join(koniecLinii) + koniecLinii;
-  const anonimTekst = [NAGLOWEK_ZANONIMIZOWANY, ...wiersze.map((w) => w.slice(2).join(";"))].join("\n") + "\n";
+  const tekstBezNumerow = [NAGLOWEK_BEZ_NUMEROW, ...wiersze.map((w) => w.slice(2).join(";"))].join("\n") + "\n";
   return {
     surowy: koduj(surowyTekst, kodowanie),
-    zanonimizowany: new TextEncoder().encode(anonimTekst),
+    bezNumerow: new TextEncoder().encode(tekstBezNumerow),
   };
 }
 
@@ -389,7 +389,7 @@ Opcje:
   --od, --do         zakres dni, włącznie (wymagane)
   --taryfa           G13 (domyślnie) albo G11
   --ziarno           liczba całkowita, domyślnie 1
-  --wariant          surowy (domyślnie) albo zanonimizowany
+  --wariant          surowy (domyślnie) albo bez_numerow
   --kodowanie        iso-8859-2 (domyślnie, jak eLicznik), utf-8, utf-8-bom (tylko wariant surowy)
   --lf               koniec linii LF zamiast CRLF (tylko wariant surowy)
   --drugi-ppe        drugi fikcyjny PPE od połowy pliku
@@ -422,7 +422,7 @@ function wierszPolecen(argumenty) {
     return 0;
   }
   if (!/^-?\d+$/.test(values.ziarno)) throw new Error("--ziarno: oczekiwana liczba całkowita");
-  if (!["surowy", "zanonimizowany"].includes(values.wariant)) throw new Error("--wariant: surowy albo zanonimizowany");
+  if (!["surowy", "bez_numerow"].includes(values.wariant)) throw new Error("--wariant: surowy albo bez_numerow");
   const wynik = generuj({
     od: values.od,
     do: values.do,
@@ -433,7 +433,7 @@ function wierszPolecen(argumenty) {
     drugiPpe: values["drugi-ppe"],
     bierna: values.bierna,
   });
-  const bajty = values.wariant === "surowy" ? wynik.surowy : wynik.zanonimizowany;
+  const bajty = values.wariant === "surowy" ? wynik.surowy : wynik.bezNumerow;
   if (values.wyjscie) writeFileSync(values.wyjscie, bajty);
   else process.stdout.write(bajty);
   return 0;

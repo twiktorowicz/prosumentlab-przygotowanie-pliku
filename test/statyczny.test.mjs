@@ -79,7 +79,7 @@ test("N21: w app/ nie ma zabronionych wywołań", () => {
 test("N21: jedyny adres poza stroną to mailto: do zgłoszeń i odnośniki do strony i repozytorium", () => {
   // http://www.w3.org/2000/svg to identyfikator przestrzeni nazw w atrybucie xmlns pliku SVG;
   // przeglądarka niczego spod niego nie pobiera.
-  const dozwolone = [/^http:\/\/www\.w3\.org\/2000\/svg$/, /^mailto:raporty@prosumentlab\.pl/, /^mailto:\$\{ADRES\}\?/, /^https:\/\/github\.com\/twiktorowicz\/prosumentlab-anonimizator(?:\/|$)/];
+  const dozwolone = [/^http:\/\/www\.w3\.org\/2000\/svg$/, /^mailto:raporty@prosumentlab\.pl/, /^mailto:\$\{ADRES\}\?/, /^https:\/\/github\.com\/twiktorowicz\/prosumentlab-przygotowanie-pliku(?:\/|$)/];
   const zle = [];
   for (const sciezka of pliki()) {
     const p = wzgledna(sciezka);

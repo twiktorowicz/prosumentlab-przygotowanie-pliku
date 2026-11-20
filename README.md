@@ -1,4 +1,4 @@
-# prosumentlab-anonimizator
+# prosumentlab-przygotowanie-pliku
 
 Narzędzie do przygotowania pliku godzinowego z licznika przed wysłaniem go do ProsumentLab.
 Działa w przeglądarce i niczego nie wysyła.
@@ -14,6 +14,10 @@ Działa w przeglądarce i niczego nie wysyła.
 - Zbiera liczby i nazwy przepisane z faktury oraz nieobowiązkowe odpowiedzi o instalacji.
 - Pokazuje podgląd wszystkiego, co trafi do pliku ZIP, i zapisuje ZIP na urządzeniu.
   Plik wysyła się samodzielnie, mailem.
+
+Usunięcie dwóch numerów nie czyni danych anonimowymi. W pliku ZIP zostaje godzinowy profil
+poboru i oddania energii, a wiadomość, którą wysyłasz, łączy go z Twoim adresem e-mail.
+Dlatego o tym, co dzieje się z plikiem po wysłaniu, mówi informacja o przetwarzaniu danych.
 
 Wszystko dzieje się w pamięci przeglądarki. Narzędzie nie używa `fetch`, `localStorage` ani
 ciasteczek; strona ma politykę treści z `connect-src 'none'`.
@@ -47,6 +51,23 @@ mkdir -p proby                   # katalog wykluczony z repozytorium
 node narzedzia/generator.mjs --od 2025-01-01 --do 2025-12-31 --wyjscie proby/rok_2025.csv
 node narzedzia/generator.mjs --help
 ```
+
+## Nagłówki serwera
+
+Katalog `app/` może podawać dowolny serwer plików, ale przy każdej odpowiedzi musi wysyłać cztery
+nagłówki. Polityka treści w znaczniku `<meta>` strony nie obejmuje `frame-ancestors`, dlatego
+nagłówek `Content-Security-Policy` ma tę samą politykę co `index.html` i dodatkowo
+`frame-ancestors 'none'`:
+
+```
+Content-Security-Policy: default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; font-src 'self'; connect-src 'none'; form-action 'none'; base-uri 'none'; frame-ancestors 'none'
+Cross-Origin-Opener-Policy: same-origin
+X-Content-Type-Options: nosniff
+Referrer-Policy: no-referrer
+```
+
+Lokalny serwer (`narzedzia/serwer.mjs`) wysyła te same nagłówki; `test/serwer.test.mjs` pilnuje,
+żeby lista tutaj zgadzała się z serwerem.
 
 ## Próba w przeglądarce na komputerze
 

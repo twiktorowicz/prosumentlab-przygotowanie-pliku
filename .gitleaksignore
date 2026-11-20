@@ -1,0 +1,17 @@
+# Trafienia reguły ciag-8-11-cyfr (.gitleaks.toml) w commitach sprzed wprowadzenia tej reguły.
+# Każda linia to odcisk jednego trafienia: commit, plik, reguła, linia. Wszystkie wartości to
+# syntetyczne dane testowe (ziarno generatora liczb w teście, wartości wejściowe testów kWh,
+# kolumny strefy i bezpiecznika) albo stała liczby milisekund doby w app/lib/kalendarz.js.
+# W bieżącym kodzie są już przepisane, a test/repo.test.mjs pilnuje, żeby nie wróciły.
+# Nowych wpisów tu nie dopisujemy: nowe trafienie poprawia się w kodzie.
+06036da23e71db14c00eb3575133e903b08494c1:test/tauron.test.mjs:ciag-8-11-cyfr:185
+06036da23e71db14c00eb3575133e903b08494c1:test/tauron.test.mjs:ciag-8-11-cyfr:187
+332bd131bab59d4f4c65d0e5a7979ba6aacd6406:test/tauron.test.mjs:ciag-8-11-cyfr:256
+332bd131bab59d4f4c65d0e5a7979ba6aacd6406:test/tauron.test.mjs:ciag-8-11-cyfr:257
+55280482a60346b1b3ff3de7df000034b4a6374d:app/lib/kalendarz.js:ciag-8-11-cyfr:12
+55280482a60346b1b3ff3de7df000034b4a6374d:test/numer.test.mjs:ciag-8-11-cyfr:35
+55280482a60346b1b3ff3de7df000034b4a6374d:test/odmiana.test.mjs:ciag-8-11-cyfr:61
+55280482a60346b1b3ff3de7df000034b4a6374d:test/odmiana.test.mjs:ciag-8-11-cyfr:62
+55280482a60346b1b3ff3de7df000034b4a6374d:test/tauron.test.mjs:ciag-8-11-cyfr:139
+55280482a60346b1b3ff3de7df000034b4a6374d:test/tauron.test.mjs:ciag-8-11-cyfr:170
+d96f66c0be6c6f5168b3c75bb3a9ba18de59217e:test/kwoty.test.mjs:ciag-8-11-cyfr:69

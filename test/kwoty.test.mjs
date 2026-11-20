@@ -66,7 +66,7 @@ test("N17: ceny", () => {
 test("ceny: najwyżej 2 cyfry przed przecinkiem", () => {
   assert.equal(wartosc(czytajCene("99,50")), "99.50");
   assert.equal(wartosc(czytajCene("100,50")), "błąd");
-  assert.equal(wartosc(czytajCene("12345678,00")), "błąd");
+  assert.equal(wartosc(czytajCene(`${"9".repeat(8)},00`)), "błąd");
   assert.equal(wartosc(czytajCene("007,50")), "7.50", "zera wiodące się nie liczą");
 });
 

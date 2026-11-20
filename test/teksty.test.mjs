@@ -117,7 +117,7 @@ test("zgoda: jedno „Więcej: ” przed nazwą dokumentu, którą strona zamien
   assert.equal(czesci[1], "informacja o przetwarzaniu danych, punkt 3.");
 });
 
-test("styl, część mechaniczna: bez pauzy, wykrzyknika, „anonimizacji” i słów z naszej kuchni", () => {
+test("styl, część mechaniczna: bez pauzy, wykrzyknika, nazw technicznych narzędzia i słów z naszej kuchni", () => {
   const ZAKAZANE = [
     /—/, /!/, /anonimiz/i, /anonimow/i, /weryfik/i, /posiada/i, /w oparciu o/i, /dedykowan/i, /\bw celu\b/i,
     /\bgeneruj/i, /\bimport\b/i, /\beksport\b/i, /dostawc/i, /\bOSD\b/, /\bsilnik/i, /\bimporter/i,

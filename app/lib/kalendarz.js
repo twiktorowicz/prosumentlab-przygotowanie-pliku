@@ -9,7 +9,7 @@
 
 import { liczbaZCyfr } from "./kwoty.js";
 
-const MS_DOBY = 86400000;
+const MS_DOBY = 24 * 60 * 60 * 1000;
 
 // Lata, które narzędzie przyjmuje w znacznikach pliku i w datach z formularza. Poza nimi data
 // jest błędem: eLicznik nie ma danych sprzed 2010 r., a górna granica ogranicza koszt analizy

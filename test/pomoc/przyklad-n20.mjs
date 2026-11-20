@@ -11,7 +11,7 @@ const NUMER = "K7M3-Q9TX";
 const DATA = "2026-11-19";
 
 export function przykladN20() {
-  const pomiary = new TextDecoder().decode(generuj(N1).zanonimizowany);
+  const pomiary = new TextDecoder().decode(generuj(N1).bezNumerow);
   const zgloszenie = {
     format: "prosumentlab/zgloszenie",
     wersja_formatu: 1,

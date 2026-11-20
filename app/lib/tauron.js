@@ -2,7 +2,7 @@
 //
 // Dwa warianty nagłówka:
 // - surowy, 7 kolumn: plik prosto z eLicznika, z numerem płatnika i numerem PPE;
-// - zanonimizowany, 5 kolumn: bez tych numerów; przechodzi bez zmian.
+// - bez numerów (bez_numerow), 5 kolumn: bez tych numerów; przechodzi bez zmian.
 // Separator średnik, bez cudzysłowów, koniec linii CRLF albo LF, puste linie pomijane.
 // Numer wiersza w komunikatach to numer linii w pliku (nagłówek zwykle ma numer 1).
 //
@@ -19,7 +19,7 @@ import { sprawdzBezpiecznik } from "./bezpiecznik.js";
 
 export const NAGLOWEK_SUROWY =
   "Nr platnika;Nr punktu poboru energii;Rodzaj energii;Data i godzina;Strefa;Wartosc[kWh/kvar];Kompletnosc[%]";
-export const NAGLOWEK_ZANONIMIZOWANY = "Rodzaj energii;Data i godzina;Strefa;Wartosc[kWh/kvar];Kompletnosc[%]";
+export const NAGLOWEK_BEZ_NUMEROW = "Rodzaj energii;Data i godzina;Strefa;Wartosc[kWh/kvar];Kompletnosc[%]";
 export const USUNIETE_KOLUMNY = ["Nr platnika", "Nr punktu poboru energii"];
 export const LIMIT_WIERSZY = 50000;
 
@@ -111,12 +111,12 @@ export function czytajTauron(tekst) {
   const naglowek = linie[i].replace(/^\ufeff/, "");
   let wariant;
   if (naglowek === NAGLOWEK_SUROWY) wariant = "surowy";
-  else if (naglowek === NAGLOWEK_ZANONIMIZOWANY) wariant = "zanonimizowany";
+  else if (naglowek === NAGLOWEK_BEZ_NUMEROW) wariant = "bez_numerow";
   else return nieznanyNaglowek(naglowek);
 
   const kolumn = wariant === "surowy" ? 7 : 5;
   const przesuniecie = kolumn - 5;
-  const wyjscie = [{ tekst: NAGLOWEK_ZANONIMIZOWANY, linia: i + 1 }];
+  const wyjscie = [{ tekst: NAGLOWEK_BEZ_NUMEROW, linia: i + 1 }];
   const wiersze = [];
   const platnicy = new Set();
   const punkty = new Set();

@@ -15,7 +15,7 @@ import {
   PPE_FIKCYJNE,
   PLATNICY_FIKCYJNI,
   NAGLOWEK_SUROWY,
-  NAGLOWEK_ZANONIMIZOWANY,
+  NAGLOWEK_BEZ_NUMEROW,
   SERIA_ODDANIE,
   SERIA_POBOR,
   SERIE_BIERNE,
@@ -28,11 +28,11 @@ const PARAMETRY_N1 = { od: "2025-06-06", do: "2025-06-07", taryfa: "G13", ziarno
 const dekodujIso = (bajty) => new TextDecoder("iso-8859-2").decode(bajty);
 const dekodujUtf8 = (bajty) => new TextDecoder("utf-8", { fatal: true }).decode(bajty);
 
-// Wiersze danych pliku zanonimizowanego jako tablice pól, bez nagłówka.
+// Wiersze danych pliku bez numerów jako tablice pól, bez nagłówka.
 function wiersze(wynik) {
-  const linie = dekodujUtf8(wynik.zanonimizowany).split("\n");
+  const linie = dekodujUtf8(wynik.bezNumerow).split("\n");
   assert.equal(linie.pop(), "", "plik kończy się znakiem LF");
-  assert.equal(linie.shift(), NAGLOWEK_ZANONIMIZOWANY);
+  assert.equal(linie.shift(), NAGLOWEK_BEZ_NUMEROW);
   return linie.map((l) => l.split(";"));
 }
 
@@ -92,17 +92,17 @@ test("tablica ISO-8859-2: każda polska litera odczytana niezależnym dekoderem 
   assert.ok(wynik.surowy.includes(0xb3) && wynik.surowy.includes(0xb6));
 });
 
-test("N1, wzorzec: dwie doby G13 dają zapisany plik zanonimizowany (UTF-8, LF)", () => {
+test("N1, wzorzec: dwie doby G13 dają zapisany plik bez numerów (UTF-8, LF)", () => {
   const wynik = generuj(PARAMETRY_N1);
-  assert.deepEqual(Buffer.from(wynik.zanonimizowany), readFileSync(WZORZEC_N1));
+  assert.deepEqual(Buffer.from(wynik.bezNumerow), readFileSync(WZORZEC_N1));
 });
 
-test("wariant zanonimizowany to surowy bez dwóch pierwszych kolumn", () => {
+test("wariant bez numerów to surowy bez dwóch pierwszych kolumn", () => {
   const wynik = generuj(PARAMETRY_N1);
   const surowe = dekodujIso(wynik.surowy).slice(0, -2).split("\r\n").slice(1);
-  const anonim = wiersze(wynik);
-  assert.equal(surowe.length, anonim.length);
-  surowe.forEach((l, i) => assert.deepEqual(l.split(";").slice(2), anonim[i]));
+  const bezNumerow = wiersze(wynik);
+  assert.equal(surowe.length, bezNumerow.length);
+  surowe.forEach((l, i) => assert.deepEqual(l.split(";").slice(2), bezNumerow[i]));
 });
 
 test("seria oddania przed serią poboru, formaty wartości i kompletności", () => {

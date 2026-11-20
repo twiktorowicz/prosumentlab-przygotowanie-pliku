@@ -32,7 +32,7 @@ test("numer z bajtów: bajt & 31", () => {
 });
 
 test("N19: 10 000 numerów z ziarnem pasuje do wzorca, rozkład znaków równomierny", () => {
-  const losuj = zrodloZZiarnem(20261119);
+  const losuj = zrodloZZiarnem(1119);
   const wzorzec = /^[0-9A-HJKMNP-TV-Z]{4}-[0-9A-HJKMNP-TV-Z]{4}$/;
   const licznik = new Map([...ALFABET].map((z) => [z, 0]));
   for (let i = 0; i < 10000; i++) {

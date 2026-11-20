@@ -43,6 +43,7 @@ jobs:
         run: >
           "$RUNNER_TEMP/gitleaks" git
           --config .gitleaks.toml
+          --gitleaks-ignore-path .gitleaksignore
           --log-opts="--all"
           --redact
           --exit-code 1

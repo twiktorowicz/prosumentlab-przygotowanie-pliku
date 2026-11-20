@@ -34,7 +34,7 @@ const pokaz = (e, widoczny) => {
 // --- Stan ------------------------------------------------------------------------------------
 
 const NUMER = losowyNumer();
-const ADRES_REPOZYTORIUM = `https://github.com/twiktorowicz/prosumentlab-anonimizator/releases/tag/v${WERSJA}`;
+const ADRES_REPOZYTORIUM = `https://github.com/twiktorowicz/prosumentlab-przygotowanie-pliku/releases/tag/v${WERSJA}`;
 // Pozycje listy plików w kolejności dodania: { nazwa, plik (File), bajty, stan }. Stan:
 // "czeka" (jeszcze nie czytany), "wczytany", "za_duzy", "blad_odczytu". Czytane są tylko
 // pozycje z pierwszej dziesiątki; dalsze nie trafiają do pamięci.

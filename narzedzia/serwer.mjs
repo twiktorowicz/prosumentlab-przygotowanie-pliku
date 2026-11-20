@@ -2,13 +2,18 @@
 // Lokalny serwer plików do uruchomienia narzędzia (moduły ES nie działają z file://).
 // - Domyślnie słucha tylko na 127.0.0.1, więc strona nie jest widoczna z sieci. Opcja --host
 //   pozwala wystawić stronę w sieci domowej do odbioru na telefonie; wtedy serwer ostrzega.
-// - Serwuje wyłącznie katalog app/; ścieżki wychodzące poza niego dają 404.
-// - Wysyła tę samą politykę treści co strona, żeby lokalnie było widać jej naruszenia.
+// - Serwuje wyłącznie katalog app/; ścieżki wychodzące poza niego dają 404, także przez
+//   dowiązanie: plik musi leżeć w app/ po rozwinięciu dowiązań.
+// - Błąd odczytu pliku daje odpowiedź 500 i nie zatrzymuje serwera.
+// - Wysyła te same nagłówki, których README wymaga od serwera podającego narzędzie: politykę
+//   treści (z frame-ancestors, którego znacznik meta nie obejmuje), Cross-Origin-Opener-Policy,
+//   X-Content-Type-Options i Referrer-Policy.
 //
 // Użycie: node narzedzia/serwer.mjs [--port 8000] [--host 127.0.0.1]
+// --port 0 oznacza port wybrany przez system; wartość spoza 0–65535 albo nie liczba to błąd.
 
 import { createServer } from "node:http";
-import { readFile, stat } from "node:fs/promises";
+import { readFile, stat, realpath } from "node:fs/promises";
 import { join, normalize, sep, extname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
@@ -36,7 +41,7 @@ const TYPY = {
   ".ico": "image/x-icon",
 };
 
-async function plikDla(adres) {
+async function plikDla(adres, katalog) {
   let sciezka;
   try {
     sciezka = decodeURIComponent(new URL(adres, "http://127.0.0.1").pathname);
@@ -45,33 +50,44 @@ async function plikDla(adres) {
   }
   if (sciezka.includes("\0")) return null;
   if (sciezka.endsWith("/")) sciezka += "index.html";
-  const pelna = normalize(join(APP, sciezka));
-  if (!pelna.startsWith(APP) || pelna.slice(APP.length).split(sep).includes("..")) return null;
+  const pelna = normalize(join(katalog, sciezka));
+  if (!pelna.startsWith(katalog) || pelna.slice(katalog.length).split(sep).includes("..")) return null;
   try {
-    return (await stat(pelna)).isFile() ? pelna : null;
+    // Dowiązanie może prowadzić poza katalog: liczy się ścieżka po rozwinięciu dowiązań.
+    const [prawdziwa, korzen] = await Promise.all([realpath(pelna), realpath(katalog)]);
+    if (!prawdziwa.startsWith(korzen + sep)) return null;
+    return (await stat(prawdziwa)).isFile() ? prawdziwa : null;
   } catch {
     return null;
   }
 }
 
-export function utworzSerwer() {
+// `katalog`: katalog strony ze znakiem / na końcu (domyślnie app/; testy podają tymczasowy).
+export function utworzSerwer(katalog = APP) {
   return createServer(async (zadanie, odpowiedz) => {
     const naglowki = {
       "Content-Security-Policy": POLITYKA,
+      "Cross-Origin-Opener-Policy": "same-origin",
       "X-Content-Type-Options": "nosniff",
-      "Cache-Control": "no-store",
       "Referrer-Policy": "no-referrer",
+      "Cache-Control": "no-store",
     };
     if (zadanie.method !== "GET" && zadanie.method !== "HEAD") {
       odpowiedz.writeHead(405, { ...naglowki, Allow: "GET, HEAD" }).end();
       return;
     }
-    const plik = await plikDla(zadanie.url);
+    const plik = await plikDla(zadanie.url, katalog);
     if (!plik) {
       odpowiedz.writeHead(404, { ...naglowki, "Content-Type": "text/plain; charset=utf-8" }).end("404\n");
       return;
     }
-    const tresc = await readFile(plik);
+    let tresc;
+    try {
+      tresc = await readFile(plik);
+    } catch {
+      odpowiedz.writeHead(500, { ...naglowki, "Content-Type": "text/plain; charset=utf-8" }).end("500\n");
+      return;
+    }
     odpowiedz.writeHead(200, { ...naglowki, "Content-Type": TYPY[extname(plik)] ?? "text/plain; charset=utf-8" });
     odpowiedz.end(zadanie.method === "HEAD" ? undefined : tresc);
   });
@@ -91,10 +107,20 @@ export function komunikatStartu(host, port) {
 }
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
-  const { values } = parseArgs({
-    options: { port: { type: "string", default: "8000" }, host: { type: "string", default: HOST_DOMYSLNY } },
-  });
-  const port = /^\d{1,5}$/.test(values.port) ? +values.port : 8000;
+  let values;
+  try {
+    ({ values } = parseArgs({
+      options: { port: { type: "string", default: "8000" }, host: { type: "string", default: HOST_DOMYSLNY } },
+    }));
+  } catch (blad) {
+    process.stderr.write(`serwer: ${blad.message}\n`);
+    process.exit(2);
+  }
+  if (!/^\d{1,5}$/.test(values.port) || +values.port > 65535) {
+    process.stderr.write("serwer: --port: oczekiwana liczba od 0 do 65535 (0 to port wybrany przez system)\n");
+    process.exit(2);
+  }
+  const port = +values.port;
   const serwer = utworzSerwer();
   serwer.on("error", (blad) => {
     process.stderr.write(`serwer: ${blad.message}\n`);

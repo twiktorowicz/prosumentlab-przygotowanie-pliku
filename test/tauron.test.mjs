@@ -44,11 +44,11 @@ test("N1: plik surowy ISO-8859-2, CRLF, 2 doby G13 daje plik wzorcowy co do bajt
   assert.deepEqual(w.uwagi, []);
 });
 
-test("N2: plik zanonimizowany UTF-8, LF wychodzi bez zmian i bez identyfikatorów", () => {
-  const wejscie = generuj(N1).zanonimizowany;
+test("N2: plik bez numerów UTF-8, LF wychodzi bez zmian i bez identyfikatorów", () => {
+  const wejscie = generuj(N1).bezNumerow;
   const w = czytaj(wejscie);
   assert.equal(w.ok, true);
-  assert.equal(w.wariant, "zanonimizowany");
+  assert.equal(w.wariant, "bez_numerow");
   assert.equal(w.kodowanie, "utf-8");
   assert.deepEqual(utf8(w.wynik), wejscie);
   assert.equal(w.identyfikatory, null);
@@ -62,8 +62,8 @@ test("N3: plik z BOM UTF-8 i plik surowy w UTF-8 dają ten sam wynik co N1", () 
   assert.equal(bom.kodowanie, "utf-8-bom");
   assert.equal(bezBom.kodowanie, "utf-8");
   for (const w of [bom, bezBom, lf]) assert.deepEqual(Buffer.from(utf8(w.wynik)), WZORZEC_N1);
-  const anonimBom = new Uint8Array([0xef, 0xbb, 0xbf, ...generuj(N1).zanonimizowany]);
-  assert.deepEqual(Buffer.from(utf8(czytaj(anonimBom).wynik)), WZORZEC_N1);
+  const bezNumerowBom = new Uint8Array([0xef, 0xbb, 0xbf, ...generuj(N1).bezNumerow]);
+  assert.deepEqual(Buffer.from(utf8(czytaj(bezNumerowBom).wynik)), WZORZEC_N1);
 });
 
 // eLicznik zapisuje pliki w ISO-8859-2: „ś” to bajt B6, „ł” to B3. W Windows-1250 „ś” to 9C,

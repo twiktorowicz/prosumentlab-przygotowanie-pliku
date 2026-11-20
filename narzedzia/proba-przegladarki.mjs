@@ -114,7 +114,7 @@ async function proba() {
     return plik(`dzien_${i + 1}.csv`, generuj({ od: dzien, do: dzien, ziarno: 5 }).surowy);
   });
   const plikKopia = plik("kopia_stycznia.csv", readFileSync(plikStyczen));
-  const plikBezNumerow = plik("bez_numerow.csv", generuj({ od: "2026-02-01", do: "2026-02-28", ziarno: 5 }).zanonimizowany);
+  const plikBezNumerow = plik("bez_numerow.csv", generuj({ od: "2026-02-01", do: "2026-02-28", ziarno: 5 }).bezNumerow);
   const plikMarzec = plik("marzec_0300.csv", generuj({
     od: "2025-03-30", do: "2025-03-30", ziarno: 5, obetnijKoniec: 22,
     podmien: ["oddanie", "pobor"].map((seria) => ({ znacznik: "2025-03-30 01:00", seria, pole: "znacznik", tekst: "2025-03-30 03:00" })),

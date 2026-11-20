@@ -1,8 +1,8 @@
-# Zasady pracy w repozytorium prosumentlab-anonimizator
+# Zasady pracy w repozytorium prosumentlab-przygotowanie-pliku
 
 Repozytorium jest publiczne. Zawiera narzędzie do przygotowania pliku godzinowego z licznika przed
-wysłaniem go do ProsumentLab (w dokumentach technicznych: anonimizator). Specyfikacja narzędzia jest
-poza tym repozytorium; tutaj trafia tylko kod, który ją realizuje, i dane syntetyczne do testów.
+wysłaniem go do ProsumentLab. Specyfikacja narzędzia jest poza tym repozytorium; tutaj trafia
+tylko kod, który ją realizuje, i dane syntetyczne do testów.
 
 ## Zasady twarde
 
@@ -12,8 +12,11 @@ poza tym repozytorium; tutaj trafia tylko kod, który ją realizuje, i dane synt
    commitów i wydań. Kwoty i ceny w przykładach są zmyślone (np. „12,34”, „0,51234”).
 2. **Jedyne ciągi 12 i więcej cyfr** to fikcyjne numery PPE `590000000000000010`
    i `590000000000000021`. Mają celowo błędną cyfrę kontrolną GS1, więc nie należą do żadnego
-   punktu poboru. Fikcyjne numery płatnika: `10000001` i `10000002`. Pilnują tego
-   `test/repo.test.mjs` i `.gitleaks.toml`.
+   punktu poboru. Fikcyjne numery płatnika: `10000001` i `10000002`. Ciąg od 8 do 11 cyfr,
+   przy którym nie stoi litera ani cyfra, może być tylko jednym z wyjątków wymienionych z osobna
+   w obu strażach (dziś dwa numery płatnika i ciąg kontrolny CRC-32 `123456789`); w nowych
+   testach używamy tych wartości albo ciągów budowanych w kodzie, zamiast dopisywać wyjątki.
+   Pilnują tego `test/repo.test.mjs` i `.gitleaks.toml`.
 3. **Bez zależności od innych repozytoriów** i bez ich ścieżek w plikach. Komentarz w kodzie
    tłumaczy regułę wprost, zamiast odsyłać do dokumentu spoza repozytorium.
 4. **Czysty JavaScript w modułach ES.** Bez bibliotek, bez npm, bez kroku budowania. Narzędzie

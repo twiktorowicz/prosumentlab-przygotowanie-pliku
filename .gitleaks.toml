@@ -1,8 +1,16 @@
-title = "prosumentlab-anonimizator"
+title = "prosumentlab-przygotowanie-pliku"
 
-# Domyślne reguły gitleaks plus reguły na dane, które w tym repozytorium nie mogą się pojawić:
-# długie numery (PPE, numery klienta, PESEL) i adresy e-mail. Jedyne dozwolone ciągi 12 i więcej
-# cyfr to dwa fikcyjne numery PPE z celowo błędną cyfrą kontrolną.
+# Domyślne reguły gitleaks plus cztery reguły na dane, które w tym repozytorium nie mogą się
+# pojawić:
+# - ciag-12-cyfr: ciąg 12 i więcej cyfr; wyjątki to dwa fikcyjne numery PPE z celowo błędną
+#   cyfrą kontrolną i plik sum kontrolnych (skróty szesnastkowe);
+# - ciag-8-11-cyfr: ciąg od 8 do 11 cyfr, przy którym nie stoi litera ani cyfra (numer klienta,
+#   PESEL, telefon); fragment skrótu szesnastkowego między literami nie pasuje. Wyjątki wymienione
+#   z osobna niżej. Gitleaks (wyrażenia w składni Go) nie zna asercji, więc znak przed ciągiem
+#   i po nim należy do dopasowania: drugi ciąg oddzielony od pierwszego jednym znakiem może
+#   umknąć tej regule. Łapie go test/repo.test.mjs, który ma tę samą regułę z asercjami;
+# - ppe-gs1-rozdzielony: 590 i 15 cyfr, ze spacjami albo myślnikami między cyframi;
+# - adres-e-mail: adres e-mail poza adresem zgłoszeń i domeną example.invalid.
 
 [extend]
 useDefault = true
@@ -18,6 +26,17 @@ regex = '''\d{12,}'''
   [[rules.allowlists]]
   # Skróty SHA-256 w pliku sum kontrolnych to zapis szesnastkowy, nie numery.
   paths = ['''(^|/)SHA256SUMS$''']
+
+[[rules]]
+id = "ciag-8-11-cyfr"
+description = "Ciąg od 8 do 11 cyfr bez litery ani cyfry obok (możliwy numer klienta, PESEL, telefon)"
+regex = '''(?:^|[^\p{L}\p{N}])(\d{8,11})(?:[^\p{L}\p{N}]|$)'''
+secretGroup = 1
+
+  [[rules.allowlists]]
+  # 10000001 i 10000002: fikcyjne numery płatnika z generatora danych.
+  # 123456789: standardowy ciąg kontrolny sumy CRC-32 w teście modułu zip.
+  regexes = ['''^(10000001|10000002|123456789)$''']
 
 [[rules]]
 id = "ppe-gs1-rozdzielony"

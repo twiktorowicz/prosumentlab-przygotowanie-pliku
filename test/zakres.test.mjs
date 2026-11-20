@@ -12,7 +12,7 @@ import { generuj, PPE_FIKCYJNE, PLATNICY_FIKCYJNI } from "../narzedzia/generator
 
 function plik(opcje, wariant = "surowy") {
   const wynik = generuj({ ziarno: 11, ...opcje });
-  const w = czytajTauron(dekoduj(wariant === "surowy" ? wynik.surowy : wynik.zanonimizowany).tekst);
+  const w = czytajTauron(dekoduj(wariant === "surowy" ? wynik.surowy : wynik.bezNumerow).tekst);
   assert.equal(w.ok, true, JSON.stringify(w));
   return w;
 }
@@ -40,11 +40,11 @@ test("N6: dwa pliki z różnym PPE albo różnym płatnikiem: blokada blad_rozne
   assert.deepEqual(b.blokady, [{ kod: "blad_rozne_ppe" }]);
 });
 
-test("plik zanonimizowany: punktów poboru nie da się porównać", () => {
-  const a = analizujZakres([plik({ od: "2025-01-01", do: "2025-01-10" }), plik({ od: "2025-01-11", do: "2025-01-20" }, "zanonimizowany")]);
+test("plik bez numerów: punktów poboru nie da się porównać", () => {
+  const a = analizujZakres([plik({ od: "2025-01-01", do: "2025-01-10" }), plik({ od: "2025-01-11", do: "2025-01-20" }, "bez_numerow")]);
   assert.deepEqual(a.blokady, []);
   assert.equal(a.ppePorownane, false);
-  assert.equal(analizujZakres([plik({ od: "2025-01-01", do: "2025-01-10" }, "zanonimizowany")]).ppePorownane, false);
+  assert.equal(analizujZakres([plik({ od: "2025-01-01", do: "2025-01-10" }, "bez_numerow")]).ppePorownane, false);
 });
 
 test("plik z pustą kolumną numeru: bez porównania punktów poboru i bez blokady", () => {
