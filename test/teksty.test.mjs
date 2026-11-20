@@ -80,9 +80,8 @@ test("N22: każdy kod, który moduły mogą pokazać klientowi, ma tekst", () =>
 test("N22: opcje list wyboru mają tekst dla każdej wartości z formularza", async () => {
   const zrodlo = readFileSync(join(APP, "lib", "formularz.js"), "utf8");
   const listy = {
-    opcje_sprzedawca: "sprzedawca", opcje_operator: "operator_dystrybucyjny", opcje_taryfa: "taryfa",
-    opcje_rodzaj_faktury: "rodzaj_faktury", opcje_system: "system_rozliczenia", opcje_rodzaj_ceny: "rodzaj_ceny",
-    opcje_magazyn: "magazyn", opcje_pierwsze_oddanie: "pierwsze_oddanie", opcje_zmiany: "rodzaj_zmiany",
+    opcje_sprzedawca: "sprzedawca", opcje_taryfa: "taryfa", opcje_system: "system_rozliczenia",
+    opcje_rodzaj_ceny: "rodzaj_ceny", opcje_magazyn: "magazyn", opcje_zmiany: "rodzaj_zmiany",
   };
   for (const [klucz, lista] of Object.entries(listy)) {
     const m = new RegExp(`\\b${lista}: \\[([^\\]]*)\\]`).exec(zrodlo);
@@ -94,6 +93,15 @@ test("N22: opcje list wyboru mają tekst dla każdej wartości z formularza", as
   assert.equal(TEKSTY.strefy_g13.length, 3);
   assert.equal(TEKSTY.miesiace_mianownik.length, 12);
   assert.equal(TEKSTY.miesiace_dopelniacz.length, 12);
+});
+
+test("teksty usunięte razem z polami, których strona już nie ma", () => {
+  for (const k of [
+    "faktura_operator", "faktura_operator_podpowiedz", "opcje_operator", "faktura_rodzaj", "opcje_rodzaj_faktury",
+    "instalacja_pierwsze_oddanie", "opcje_pierwsze_oddanie",
+  ]) assert.equal(k in TEKSTY, false, k);
+  assert.equal("operator_dystrybucyjny" in TEKSTY.pola_nazwy, false);
+  assert.equal("rodzaj_faktury" in TEKSTY.pola_nazwy, false);
 });
 
 test("N22: każdy klucz użyty na stronie istnieje", () => {

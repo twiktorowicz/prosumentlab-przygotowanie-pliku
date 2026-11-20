@@ -3,7 +3,8 @@
 // Dwa warianty nagłówka:
 // - surowy, 7 kolumn: plik prosto z eLicznika, z numerem płatnika i numerem PPE;
 // - bez numerów (bez_numerow), 5 kolumn: bez tych numerów; przechodzi bez zmian.
-// Separator średnik, bez cudzysłowów, koniec linii CRLF albo LF, puste linie pomijane.
+// Separator średnik, bez cudzysłowów, puste linie pomijane. Koniec linii to LF poprzedzony
+// dowolną liczbą CR (LF, CRLF, a także CR CR LF, który zostaje po przejściu pliku przez pocztę).
 // Numer wiersza w komunikatach to numer linii w pliku (nagłówek zwykle ma numer 1).
 //
 // Narzędzie sprawdza tylko tyle, ile trzeba do podglądu, zakresu i bezpiecznika. Ciągłości
@@ -104,7 +105,7 @@ function przypiszWystapienia(seria) {
 }
 
 export function czytajTauron(tekst) {
-  const linie = tekst.split(/\r?\n/);
+  const linie = tekst.split(/\r*\n/);
   let i = linie.findIndex((l) => l.trim() !== "");
   // Pusty plik (zero bajtów albo same puste linie) to plik, którego narzędzie nie odczytało.
   if (i < 0) return blad("blad_nieznany");

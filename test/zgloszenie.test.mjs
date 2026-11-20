@@ -26,7 +26,6 @@ const jsonPliku = (wynik, nazwa) => JSON.parse(tekstPliku(wynik.zawartosc.find((
 
 const FAKTURA = {
   sprzedawca: "tauron_sprzedaz",
-  operator_dystrybucyjny: "tauron_dystrybucja",
   taryfa: "g13",
   okres_od: "2025-06-06",
   okres_do: "2025-06-07",
@@ -39,7 +38,7 @@ const FAKTURA = {
   oplata_stala_sieciowa_zl_mies: "8,90",
   oplaty_stale_inne: [{ nazwa: "Opłata handlowa", kwota_zl_mies: "9,99" }],
 };
-const INSTALACJA = { moc_pv_kwp: "7,2", magazyn: "nie", pierwsze_oddanie: "od_2024_07_01" };
+const INSTALACJA = { moc_pv_kwp: "7,2", magazyn: "nie" };
 
 test("N20: ZIP o strukturze z przykładów, numer i data podane: bajty równe wzorcowi", () => {
   const zip = przykladN20();
@@ -108,9 +107,10 @@ test("pełna ścieżka: plik surowy, faktura, instalacja i zgoda dają ZIP z czt
     uwagi: [{ kod: "ZAKRES_NIEPELNY", gdzie: "zakres" }],
   });
   assert.deepEqual(JSON.parse(tekstPliku(pliki[2])), {
-    format: "prosumentlab/instalacja", wersja_formatu: 1, moc_pv_kwp: "7.20", magazyn: "nie", pierwsze_oddanie: "od_2024_07_01",
+    format: "prosumentlab/instalacja", wersja_formatu: 1, moc_pv_kwp: "7.20", magazyn: "nie",
   });
   const faktury = JSON.parse(tekstPliku(pliki[1]));
+  assert.equal(faktury.raport.operator_dystrybucyjny, "tauron_dystrybucja", "operator z trybu Taurona");
   assert.deepEqual(faktury.raport.cena_energii_netto_zl_kwh, ["0.60000", "0.70000", "0.40000"]);
   assert.deepEqual(Object.keys(faktury), ["format", "wersja_formatu", "raport"]);
 });
@@ -190,11 +190,11 @@ test("najwyżej 10 plików: jedenasty odrzucony", () => {
   assert.equal(w.zawartosc.filter((p) => p.nazwa.startsWith("pomiary_")).length, 10);
 });
 
-test("uwagi: kompletność w pliku, faktura poza zakresem, system opustów, zmiana poza zakresem", () => {
+test("uwagi: kompletność w pliku, faktura poza zakresem, zmiana poza zakresem", () => {
   const w = przygotujZgloszenie({
     pliki: [generuj({ ...N1, niepelne: [{ znacznik: "2025-06-06 05:00" }] }).surowy],
     formularz: {
-      faktura: { ...FAKTURA, okres_od: "2025-06-01", okres_do: "2025-06-07", system_rozliczenia: "opusty" },
+      faktura: { ...FAKTURA, okres_od: "2025-06-01", okres_do: "2025-06-07" },
       instalacja: { zmiany: [{ rodzaj: "pompa_ciepla", miesiac: "2025-06" }, { rodzaj: "rozbudowa_pv", miesiac: "2024-01" }] },
     },
     numer: NUMER,
@@ -205,11 +205,51 @@ test("uwagi: kompletność w pliku, faktura poza zakresem, system opustów, zmia
     { kod: "UWAGA_KOMPLETNOSC", n: 1, gdzie: "pliki[0]" },
     { kod: "ZAKRES_NIEPELNY", od: { rok: 2025, miesiac: 6, dzien: 6 }, do: { rok: 2025, miesiac: 6, dzien: 7 }, gdzie: "zakres" },
     { kod: "FAKTURA_R_POZA_ZAKRESEM", gdzie: "raport" },
-    { kod: "FAKTURA_OPUSTY", gdzie: "raport" },
     { kod: "INSTALACJA_MIESIAC_POZA_ZAKRESEM", gdzie: "instalacja.zmiany[1]" },
   ]);
   assert.deepEqual(jsonPliku(w, "zgloszenie.json").uwagi, w.uwagi.map(({ kod, gdzie }) => ({ kod, gdzie })));
   assert.equal(w.pliki[0].stan, "uwaga");
+});
+
+test("system opustów: faktury.json tylko z operatorem i systemem, uwaga FAKTURA_OPUSTY, bez braków", () => {
+  const w = przygotujZgloszenie({
+    pliki: [generuj(N1).surowy],
+    formularz: { faktura: { ...FAKTURA, okres_od: "2025-06-01", oplata_mocowa_zl_mies: "12,345", system_rozliczenia: "opusty" } },
+    numer: NUMER,
+    utworzono: DATA,
+  });
+  assert.equal(w.moznaZapisac, true);
+  assert.deepEqual(w.bledyPol, []);
+  assert.deepEqual(jsonPliku(w, "faktury.json").raport, { operator_dystrybucyjny: "tauron_dystrybucja", system_rozliczenia: "opusty" });
+  assert.deepEqual(jsonPliku(w, "zgloszenie.json").uwagi, [{ kod: "ZAKRES_NIEPELNY", gdzie: "zakres" }, { kod: "FAKTURA_OPUSTY", gdzie: "raport" }]);
+});
+
+test("uwagi o nietypowej cenie i długim okresie trafiają do zgloszenie.json i nie blokują zapisu", () => {
+  const w = przygotujZgloszenie({
+    pliki: [generuj(N1).surowy],
+    formularz: { faktura: { ...FAKTURA, okres_od: "2025-04-01", okres_do: "2025-06-07", rodzaj_ceny: "dynamiczna", cena_energii_netto_zl_kwh: "1,60" } },
+    numer: NUMER,
+    utworzono: DATA,
+  });
+  assert.equal(w.moznaZapisac, true);
+  assert.deepEqual(jsonPliku(w, "zgloszenie.json").uwagi, [
+    { kod: "ZAKRES_NIEPELNY", gdzie: "zakres" },
+    { kod: "FAKTURA_R_POZA_ZAKRESEM", gdzie: "raport" },
+    { kod: "FAKTURA_OKRES_DLUGI", gdzie: "raport" },
+    { kod: "FAKTURA_CENA_NIETYPOWA", gdzie: "raport" },
+  ]);
+});
+
+test("okres z przyszłości względem dnia utworzenia: błąd pola, zapis zablokowany", () => {
+  const w = przygotujZgloszenie({
+    pliki: [generuj(N1).surowy],
+    formularz: { faktura: { ...FAKTURA, okres_od: "2026-11-01", okres_do: "2026-11-20" } },
+    numer: NUMER,
+    utworzono: DATA,
+  });
+  assert.deepEqual(w.bledyPol, [{ pole: "okres_do", kod: "faktura_okres_przyszly" }]);
+  assert.equal(w.powod, "bledy_pol");
+  assert.equal(w.zip, null);
 });
 
 test("plik z samą nieistniejącą godziną 03:00 z doby zmiany czasu na letni: zakres za krótki, bez wyjątku", () => {
@@ -250,7 +290,8 @@ test("podgląd: pierwsze 5 wierszy danych dokładnie jak w pliku wyjściowym, su
 // zgłoszenia z formularzem (zlozZgloszenie). ZIP złożony z części ma być bajt w bajt taki sam jak
 // ZIP z całości (przygotujZgloszenie). Zapisany skrót to zrzut wyniku obecnego kodu: pilnuje, żeby
 // żadna zmiana nie przesunęła ani jednego bajtu bez świadomego przeliczenia skrótu.
-const SKROT_SCENARIUSZA = "5be337d471193a4d28cb5fd708478c65afb159a520ac2b3d69ddfd2357025823";
+// Przeliczony po usunięciu pytania o pierwsze oddanie energii (instalacja.json bez tego klucza).
+const SKROT_SCENARIUSZA = "d03a3c33c05734305e16edef988f54412c792128e785f8d8d78b4cfb99bf70c3";
 function scenariuszPelny() {
   return {
     pliki: [
@@ -260,13 +301,13 @@ function scenariuszPelny() {
     ],
     formularz: {
       faktura: {
-        sprzedawca: "tauron_sprzedaz", operator_dystrybucyjny: "tauron_dystrybucja", taryfa: "g13", okres_od: "2025-03-01", okres_do: "2025-03-31",
+        sprzedawca: "tauron_sprzedaz", taryfa: "g13", okres_od: "2025-03-01", okres_do: "2025-03-31",
         rodzaj_faktury: "rozliczeniowa", system_rozliczenia: "net_billing_rce", rodzaj_ceny: "stala", cena_energii_netto_zl_kwh: ["0,60000", "0,70000", "0,40000"],
         oplata_mocowa_zl_mies: "12,34", oplata_abonamentowa_zl_mies: "5,67", oplata_stala_sieciowa_zl_mies: "8,9", oplata_przejsciowa_zl_mies: "0",
         oplaty_stale_inne: [{ nazwa: "Opłata handlowa", kwota_zl_mies: "9,99" }],
       },
       instalacja: {
-        moc_pv_kwp: "7,2", magazyn: "tak", magazyn_pojemnosc_kwh: "10", magazyn_od: "2022-04", pierwsze_oddanie: "nie_wiem",
+        moc_pv_kwp: "7,2", magazyn: "tak", magazyn_pojemnosc_kwh: "10", magazyn_od: "2022-04",
         zmiany: [{ rodzaj: "pompa_ciepla", miesiac: "2025-02" }, { rodzaj: "", miesiac: "" }],
       },
       zgoda: true,

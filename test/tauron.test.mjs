@@ -120,6 +120,26 @@ test("N33: nagłówek innego operatora i inny raport z eLicznika", () => {
   );
 });
 
+test("końce linii: LF poprzedzony dowolną liczbą CR (plik po przejściu przez pocztę ma \\r\\r\\n)", () => {
+  const crlf = generuj(N1).surowy;
+  const tekst = new TextDecoder("iso-8859-2").decode(crlf);
+  const wzor = czytajTauron(tekst);
+  assert.equal(wzor.ok, true);
+  assert.deepEqual(Buffer.from(utf8(wzor.wynik)), WZORZEC_N1);
+  for (const koniec of ["\n", "\r\r\n", "\r\r\r\n"]) {
+    const w = czytajTauron(tekst.replaceAll("\r\n", koniec));
+    assert.equal(w.ok, true, JSON.stringify(koniec));
+    assert.equal(w.wynik, wzor.wynik, JSON.stringify(koniec));
+    assert.equal(w.wierszeDanych, wzor.wierszeDanych);
+  }
+  // Numer wiersza w komunikacie liczy linie tak samo przy każdym końcu linii.
+  const linie = tekst.split("\r\n");
+  linie[5] = `${linie[5]};x`;
+  for (const koniec of ["\r\n", "\r\r\n"]) {
+    assert.deepEqual(czytajTauron(linie.join(koniec)), { ok: false, kod: "blad_wiersz", wiersz: 6 }, JSON.stringify(koniec));
+  }
+});
+
 test("pusty plik: zero bajtów albo same puste linie dają blad_nieznany", () => {
   assert.deepEqual(czytaj(new Uint8Array(0)), { ok: false, kod: "blad_nieznany" });
   assert.deepEqual(czytaj(utf8("\n\r\n   \n\t\n")), { ok: false, kod: "blad_nieznany" });

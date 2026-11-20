@@ -135,6 +135,9 @@ test("formularz o złej budowie: kod 2 z nazwą klucza, bez wartości", () => {
     [{ instalacja: { zmiany: TAJNE } }, "instalacja.zmiany"],
     [{ zgoda: "true" }, "zgoda"],
     [{ zgoda: 1 }, "zgoda"],
+    // Pola, których strona już nie ma: operatora wpisuje narzędzie, pytanie o pierwsze oddanie zniknęło.
+    [{ faktura: { operator_dystrybucyjny: "tauron_dystrybucja" } }, "faktura.operator_dystrybucyjny"],
+    [{ instalacja: { pierwsze_oddanie: "nie_wiem" } }, "instalacja.pierwsze_oddanie"],
   ];
   for (const [formularz, klucz] of przypadki) {
     const sciezka = zapisz("budowa.json", JSON.stringify(formularz));
@@ -150,7 +153,7 @@ test("formularz poprawnej budowy z każdym kluczem przechodzi", () => {
   const plik = zapisz("n1e.csv", generuj(N1).surowy);
   const formularz = {
     faktura: {
-      sprzedawca: "inny", sprzedawca_nazwa: "Sprzedawca", operator_dystrybucyjny: "inny", taryfa: "inna", taryfa_nazwa: "Taryfa",
+      sprzedawca: "inny", sprzedawca_nazwa: "Sprzedawca", taryfa: "inna", taryfa_nazwa: "Taryfa",
       okres_od: "2025-06-06", okres_do: "2025-06-07", rodzaj_faktury: "korekta", system_rozliczenia: "nie_wiem",
       rodzaj_ceny: "stala", cena_energii_netto_zl_kwh: ["0,50", "0,40"], oplata_mocowa_zl_mies: "1,00",
       oplata_abonamentowa_zl_mies: "1,00", oplata_stala_sieciowa_zl_mies: "1,00", oplata_przejsciowa_zl_mies: "",
@@ -158,12 +161,16 @@ test("formularz poprawnej budowy z każdym kluczem przechodzi", () => {
     },
     instalacja: {
       moc_pv_kwp: "5", magazyn: "tak", magazyn_pojemnosc_kwh: "5", magazyn_od: "2025-01",
-      pierwsze_oddanie: "nie_wiem", zmiany: [{ rodzaj: "rozbudowa_pv", miesiac: "2025-06" }],
+      zmiany: [{ rodzaj: "rozbudowa_pv", miesiac: "2025-06" }],
     },
     zgoda: false,
   };
   const w = uruchom(["--numer", NUMER, "--data", DATA, "--formularz", zapisz("pelny.json", JSON.stringify(formularz)), "--wyjscie", join(katalog, "pelny.zip"), plik]);
   assert.equal(w.kod, 0, w.stderr);
+  // Cena 0,50 i 0,40 jest typowa, okres krótki: bez uwag o fakturze poza zakresem plików.
+  assert.equal(w.stdout, "uwaga ZAKRES_NIEPELNY zakres\n");
+  const faktury = JSON.parse(new TextDecoder().decode(czytajZip(readFileSync(join(katalog, "pelny.zip")))[1].bajty));
+  assert.equal(faktury.raport.operator_dystrybucyjny, "tauron_dystrybucja");
 });
 
 test("pomoc", () => {

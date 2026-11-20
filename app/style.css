@@ -315,6 +315,30 @@ input[inputmode="decimal"] { font-family: var(--mono); max-width: 12em; }
 }
 .opcja:has(input:checked) { border: 2px solid var(--zielen); background: var(--tlo-potwierdzenia); }
 .opcja input { width: 18px; height: 18px; margin: 0; accent-color: var(--zielen); }
+/* Numer pola taki jak na rysunku faktury; czytnik ekranu go pomija (rysunek jest dla niego
+   jednym obrazem z opisem). */
+.nr {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 22px;
+  height: 22px;
+  padding: 0 4px;
+  margin-right: 8px;
+  border-radius: 11px;
+  background: var(--zielen);
+  color: var(--biel);
+  font: 500 13px/1 var(--mono);
+  vertical-align: 2px;
+}
+.opcja .nr { margin-right: 0; }
+/* „Co to znaczy?” pod etykietą pola i zwinięta część z opłatami stałymi: zwykłe <details>,
+   działa z klawiatury i z czytnikiem ekranu. */
+.pomoc { margin: 0 0 8px; font-size: 15px; }
+.pomoc > summary { padding: 10px 0; color: var(--zielen); font-weight: 500; cursor: pointer; }
+.pomoc > p { margin: 0 0 8px; }
+.oplaty { margin: 0 0 20px; padding: 0 16px; border: 1px solid var(--linia); border-radius: 10px; }
+.oplaty > summary { padding: 12px 0; font-weight: 500; cursor: pointer; }
 .pole-para { display: flex; flex-wrap: wrap; gap: 0 24px; }
 .pole-para .pole { flex: 1 1 14em; }
 .pola-stref { display: flex; flex-wrap: wrap; gap: 12px 24px; margin: 12px 0 8px; }

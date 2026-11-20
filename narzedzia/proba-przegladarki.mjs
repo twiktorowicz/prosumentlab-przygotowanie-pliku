@@ -240,6 +240,24 @@ async function proba() {
   const odnosniki = await js("[...document.querySelectorAll('#zgoda-wiecej a, #wersja a')].map(a => [a.getAttribute('href'), a.target, a.rel])");
   sprawdz("odnośniki zgody i repozytorium w nowej karcie", odnosniki.length === 2 && odnosniki.every(([, t, r]) => t === "_blank" && r === "noopener noreferrer"), JSON.stringify(odnosniki));
   sprawdz("odnośnik zgody poza etykietą pola", await js("!document.querySelector('#zgoda-etykieta a') && document.querySelector('#zgoda-wiecej a').getAttribute('href') === '/prywatnosc/'"));
+  sprawdz("zakres przed dodaniem pliku: zakres_pusty", (await tekstEl("#zakres")) === "Zakres pojawi się tu po dodaniu pliku.");
+  const faktura = await js(`(() => ({
+    pierwsze: document.querySelector('#krok-faktura [data-pole]').dataset.pole,
+    wstep: document.querySelector('#krok-faktura h2 + p').textContent,
+    zwiniete: [...document.querySelectorAll('#krok-faktura details')].every(d => !d.open),
+    pomoc: document.querySelectorAll('details.pomoc').length,
+    numery: [...document.querySelectorAll('.nr')].every(n => n.getAttribute('aria-hidden') === 'true'),
+    operator: document.querySelectorAll('[name="operator_dystrybucyjny"], [name="pierwsze_oddanie"], [name="rodzaj_faktury"]').length,
+    sprzedawcy: [...document.querySelectorAll('[name="sprzedawca"]')].map(e => e.value).join(","),
+  }))()`);
+  sprawdz("faktura: wstęp, system rozliczenia jako pierwsze pole", faktura.pierwsze === "system_rozliczenia" && faktura.wstep.startsWith("Przepisz dane z najnowszej faktury"), JSON.stringify(faktura));
+  sprawdz("faktura: „Co to znaczy?” i opłaty stałe zwinięte", faktura.zwiniete && faktura.pomoc === 5);
+  sprawdz("faktura: numery pól ukryte przed czytnikiem ekranu", faktura.numery);
+  sprawdz("bez pytań o operatora, rodzaj faktury i pierwsze oddanie", faktura.operator === 0);
+  sprawdz("sprzedawca Pstryk przed „inny”", faktura.sprzedawcy.endsWith("pstryk,inny"), faktura.sprzedawcy);
+  await js("document.querySelector('details.pomoc summary').click()");
+  sprawdz("„Co to znaczy?” rozwija się kliknięciem", (await js("document.querySelector('details.pomoc').open")) && (await js("document.querySelector('details.pomoc p').getBoundingClientRect().height")) > 0);
+  await js("document.querySelector('details.pomoc summary').click()");
   const listy = await js("[...document.querySelectorAll('[data-miesiac=\"magazyn_od\"] select')].map(s => s.options[0].textContent)");
   sprawdz("puste pozycje list: „miesiąc” i „rok”", JSON.stringify(listy) === JSON.stringify(["miesiąc", "rok"]), JSON.stringify(listy));
 
@@ -269,7 +287,7 @@ async function proba() {
   sprawdz("komunikat przy pliku arkusza", (await js("document.querySelectorAll('.plik')[2].textContent")).includes("plik arkusza kalkulacyjnego"));
   const zakres = await tekstEl("#zakres");
   sprawdz("zakres: 13 miesięcy, jedna kropka po „r.”", zakres.includes("Dane obejmują 13 pełnych miesięcy z rzędu, od stycznia 2025 r. do stycznia 2026 r. To wystarczy do pełnego raportu.") && !zakres.includes(".."), zakres.slice(0, 110));
-  sprawdz("po przyjęciu pliku uwaga o brakujących polach", !(await js("document.querySelector('#faktura-brak').hidden")) && (await tekstEl("#faktura-brak")).startsWith("Bez tych danych nie przygotujemy raportu: sprzedawca,"));
+  sprawdz("po przyjęciu pliku uwaga o brakujących polach", !(await js("document.querySelector('#faktura-brak').hidden")) && (await tekstEl("#faktura-brak")).startsWith("Bez tych danych nie przygotujemy raportu: sposób wyceny energii oddanej, sprzedawca,"), await tekstEl("#faktura-brak"));
   sprawdz("nazwy plików z dysku nie trafiają do podglądu", !(await tekstEl("#podglad")).includes("eLicznik_2025"));
 
   // 4. Formularz.
@@ -277,11 +295,9 @@ async function proba() {
     const klik = (s) => document.querySelector(s).click();
     const wpisz = (s, v) => { const e = document.querySelector(s); e.value = v; e.dispatchEvent(new Event("input", { bubbles: true })); };
     klik('input[name="sprzedawca"][value="tauron_sprzedaz"]');
-    klik('input[name="operator_dystrybucyjny"][value="tauron_dystrybucja"]');
     klik('input[name="taryfa"][value="g13"]');
     klik('input[name="cena_tryb"][value="strefy"]');
     wpisz('#p-okres_od', '2026-01-01'); wpisz('#p-okres_do', '2026-01-31');
-    klik('input[name="rodzaj_faktury"][value="rozliczeniowa"]');
     klik('input[name="system_rozliczenia"][value="net_billing_rce"]');
     klik('input[name="rodzaj_ceny"][value="stala"]');
     wpisz('#p-cena-0', '0,60000'); wpisz('#p-cena-1', '0,70000'); wpisz('#p-cena-2', '0,40000');
@@ -290,7 +306,6 @@ async function proba() {
     wpisz('#p-moc_pv_kwp', '7,2');
     klik('input[name="magazyn"][value="tak"]');
     wpisz('#p-magazyn_pojemnosc_kwh', '10');
-    klik('input[name="pierwsze_oddanie"][value="od_2024_07_01"]');
     const z = document.querySelector('[data-zmiana="0"]');
     z.querySelector('input[type="checkbox"]').click();
     z.querySelector('[data-czesc="miesiac"]').value = '07'; z.querySelector('[data-czesc="rok"]').value = '2025';
@@ -308,6 +323,7 @@ async function proba() {
   sprawdz("strefy G13 z nazwami z faktury", JSON.stringify(await js("[...document.querySelectorAll('#cena-pola label')].map(e => e.textContent)")) === JSON.stringify(["szczyt przedpołudniowy", "szczyt popołudniowy", "pozostałe godziny doby"]));
   sprawdz("komplet pól: bez uwagi o brakujących polach", await js("document.querySelector('#faktura-brak').hidden"));
   sprawdz("zapis odblokowany", !(await js("document.querySelector('#zapisz').disabled")));
+  sprawdz("operator wpisany przez narzędzie, rodzaj faktury z pola wyboru", (await tekstEl("#podglad")).includes('"operator_dystrybucyjny": "tauron_dystrybucja"') && (await tekstEl("#podglad")).includes('"rodzaj_faktury": "rozliczeniowa"'));
   const podglad = await tekstEl("#podglad");
   sprawdz("„12,34000” przyjęte i zapisane jako 12.34", podglad.includes('"oplata_mocowa_zl_mies": "12.34"') && podglad.includes('"kwota_zl_mies": "9.99"'));
   sprawdz("podgląd: lista plików w ZIP-ie", ["zgloszenie.json", "faktury.json", "instalacja.json", "pomiary_1.csv", "pomiary_2.csv"].every((n) => podglad.includes(n)));
@@ -347,6 +363,59 @@ async function proba() {
   await wpisz("#p-moc_pv_kwp", "10", "input");
   await czekaj(500);
   sprawdz("zmiana pola po zapisie chowa komunikat i przycisk wiadomości", await js("document.querySelector('#po-zapisie').hidden"));
+
+  // 5b. System opustów, cena dynamiczna, korekta, okres: na wypełnionym formularzu.
+  const klik = async (wybor) => {
+    await js(`document.querySelector(${JSON.stringify(wybor)}).click()`);
+    await czekaj(300);
+  };
+  const widoczny = (wybor) => js(`(() => { const e = document.querySelector(${JSON.stringify(wybor)}); return Boolean(e) && !e.hidden && e.getClientRects().length > 0; })()`);
+  await klik('input[name="system_rozliczenia"][value="opusty"]');
+  // Treść faktury.json z podglądu: <pre> tuż po nagłówku z nazwą pliku.
+  const fakturyWPodgladzie = () => js("[...document.querySelectorAll('#podglad h3')].find(h => h.textContent === 'faktury.json')?.nextElementSibling.textContent ?? ''");
+  let podgladTeraz = await fakturyWPodgladzie();
+  sprawdz("opusty: pozostałe pola faktury schowane, tekst o opustach widoczny",
+    !(await widoczny("#faktura-pola")) && !(await widoczny("#p-okres_od")) && (await tekstEl('[data-pole="system_rozliczenia"] .uwaga')).startsWith("Raportu dla systemu opustów jeszcze nie mamy"));
+  sprawdz("opusty: w podglądzie faktury.json tylko operator i system, bez wcześniej wpisanych pól",
+    podgladTeraz.includes('"operator_dystrybucyjny": "tauron_dystrybucja",\n    "system_rozliczenia": "opusty"\n  }') &&
+    !podgladTeraz.includes('"sprzedawca"') && !podgladTeraz.includes('"oplata_mocowa_zl_mies"') && !podgladTeraz.includes("2026-01-01"), podgladTeraz);
+  sprawdz("opusty: bez uwagi o brakujących polach, zapis możliwy", await js("document.querySelector('#faktura-brak').hidden") && !(await js("document.querySelector('#zapisz').disabled")));
+  await klik('input[name="system_rozliczenia"][value="net_billing_rce"]');
+  podgladTeraz = await fakturyWPodgladzie();
+  sprawdz("po powrocie z opustów wpisane wartości wracają na stronę i do podglądu",
+    (await widoczny("#p-okres_od")) && (await js("document.querySelector('#p-okres_od').value")) === "2026-01-01" &&
+    podgladTeraz.includes('"sprzedawca": "tauron_sprzedaz"') && podgladTeraz.includes('"oplata_mocowa_zl_mies": "12.34"'));
+
+  await klik('input[name="rodzaj_ceny"][value="dynamiczna"]');
+  const dyn = await js(`(() => ({
+    tryb: document.querySelector('#cena-tryb').hidden,
+    pola: document.querySelectorAll('#cena-pola input').length,
+    etykieta: [...document.querySelectorAll('[data-pole="cena_energii_netto_zl_kwh"] legend span:not(.nr)')].filter(s => !s.hidden).map(s => s.textContent).join("|"),
+    aria: document.querySelector('#p-cena')?.getAttribute('aria-label'),
+  }))()`);
+  sprawdz("cena dynamiczna: jedno pole, bez wyboru stref, własna etykieta",
+    dyn.tryb && dyn.pola === 1 && dyn.etykieta === "Średnia cena energii z faktury, netto, zł/kWh" && dyn.aria === dyn.etykieta, JSON.stringify(dyn));
+  await wpisz("#p-cena", "1,60", "input");
+  await czekaj(500);
+  sprawdz("cena dynamiczna 1,60: uwaga o nietypowej cenie, zapis możliwy",
+    (await widoczny("#faktura-cena-nietypowa")) && !(await js("document.querySelector('#zapisz').disabled")) && (await tekstEl("#podglad")).includes('"cena_energii_netto_zl_kwh": "1.60"'));
+  await klik('input[name="rodzaj_ceny"][value="stala"]');
+  sprawdz("powrót do ceny stałej: ceny w strefach wracają", JSON.stringify(await js("[...document.querySelectorAll('#cena-pola input')].map(e => e.value)")) === JSON.stringify(["0,60000", "0,70000", "0,40000"]) && !(await widoczny("#faktura-cena-nietypowa")));
+
+  await klik("#p-korekta");
+  sprawdz("korekta: pole wyboru, podpowiedź i „korekta” w faktury.json", (await widoczny("#korekta-podpowiedz")) && (await tekstEl("#podglad")).includes('"rodzaj_faktury": "korekta"'));
+  await klik("#p-korekta");
+
+  await wpisz("#p-okres_do", "2099-12-31");
+  await czekaj(300);
+  sprawdz("okres z przyszłości: błąd przy polu i blokada zapisu",
+    (await tekstEl('[data-pole="okres_do"] .blad')).startsWith("Koniec okresu jest późniejszy niż dzisiejsza data.") && await js("document.querySelector('#zapisz').disabled"));
+  await wpisz("#p-okres_do", "2026-01-31");
+  await wpisz("#p-okres_od", "2025-10-01");
+  await czekaj(300);
+  sprawdz("okres dłuższy niż 62 dni: uwaga, zapis możliwy", (await widoczny("#faktura-okres-dlugi")) && !(await js("document.querySelector('#zapisz').disabled")));
+  await wpisz("#p-okres_od", "2026-01-01");
+  await czekaj(300);
 
   // 6. Blokada bezpiecznika.
   await ustawPliki([plikZly]);

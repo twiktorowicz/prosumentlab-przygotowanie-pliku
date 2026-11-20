@@ -162,12 +162,18 @@ function zapamietajCeny() {
   });
 }
 
+// Ceny w strefach tylko przy cenie stałej i taryfie z kilkoma strefami; przy cenie dynamicznej
+// faktura podaje jedną średnią cenę.
+function wyborStref() {
+  const taryfa = wybrane("taryfa");
+  const wieleStref = ((STREFY[taryfa] ?? 0) > 1 || taryfa === "inna") && wybrane("rodzaj_ceny") !== "dynamiczna";
+  return { taryfa, wieleStref, strefy: wieleStref && wybrane("cena_tryb") === "strefy" };
+}
+
 function zbudujPolaCen() {
   zapamietajCeny();
-  const taryfa = wybrane("taryfa");
-  const wieleStref = (STREFY[taryfa] ?? 0) > 1 || taryfa === "inna";
+  const { taryfa, wieleStref, strefy } = wyborStref();
   pokaz($("#cena-tryb"), wieleStref);
-  const strefy = wieleStref && wybrane("cena_tryb") === "strefy";
   const kontener = $("#cena-pola");
   if (strefy) {
     kontener.replaceChildren(...nazwyStref(taryfa).map((nazwa, i) => {
@@ -177,7 +183,8 @@ function zbudujPolaCen() {
       return el("div", { klasa: "strefa" }, el("label", { for: id, tekst: nazwa }), pole);
     }));
   } else {
-    const pole = el("input", { type: "text", id: "p-cena", inputmode: "decimal", autocomplete: "off", "aria-label": t("faktura_cena") });
+    const etykieta = t(wybrane("rodzaj_ceny") === "dynamiczna" ? "faktura_cena_dynamiczna" : "faktura_cena");
+    const pole = el("input", { type: "text", id: "p-cena", inputmode: "decimal", autocomplete: "off", "aria-label": etykieta });
     pole.value = wartosciCen.jedna;
     kontener.replaceChildren(pole);
   }
@@ -216,30 +223,29 @@ function zbudujZmiany() {
   }));
 }
 
-// Pola z warunkiem („sprzedawca=inny”) są widoczne tylko przy tej wartości.
+// Elementy z warunkiem „sprzedawca=inny” są widoczne tylko przy tej wartości, z warunkiem
+// „system_rozliczenia!=opusty” przy każdej innej (także bez wyboru). Schowane pola zachowują
+// wpisane wartości; to, czy trafiają do danych, rozstrzyga moduł formularza.
 function warunki() {
   for (const e of $$("[data-warunek]")) {
-    const [pole, wartosc] = e.dataset.warunek.split("=");
-    pokaz(e, wybrane(pole) === wartosc);
+    const [, pole, znak, wartosc] = /^([a-z_]+)(!?=)(.*)$/.exec(e.dataset.warunek);
+    pokaz(e, (wybrane(pole) === wartosc) === (znak === "="));
   }
+  pokaz($("#korekta-podpowiedz"), $("#p-korekta").checked);
   for (const z of $$("[data-zmiana]")) pokaz($(".miesiac-rok", z), $('input[type="checkbox"]', z).checked);
 }
 
 function zbierzFormularz() {
-  const taryfa = wybrane("taryfa");
-  const wieleStref = (STREFY[taryfa] ?? 0) > 1 || taryfa === "inna";
-  const cena = wieleStref && wybrane("cena_tryb") === "strefy"
-    ? $$("[data-strefa]").map((p) => p.value)
-    : ($("#p-cena")?.value ?? "");
+  const { taryfa, strefy } = wyborStref();
+  const cena = strefy ? $$("[data-strefa]").map((p) => p.value) : ($("#p-cena")?.value ?? "");
   const faktura = {
     sprzedawca: wybrane("sprzedawca"),
     sprzedawca_nazwa: wartoscPola("sprzedawca_nazwa"),
-    operator_dystrybucyjny: wybrane("operator_dystrybucyjny"),
     taryfa,
     taryfa_nazwa: wartoscPola("taryfa_nazwa"),
     okres_od: wartoscPola("okres_od"),
     okres_do: wartoscPola("okres_do"),
-    rodzaj_faktury: wybrane("rodzaj_faktury"),
+    rodzaj_faktury: $("#p-korekta").checked ? "korekta" : "rozliczeniowa",
     system_rozliczenia: wybrane("system_rozliczenia"),
     rodzaj_ceny: wybrane("rodzaj_ceny"),
     cena_energii_netto_zl_kwh: cena,
@@ -257,7 +263,6 @@ function zbierzFormularz() {
     magazyn: wybrane("magazyn"),
     magazyn_pojemnosc_kwh: wartoscPola("magazyn_pojemnosc_kwh"),
     magazyn_od: wartoscMiesiaca($('[data-miesiac="magazyn_od"]'), { niepelny: true }),
-    pierwsze_oddanie: wybrane("pierwsze_oddanie"),
     zmiany: $$("[data-zmiana]").map((z) => ({
       rodzaj: $('input[type="checkbox"]', z).checked ? z.dataset.rodzaj : "",
       miesiac: wartoscMiesiaca($(".miesiac-rok", z)),
@@ -408,7 +413,7 @@ const miesiacTekst = (rokMiesiac) => {
 function pokazZakres() {
   const kontener = $("#zakres");
   if (!wynik.pliki.some((p) => p.stan === "przyjety" || p.stan === "uwaga")) {
-    kontener.replaceChildren();
+    kontener.replaceChildren(komunikat("", t("zakres_pusty")));
     return;
   }
   const z = wynik.zakres;
@@ -472,6 +477,8 @@ function pokazPola() {
     }
   }
   pokaz($("#faktura-poza-zakresem"), wynik.uwagi.some((u) => u.kod === "FAKTURA_R_POZA_ZAKRESEM"));
+  pokaz($("#faktura-okres-dlugi"), wynik.uwagi.some((u) => u.kod === "FAKTURA_OKRES_DLUGI"));
+  pokaz($("#faktura-cena-nietypowa"), wynik.uwagi.some((u) => u.kod === "FAKTURA_CENA_NIETYPOWA"));
   // Uwaga o brakujących polach dopiero wtedy, gdy narzędzie przyjęło co najmniej jeden plik.
   const jestPlik = wynik.pliki.some((p) => p.stan === "przyjety" || p.stan === "uwaga");
   const brak = jestPlik && wynik.uwagi.find((u) => u.kod === "FAKTURA_BRAK_OBOWIAZKOWYCH");
@@ -616,7 +623,7 @@ function start() {
   const main = $("main");
   main.addEventListener("input", przeliczPozniej);
   main.addEventListener("change", (z) => {
-    if (z.target.name === "taryfa" || z.target.name === "cena_tryb") zbudujPolaCen();
+    if (["taryfa", "cena_tryb", "rodzaj_ceny"].includes(z.target.name)) zbudujPolaCen();
     if (z.target.id !== "wybor-plikow") przelicz();
   });
   $("#dodaj-strefe").addEventListener("click", () => {

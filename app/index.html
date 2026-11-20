@@ -49,6 +49,7 @@
 
     <section class="krok" id="krok-faktura">
       <h2 data-tekst="krok_faktura"></h2>
+      <p data-tekst="faktura_wstep"></p>
       <figure class="rysunek">
         <div class="rysunek-strony" id="rysunek-faktury" role="img">
           <img src="faktura-strona-1.svg" width="262" height="305" alt="">
@@ -60,111 +61,132 @@
         </figcaption>
       </figure>
 
-      <fieldset class="pole" data-pole="sprzedawca" data-opcje="opcje_sprzedawca">
-        <legend data-tekst="faktura_sprzedawca"></legend>
-        <div class="opcje"></div>
-        <p class="blad" hidden></p>
-      </fieldset>
-      <div class="pole" data-pole="sprzedawca_nazwa" data-warunek="sprzedawca=inny" hidden>
-        <label for="p-sprzedawca_nazwa" data-tekst="faktura_sprzedawca_nazwa"></label>
-        <input type="text" id="p-sprzedawca_nazwa" maxlength="60" autocomplete="off">
-        <p class="podpowiedz" data-tekst="tekst_wolny_podpowiedz"></p>
-        <p class="blad" hidden></p>
-      </div>
-
-      <fieldset class="pole" data-pole="operator_dystrybucyjny" data-opcje="opcje_operator">
-        <legend data-tekst="faktura_operator"></legend>
-        <p class="podpowiedz" data-tekst="faktura_operator_podpowiedz"></p>
-        <div class="opcje"></div>
-        <p class="blad" hidden></p>
-      </fieldset>
-
-      <fieldset class="pole" data-pole="taryfa" data-opcje="opcje_taryfa">
-        <legend data-tekst="faktura_taryfa"></legend>
-        <div class="opcje"></div>
-        <p class="blad" hidden></p>
-      </fieldset>
-      <div class="pole" data-pole="taryfa_nazwa" data-warunek="taryfa=inna" hidden>
-        <label for="p-taryfa_nazwa" data-tekst="faktura_taryfa_nazwa"></label>
-        <input type="text" id="p-taryfa_nazwa" maxlength="60" autocomplete="off">
-        <p class="podpowiedz" data-tekst="tekst_wolny_podpowiedz"></p>
-        <p class="blad" hidden></p>
-      </div>
-
-      <div class="pole-para">
-        <div class="pole" data-pole="okres_od">
-          <label for="p-okres_od" data-tekst="faktura_okres_od"></label>
-          <input type="date" id="p-okres_od" min="2010-01-01" max="2099-12-31">
-          <p class="blad" hidden></p>
-        </div>
-        <div class="pole" data-pole="okres_do">
-          <label for="p-okres_do" data-tekst="faktura_okres_do"></label>
-          <input type="date" id="p-okres_do" min="2010-01-01" max="2099-12-31">
-          <p class="blad" hidden></p>
-        </div>
-      </div>
-      <p class="uwaga" id="faktura-poza-zakresem" data-tekst="faktura_r_poza_zakresem" hidden></p>
-
-      <fieldset class="pole" data-pole="rodzaj_faktury" data-opcje="opcje_rodzaj_faktury">
-        <legend data-tekst="faktura_rodzaj"></legend>
-        <div class="opcje"></div>
-        <p class="podpowiedz" data-tekst="faktura_korekta" data-warunek="rodzaj_faktury=korekta" hidden></p>
-        <p class="blad" hidden></p>
-      </fieldset>
-
       <fieldset class="pole" data-pole="system_rozliczenia" data-opcje="opcje_system">
-        <legend data-tekst="faktura_system"></legend>
+        <legend><span class="nr" aria-hidden="true">5</span><span data-tekst="faktura_system"></span></legend>
+        <details class="pomoc">
+          <summary data-tekst="co_to_znaczy"></summary>
+          <p data-tekst="pomoc_system"></p>
+        </details>
         <div class="opcje"></div>
         <p class="uwaga" data-tekst="faktura_opusty" data-warunek="system_rozliczenia=opusty" hidden></p>
         <p class="blad" hidden></p>
       </fieldset>
 
-      <fieldset class="pole" data-pole="rodzaj_ceny" data-opcje="opcje_rodzaj_ceny">
-        <legend data-tekst="faktura_rodzaj_ceny"></legend>
-        <div class="opcje"></div>
-        <p class="blad" hidden></p>
-      </fieldset>
-
-      <fieldset class="pole" data-pole="cena_energii_netto_zl_kwh">
-        <legend data-tekst="faktura_cena"></legend>
-        <div class="opcje" id="cena-tryb" hidden>
-          <label class="opcja"><input type="radio" name="cena_tryb" value="jedna" checked><span data-tekst="faktura_cena_jedna"></span></label>
-          <label class="opcja"><input type="radio" name="cena_tryb" value="strefy"><span data-tekst="faktura_cena_strefy"></span></label>
+      <div id="faktura-pola" data-warunek="system_rozliczenia!=opusty">
+        <fieldset class="pole" data-pole="sprzedawca" data-opcje="opcje_sprzedawca">
+          <legend><span class="nr" aria-hidden="true">3</span><span data-tekst="faktura_sprzedawca"></span></legend>
+          <div class="opcje"></div>
+          <p class="blad" hidden></p>
+        </fieldset>
+        <div class="pole" data-pole="sprzedawca_nazwa" data-warunek="sprzedawca=inny" hidden>
+          <label for="p-sprzedawca_nazwa" data-tekst="faktura_sprzedawca_nazwa"></label>
+          <input type="text" id="p-sprzedawca_nazwa" maxlength="60" autocomplete="off">
+          <p class="podpowiedz" data-tekst="tekst_wolny_podpowiedz"></p>
+          <p class="blad" hidden></p>
         </div>
-        <div class="pola-stref" id="cena-pola"></div>
-        <button type="button" class="przycisk przycisk-drugi" id="dodaj-strefe" data-tekst="faktura_dodaj_strefe" hidden></button>
-        <p class="podpowiedz" id="strefy-kolejnosc" data-tekst="faktura_strefy_kolejnosc" hidden></p>
-        <p class="podpowiedz" data-tekst="faktura_cena_kilka"></p>
-        <p class="blad" hidden></p>
-      </fieldset>
 
-      <div class="pole" data-pole="oplata_mocowa_zl_mies">
-        <label for="p-oplata_mocowa_zl_mies" data-tekst="faktura_mocowa"></label>
-        <input type="text" id="p-oplata_mocowa_zl_mies" inputmode="decimal" autocomplete="off">
-        <p class="blad" hidden></p>
-      </div>
-      <div class="pole" data-pole="oplata_abonamentowa_zl_mies">
-        <label for="p-oplata_abonamentowa_zl_mies" data-tekst="faktura_abonamentowa"></label>
-        <input type="text" id="p-oplata_abonamentowa_zl_mies" inputmode="decimal" autocomplete="off">
-        <p class="blad" hidden></p>
-      </div>
-      <div class="pole" data-pole="oplata_stala_sieciowa_zl_mies">
-        <label for="p-oplata_stala_sieciowa_zl_mies" data-tekst="faktura_stala"></label>
-        <input type="text" id="p-oplata_stala_sieciowa_zl_mies" inputmode="decimal" autocomplete="off">
-        <p class="blad" hidden></p>
-      </div>
-      <div class="pole" data-pole="oplata_przejsciowa_zl_mies">
-        <label for="p-oplata_przejsciowa_zl_mies" data-tekst="faktura_przejsciowa"></label>
-        <input type="text" id="p-oplata_przejsciowa_zl_mies" inputmode="decimal" autocomplete="off">
-        <p class="blad" hidden></p>
-      </div>
+        <fieldset class="pole" data-pole="taryfa" data-opcje="opcje_taryfa">
+          <legend><span class="nr" aria-hidden="true">4</span><span data-tekst="faktura_taryfa"></span></legend>
+          <details class="pomoc">
+            <summary data-tekst="co_to_znaczy"></summary>
+            <p data-tekst="pomoc_taryfa"></p>
+          </details>
+          <div class="opcje"></div>
+          <p class="blad" hidden></p>
+        </fieldset>
+        <div class="pole" data-pole="taryfa_nazwa" data-warunek="taryfa=inna" hidden>
+          <label for="p-taryfa_nazwa" data-tekst="faktura_taryfa_nazwa"></label>
+          <input type="text" id="p-taryfa_nazwa" maxlength="60" autocomplete="off">
+          <p class="podpowiedz" data-tekst="tekst_wolny_podpowiedz"></p>
+          <p class="blad" hidden></p>
+        </div>
 
-      <fieldset class="pole" data-pole="oplaty_stale_inne">
-        <legend data-tekst="faktura_inne"></legend>
-        <p class="podpowiedz" data-tekst="tekst_wolny_podpowiedz"></p>
-        <div id="oplaty-inne"></div>
-        <button type="button" class="przycisk przycisk-drugi" id="dodaj-oplate" data-tekst="faktura_dodaj_oplate"></button>
-      </fieldset>
+        <div class="pole-para">
+          <div class="pole" data-pole="okres_od">
+            <label for="p-okres_od"><span class="nr" aria-hidden="true">2</span><span data-tekst="faktura_okres_od"></span></label>
+            <input type="date" id="p-okres_od" min="2010-01-01" max="2099-12-31">
+            <p class="blad" hidden></p>
+          </div>
+          <div class="pole" data-pole="okres_do">
+            <label for="p-okres_do"><span class="nr" aria-hidden="true">2</span><span data-tekst="faktura_okres_do"></span></label>
+            <input type="date" id="p-okres_do" min="2010-01-01" max="2099-12-31">
+            <p class="blad" hidden></p>
+          </div>
+        </div>
+        <details class="pomoc">
+          <summary data-tekst="co_to_znaczy"></summary>
+          <p data-tekst="pomoc_okres"></p>
+        </details>
+        <p class="uwaga" id="faktura-okres-dlugi" data-tekst="faktura_okres_dlugi" hidden></p>
+        <p class="uwaga" id="faktura-poza-zakresem" data-tekst="faktura_r_poza_zakresem" hidden></p>
+
+        <div class="pole" data-pole="rodzaj_faktury">
+          <label class="opcja"><span class="nr" aria-hidden="true">1</span><input type="checkbox" id="p-korekta"><span data-tekst="faktura_korekta_pole"></span></label>
+          <p class="podpowiedz" id="korekta-podpowiedz" data-tekst="faktura_korekta" hidden></p>
+          <p class="blad" hidden></p>
+        </div>
+
+        <fieldset class="pole" data-pole="rodzaj_ceny" data-opcje="opcje_rodzaj_ceny">
+          <legend><span class="nr" aria-hidden="true">12</span><span data-tekst="faktura_rodzaj_ceny"></span></legend>
+          <details class="pomoc">
+            <summary data-tekst="co_to_znaczy"></summary>
+            <p data-tekst="pomoc_rodzaj_ceny"></p>
+          </details>
+          <div class="opcje"></div>
+          <p class="blad" hidden></p>
+        </fieldset>
+
+        <fieldset class="pole" data-pole="cena_energii_netto_zl_kwh">
+          <legend><span class="nr" aria-hidden="true">6</span><span data-tekst="faktura_cena" data-warunek="rodzaj_ceny!=dynamiczna"></span><span data-tekst="faktura_cena_dynamiczna" data-warunek="rodzaj_ceny=dynamiczna" hidden></span></legend>
+          <details class="pomoc">
+            <summary data-tekst="co_to_znaczy"></summary>
+            <p data-tekst="pomoc_cena_stala" data-warunek="rodzaj_ceny!=dynamiczna"></p>
+            <p data-tekst="pomoc_cena_dynamiczna" data-warunek="rodzaj_ceny=dynamiczna" hidden></p>
+          </details>
+          <div class="opcje" id="cena-tryb" hidden>
+            <label class="opcja"><input type="radio" name="cena_tryb" value="jedna" checked><span data-tekst="faktura_cena_jedna"></span></label>
+            <label class="opcja"><input type="radio" name="cena_tryb" value="strefy"><span data-tekst="faktura_cena_strefy"></span></label>
+          </div>
+          <div class="pola-stref" id="cena-pola"></div>
+          <button type="button" class="przycisk przycisk-drugi" id="dodaj-strefe" data-tekst="faktura_dodaj_strefe" hidden></button>
+          <p class="podpowiedz" id="strefy-kolejnosc" data-tekst="faktura_strefy_kolejnosc" hidden></p>
+          <p class="podpowiedz" data-tekst="faktura_cena_kilka" data-warunek="rodzaj_ceny!=dynamiczna"></p>
+          <p class="uwaga" id="faktura-cena-nietypowa" data-tekst="faktura_cena_nietypowa" hidden></p>
+          <p class="blad" hidden></p>
+        </fieldset>
+
+        <details class="oplaty">
+          <summary data-tekst="faktura_oplaty"></summary>
+          <p class="podpowiedz" data-tekst="faktura_oplaty_wstep"></p>
+          <div class="pole" data-pole="oplata_mocowa_zl_mies">
+            <label for="p-oplata_mocowa_zl_mies"><span class="nr" aria-hidden="true">8</span><span data-tekst="faktura_mocowa"></span></label>
+            <input type="text" id="p-oplata_mocowa_zl_mies" inputmode="decimal" autocomplete="off">
+            <p class="blad" hidden></p>
+          </div>
+          <div class="pole" data-pole="oplata_abonamentowa_zl_mies">
+            <label for="p-oplata_abonamentowa_zl_mies"><span class="nr" aria-hidden="true">9</span><span data-tekst="faktura_abonamentowa"></span></label>
+            <input type="text" id="p-oplata_abonamentowa_zl_mies" inputmode="decimal" autocomplete="off">
+            <p class="blad" hidden></p>
+          </div>
+          <div class="pole" data-pole="oplata_stala_sieciowa_zl_mies">
+            <label for="p-oplata_stala_sieciowa_zl_mies"><span class="nr" aria-hidden="true">10</span><span data-tekst="faktura_stala"></span></label>
+            <input type="text" id="p-oplata_stala_sieciowa_zl_mies" inputmode="decimal" autocomplete="off">
+            <p class="blad" hidden></p>
+          </div>
+          <div class="pole" data-pole="oplata_przejsciowa_zl_mies">
+            <label for="p-oplata_przejsciowa_zl_mies"><span class="nr" aria-hidden="true">11</span><span data-tekst="faktura_przejsciowa"></span></label>
+            <input type="text" id="p-oplata_przejsciowa_zl_mies" inputmode="decimal" autocomplete="off">
+            <p class="blad" hidden></p>
+          </div>
+
+          <fieldset class="pole" data-pole="oplaty_stale_inne">
+            <legend><span class="nr" aria-hidden="true">7</span><span data-tekst="faktura_inne"></span></legend>
+            <p class="podpowiedz" data-tekst="tekst_wolny_podpowiedz"></p>
+            <div id="oplaty-inne"></div>
+            <button type="button" class="przycisk przycisk-drugi" id="dodaj-oplate" data-tekst="faktura_dodaj_oplate"></button>
+          </fieldset>
+        </details>
+      </div>
 
       <p class="uwaga" id="faktura-brak" hidden></p>
     </section>
@@ -192,12 +214,6 @@
       <fieldset class="pole" data-pole="magazyn_od" data-warunek="magazyn=tak" hidden>
         <legend data-tekst="instalacja_magazyn_od"></legend>
         <div class="miesiac-rok" data-miesiac="magazyn_od"></div>
-        <p class="blad" hidden></p>
-      </fieldset>
-
-      <fieldset class="pole" data-pole="pierwsze_oddanie" data-opcje="opcje_pierwsze_oddanie">
-        <legend data-tekst="instalacja_pierwsze_oddanie"></legend>
-        <div class="opcje"></div>
         <p class="blad" hidden></p>
       </fieldset>
 

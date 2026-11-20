@@ -2,17 +2,20 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { czytajFormularz, OBOWIAZKOWE_R } from "../app/lib/formularz.js";
+import { czytajFormularz as czytajFormularzZOpcjami, OBOWIAZKOWE_R, bladBudowyFormularza } from "../app/lib/formularz.js";
+
+// Strona i wiersz poleceń podają operatora z trybu (Tauron) i dzień z zegara urządzenia.
+const OPCJE = { operator: "tauron_dystrybucja", dzisiaj: "2026-11-20" };
+const czytajFormularz = (dane, opcje = {}) => czytajFormularzZOpcjami(dane, { ...OPCJE, ...opcje });
 
 const FAKTURA = {
   sprzedawca: "tauron_sprzedaz",
-  operator_dystrybucyjny: "tauron_dystrybucja",
   taryfa: "g13",
   okres_od: "2025-04-01",
   okres_do: "2025-04-30",
   rodzaj_faktury: "rozliczeniowa",
   system_rozliczenia: "net_billing_rce",
-  rodzaj_ceny: "dynamiczna",
+  rodzaj_ceny: "stala",
   cena_energii_netto_zl_kwh: "0,51234",
   oplata_mocowa_zl_mies: "12,34",
   oplata_abonamentowa_zl_mies: "5,67",
@@ -31,7 +34,7 @@ test("pełna grupa R: wartości odczytane, klucze w kolejności tabeli pól", ()
     ["okres_do", "2025-04-30"],
     ["rodzaj_faktury", "rozliczeniowa"],
     ["system_rozliczenia", "net_billing_rce"],
-    ["rodzaj_ceny", "dynamiczna"],
+    ["rodzaj_ceny", "stala"],
     ["cena_energii_netto_zl_kwh", "0.51234"],
     ["oplata_mocowa_zl_mies", "12.34"],
     ["oplata_abonamentowa_zl_mies", "5.67"],
@@ -47,7 +50,10 @@ test("pusty formularz: puste obiekty, lista brakujących pól obowiązkowych, be
   assert.deepEqual(w.instalacja, {});
   assert.deepEqual(w.bledy, []);
   assert.deepEqual(w.brakujace, OBOWIAZKOWE_R);
-  assert.equal(OBOWIAZKOWE_R.length, 12);
+  assert.deepEqual(OBOWIAZKOWE_R, [
+    "system_rozliczenia", "sprzedawca", "taryfa", "okres_od", "okres_do", "rodzaj_ceny", "cena_energii_netto_zl_kwh",
+  ]);
+  assert.deepEqual(w.uwagi, []);
   assert.equal(w.zgoda, false);
 });
 
@@ -55,7 +61,7 @@ test("pola puste i same spacje nie trafiają do danych", () => {
   const w = czytajFormularz({ faktura: { ...FAKTURA, oplata_mocowa_zl_mies: "  ", oplata_przejsciowa_zl_mies: "" } });
   assert.equal("oplata_mocowa_zl_mies" in w.raport, false);
   assert.equal("oplata_przejsciowa_zl_mies" in w.raport, false);
-  assert.deepEqual(w.brakujace, ["oplata_mocowa_zl_mies"]);
+  assert.deepEqual(w.brakujace, [], "opłaty stałe są nieobowiązkowe");
 });
 
 test("pole w złym formacie: błąd przy polu, pole nie trafia do danych i nie jest liczone jako brakujące", () => {
@@ -120,7 +126,8 @@ test("jeden zakres lat 2010–2099: okres faktury i miesiące w odpowiedziach o 
   for (const zla of ["2009-12-31", "2100-01-01"]) {
     assert.deepEqual(czytajFormularz({ faktura: { ...FAKTURA, okres_od: zla, okres_do: "" } }).bledy, [{ pole: "okres_od", kod: "faktura_data_format" }], zla);
   }
-  assert.deepEqual(czytajFormularz({ faktura: { ...FAKTURA, okres_od: "2010-01-01", okres_do: "2099-12-31" } }).bledy, []);
+  // Dzień z zegara na końcu zakresu, żeby koniec okresu nie był datą z przyszłości.
+  assert.deepEqual(czytajFormularz({ faktura: { ...FAKTURA, okres_od: "2010-01-01", okres_do: "2099-12-31" } }, { dzisiaj: "2099-12-31" }).bledy, []);
   for (const zly of ["2009-12", "2100-01"]) {
     const w = czytajFormularz({ instalacja: { magazyn: "tak", magazyn_od: zly, zmiany: [{ rodzaj: "pompa_ciepla", miesiac: zly }] } });
     assert.deepEqual(w.bledy, [{ pole: "magazyn_od", kod: "instalacja_miesiac_format" }, { pole: "zmiany[0]", kod: "instalacja_miesiac_format" }], zly);
@@ -179,7 +186,6 @@ test("instalacja: wszystkie pola, kolejność kluczy, normalizacja liczb", () =>
       magazyn: "tak",
       magazyn_pojemnosc_kwh: "10",
       magazyn_od: "2022-04",
-      pierwsze_oddanie: "nie_wiem",
       zmiany: [{ rodzaj: "pompa_ciepla", miesiac: "2024-11" }],
     },
   });
@@ -189,7 +195,6 @@ test("instalacja: wszystkie pola, kolejność kluczy, normalizacja liczb", () =>
     ["magazyn", "tak"],
     ["magazyn_pojemnosc_kwh", "10.00"],
     ["magazyn_od", "2022-04"],
-    ["pierwsze_oddanie", "nie_wiem"],
     ["zmiany", [{ rodzaj: "pompa_ciepla", miesiac: "2024-11" }]],
   ]);
 });
@@ -236,4 +241,81 @@ test("instalacja: błędy liczb, miesięcy i zmian", () => {
 test("zgoda tylko jako wartość logiczna true", () => {
   assert.equal(czytajFormularz({ zgoda: true }).zgoda, true);
   assert.equal(czytajFormularz({ zgoda: "true" }).zgoda, false);
+});
+
+test("operator: narzędzie wpisuje operatora z trybu, wartość z wejścia nie ma znaczenia", () => {
+  const w = czytajFormularz({ faktura: { ...FAKTURA, operator_dystrybucyjny: "inny" } });
+  assert.equal(w.raport.operator_dystrybucyjny, "tauron_dystrybucja");
+  assert.deepEqual(Object.keys(w.raport).slice(0, 3), ["sprzedawca", "operator_dystrybucyjny", "taryfa"]);
+  assert.deepEqual(czytajFormularz({ faktura: { taryfa: "g11" } }).raport, { operator_dystrybucyjny: "tauron_dystrybucja", taryfa: "g11" });
+  // Niezaznaczona korekta to domyślne „rozliczeniowa”, nie odpowiedź klienta: bez innych pól
+  // faktury nie ma, więc nie ma też faktury.json.
+  assert.deepEqual(czytajFormularz({ faktura: { rodzaj_faktury: "rozliczeniowa" } }).raport, {});
+  assert.deepEqual(czytajFormularz({ faktura: { rodzaj_faktury: "korekta" } }).raport, { operator_dystrybucyjny: "tauron_dystrybucja", rodzaj_faktury: "korekta" });
+  assert.deepEqual(czytajFormularz({ faktura: { taryfa: "g11" } }, { operator: undefined }).raport, { taryfa: "g11" }, "bez trybu bez operatora");
+});
+
+test("system opustów: tylko system rozliczenia i operator, reszta pól pominięta razem z błędami", () => {
+  const w = czytajFormularz({
+    faktura: { ...FAKTURA, system_rozliczenia: "opusty", oplata_mocowa_zl_mies: "12,345", okres_do: "2099-01-01", cena_energii_netto_zl_kwh: "0,05" },
+  });
+  assert.deepEqual(w.raport, { operator_dystrybucyjny: "tauron_dystrybucja", system_rozliczenia: "opusty" });
+  assert.deepEqual(Object.keys(w.raport), ["operator_dystrybucyjny", "system_rozliczenia"]);
+  assert.deepEqual(w.bledy, []);
+  assert.deepEqual(w.brakujace, []);
+  assert.deepEqual(w.uwagi, []);
+});
+
+test("sprzedawca Pstryk", () => {
+  const w = czytajFormularz({ faktura: { ...FAKTURA, sprzedawca: "pstryk" } });
+  assert.equal(w.raport.sprzedawca, "pstryk");
+  assert.deepEqual(w.bledy, []);
+});
+
+test("cena dynamiczna: jedna wartość; lista cen w strefach to błąd formatu", () => {
+  const ok = czytajFormularz({ faktura: { ...FAKTURA, rodzaj_ceny: "dynamiczna", cena_energii_netto_zl_kwh: "0,51234" } });
+  assert.equal(ok.raport.cena_energii_netto_zl_kwh, "0.51234");
+  assert.deepEqual(ok.bledy, []);
+  const lista = czytajFormularz({ faktura: { ...FAKTURA, rodzaj_ceny: "dynamiczna", cena_energii_netto_zl_kwh: ["0,60", "0,70", "0,40"] } });
+  assert.deepEqual(lista.bledy, [{ pole: "cena_energii_netto_zl_kwh", kod: "faktura_cena_format" }]);
+  assert.equal("cena_energii_netto_zl_kwh" in lista.raport, false);
+});
+
+test("okres z przyszłości: koniec po dniu z zegara urządzenia to błąd pola", () => {
+  const w = czytajFormularz({ faktura: { ...FAKTURA, okres_od: "2026-11-01", okres_do: "2026-11-21" } });
+  assert.deepEqual(w.bledy, [{ pole: "okres_do", kod: "faktura_okres_przyszly" }]);
+  assert.equal("okres_do" in w.raport, false);
+  assert.deepEqual(w.brakujace, []);
+  assert.deepEqual(czytajFormularz({ faktura: { ...FAKTURA, okres_od: "2026-11-01", okres_do: "2026-11-20" } }).bledy, [], "dzisiaj");
+  assert.deepEqual(czytajFormularz({ faktura: { ...FAKTURA, okres_od: "2026-11-01", okres_do: "2026-11-21" } }, { dzisiaj: undefined }).bledy, [], "bez daty");
+});
+
+test("uwaga o nietypowej cenie: każda cena poniżej 0,20 albo powyżej 1,50 zł/kWh, bez błędu", () => {
+  const uwagi = (cena, faktura = {}) => czytajFormularz({ faktura: { ...FAKTURA, ...faktura, cena_energii_netto_zl_kwh: cena } }).uwagi;
+  const NIETYPOWA = [{ kod: "FAKTURA_CENA_NIETYPOWA" }];
+  for (const cena of ["0,19999", "1,50001", "0,05", "12,34"]) assert.deepEqual(uwagi(cena), NIETYPOWA, cena);
+  for (const cena of ["0,20", "0,200000", "1,50", "0,51234", "1,49999"]) assert.deepEqual(uwagi(cena), [], cena);
+  assert.deepEqual(uwagi(["0,60", "0,70", "0,15"]), NIETYPOWA, "jedna ze stref");
+  assert.deepEqual(uwagi(["0,60", "0,70", "0,40"]), []);
+  assert.deepEqual(uwagi("1,60", { rodzaj_ceny: "dynamiczna" }), NIETYPOWA, "cena dynamiczna 1,6");
+  const w = czytajFormularz({ faktura: { ...FAKTURA, rodzaj_ceny: "dynamiczna", cena_energii_netto_zl_kwh: "1,60" } });
+  assert.deepEqual(w.bledy, []);
+  assert.equal(w.raport.cena_energii_netto_zl_kwh, "1.60");
+  assert.deepEqual(uwagi("0,1"), [], "cena w złym formacie: błąd pola, bez uwagi");
+});
+
+test("uwaga o długim okresie: więcej niż 62 dni, licząc oba końce", () => {
+  const uwagi = (od, doD) => czytajFormularz({ faktura: { ...FAKTURA, okres_od: od, okres_do: doD } }).uwagi;
+  assert.deepEqual(uwagi("2025-07-01", "2025-08-31"), [], "62 dni");
+  assert.deepEqual(uwagi("2025-07-01", "2025-09-01"), [{ kod: "FAKTURA_OKRES_DLUGI" }], "63 dni");
+  assert.deepEqual(uwagi("2025-01-01", "2025-12-31"), [{ kod: "FAKTURA_OKRES_DLUGI" }], "rok");
+  const obie = czytajFormularz({ faktura: { ...FAKTURA, okres_od: "2025-01-01", okres_do: "2025-12-31", cena_energii_netto_zl_kwh: "0,10" } });
+  assert.deepEqual(obie.uwagi, [{ kod: "FAKTURA_OKRES_DLUGI" }, { kod: "FAKTURA_CENA_NIETYPOWA" }]);
+  assert.deepEqual(obie.bledy, []);
+});
+
+test("plik formularza: klucze operatora i pierwszego oddania już nie istnieją", () => {
+  assert.equal(bladBudowyFormularza({ faktura: { operator_dystrybucyjny: "tauron_dystrybucja" } }), "faktura.operator_dystrybucyjny");
+  assert.equal(bladBudowyFormularza({ instalacja: { pierwsze_oddanie: "nie_wiem" } }), "instalacja.pierwsze_oddanie");
+  assert.equal(bladBudowyFormularza({ faktura: { sprzedawca: "pstryk", rodzaj_faktury: "korekta" } }), null);
 });

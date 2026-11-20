@@ -29,6 +29,10 @@ import { sprawdzBezpiecznik } from "./bezpiecznik.js";
 export const WERSJA = "0.1.0";
 export const ADRES = "raporty@prosumentlab.pl";
 export const MAKS_PLIKOW = 10;
+// Tryb narzędzia i operator sieci, od którego pochodzi plik w tym trybie (eLicznik to portal
+// Tauron Dystrybucja). Klient operatora nie wybiera.
+const TRYB = "tauron";
+const OPERATOR_TRYBU = { tauron: "tauron_dystrybucja" };
 
 const utf8 = (tekst) => new TextEncoder().encode(tekst);
 
@@ -145,7 +149,7 @@ export function zlozZgloszenie({ przygotowane, formularz, numer, utworzono }) {
   const { pliki, przyjete, analiza } = przygotowane;
   const blokady = [...przygotowane.blokady];
 
-  const form = czytajFormularz(formularz);
+  const form = czytajFormularz(formularz, { operator: OPERATOR_TRYBU[TRYB], dzisiaj: utworzono });
 
   // Uwagi w kolejności: pliki, zakres, faktura, instalacja. Pola poza `kod` i `gdzie` służą
   // tylko do komunikatów na stronie i nie trafiają do zgloszenie.json.
@@ -158,6 +162,7 @@ export function zlozZgloszenie({ przygotowane, formularz, numer, utworzono }) {
   if (analiza && r.okres_od && r.okres_do && !okresWPelnychDobach(analiza, doba(r.okres_od), doba(r.okres_do))) {
     uwagi.push({ kod: "FAKTURA_R_POZA_ZAKRESEM", gdzie: "raport" });
   }
+  for (const u of form.uwagi) uwagi.push({ ...u, gdzie: "raport" });
   if (form.brakujace.length > 0) uwagi.push({ kod: "FAKTURA_BRAK_OBOWIAZKOWYCH", gdzie: "raport", pola: [...form.brakujace] });
   if (r.system_rozliczenia === "opusty") uwagi.push({ kod: "FAKTURA_OPUSTY", gdzie: "raport" });
   // Analiza bez żadnej istniejącej godziny (np. plik z samą godziną 03:00 z doby zmiany czasu
@@ -179,7 +184,7 @@ export function zlozZgloszenie({ przygotowane, formularz, numer, utworzono }) {
     numer,
     utworzono,
     zgoda_przypadek_testowy: form.zgoda,
-    tryb: "tauron",
+    tryb: TRYB,
     ppe_porownane: analiza ? analiza.ppePorownane : false,
     pliki: przyjete.map((p) => {
       const o = p.odczyt;
