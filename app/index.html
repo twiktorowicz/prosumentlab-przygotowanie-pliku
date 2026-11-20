@@ -102,7 +102,12 @@
           <p class="blad" hidden></p>
         </div>
 
-        <div class="pole-para">
+        <fieldset class="pole" data-pole="okres_miesiac">
+          <legend><span class="nr" aria-hidden="true">2</span><span data-tekst="faktura_miesiac"></span></legend>
+          <div class="miesiac-rok" data-miesiac="okres_miesiac"></div>
+          <p class="blad" hidden></p>
+        </fieldset>
+        <div class="pole-para" id="okres-daty" hidden>
           <div class="pole" data-pole="okres_od">
             <label for="p-okres_od"><span class="nr" aria-hidden="true">2</span><span data-tekst="faktura_okres_od"></span></label>
             <input type="date" id="p-okres_od" min="2010-01-01" max="2099-12-31">
@@ -114,6 +119,7 @@
             <p class="blad" hidden></p>
           </div>
         </div>
+        <label class="opcja"><input type="checkbox" id="p-okres-inny"><span data-tekst="faktura_inny_okres"></span></label>
         <details class="pomoc">
           <summary data-tekst="co_to_znaczy"></summary>
           <p data-tekst="pomoc_okres"></p>
@@ -210,6 +216,7 @@
       <div class="pole" data-pole="magazyn_pojemnosc_kwh" data-warunek="magazyn=tak" hidden>
         <label for="p-magazyn_pojemnosc_kwh" data-tekst="instalacja_pojemnosc"></label>
         <input type="text" id="p-magazyn_pojemnosc_kwh" inputmode="decimal" autocomplete="off">
+        <p class="uwaga" id="pojemnosc-brak" data-tekst="instalacja_pojemnosc_brak" hidden></p>
         <p class="blad" hidden></p>
       </div>
       <fieldset class="pole" data-pole="magazyn_od" data-warunek="magazyn=tak" hidden>
@@ -242,23 +249,28 @@
 
     <section class="krok" id="krok-zapis">
       <h2 data-tekst="krok_zapis"></h2>
-      <div class="przyciski-zapisu">
-        <button type="button" class="przycisk" id="zapisz" data-tekst="zapisz_przycisk"></button>
-        <button type="button" class="przycisk" id="udostepnij-przycisk" data-tekst="udostepnij_przycisk" hidden></button>
-      </div>
-      <p class="potwierdzenie" id="zapis-gotowe" aria-live="polite" hidden></p>
-      <p class="uwaga" id="zapis-ponownie" data-tekst="zapis_ponownie" hidden></p>
-      <p class="podpowiedz" data-tekst="zapis_gdzie"></p>
-      <div id="udostepnij" hidden>
-        <p class="podpowiedz" data-tekst="udostepnij_podpowiedz"></p>
-        <button type="button" class="przycisk-tekstowy" id="kopiuj-adres" data-tekst="kopiuj_adres" hidden></button>
-      </div>
-      <p class="uwaga" id="udostepnij-niedostepne" data-tekst="udostepnij_niedostepne" hidden></p>
       <p class="uwaga" id="zapis-powod" aria-live="polite" hidden></p>
-      <div id="po-zapisie" aria-live="polite" hidden>
-        <p id="po-zapisie-tekst"></p>
-        <p class="uwaga" id="mailto-bez-zalacznika"></p>
-        <a class="przycisk przycisk-drugi" id="mailto" data-tekst="mailto_przycisk"></a>
+      <div class="droga" id="droga-udostepnianie" hidden>
+        <button type="button" class="przycisk" id="udostepnij-przycisk" data-tekst="udostepnij_przycisk"></button>
+        <p class="podpowiedz" data-tekst="udostepnij_podpowiedz"></p>
+        <button type="button" class="przycisk-tekstowy" id="droga-zapis-pokaz" data-tekst="droga_zapis_pokaz"></button>
+      </div>
+      <div class="droga" id="droga-zapis">
+        <p class="uwaga" id="udostepnij-niedostepne" data-tekst="udostepnij_niedostepne" hidden></p>
+        <div class="krok-drogi">
+          <h3 data-tekst="droga_zapis_krok1"></h3>
+          <button type="button" class="przycisk" id="zapisz" data-tekst="zapisz_przycisk"></button>
+          <p class="potwierdzenie" id="zapis-gotowe" aria-live="polite" hidden></p>
+          <p class="uwaga" id="zapis-ponownie" data-tekst="zapis_ponownie" hidden></p>
+          <p class="podpowiedz" data-tekst="zapis_gdzie"></p>
+        </div>
+        <div class="krok-drogi">
+          <h3 data-tekst="droga_zapis_krok2"></h3>
+          <p id="po-zapisie" aria-live="polite" hidden></p>
+          <p class="uwaga" id="mailto-bez-zalacznika"></p>
+          <a class="przycisk przycisk-drugi" id="mailto" data-tekst="mailto_przycisk" aria-disabled="true" aria-describedby="mailto-najpierw-zapisz"></a>
+          <p class="podpowiedz" id="mailto-najpierw-zapisz" data-tekst="mailto_najpierw_zapisz"></p>
+        </div>
       </div>
     </section>
   </main>

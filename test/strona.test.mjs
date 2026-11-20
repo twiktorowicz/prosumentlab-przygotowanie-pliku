@@ -26,7 +26,7 @@ test("pliki przetwarzane raz: strona nie woła przygotujZgloszenie, tylko przygo
 });
 
 // Wyjątki: odnośnik do pobrania ZIP-a (download) i odnośnik mailto: na adresie po zapisie, który
-// otwiera program poczty, a nie kartę (tak jak „Napisz wiadomość” w index.html).
+// otwiera program poczty, a nie kartę (tak jak „Otwórz wiadomość” w index.html).
 test("odnośniki otwierają się w nowej karcie, żeby nie skasować danych z pamięci strony", () => {
   const odnosniki = [...MAIN.matchAll(/el\("a",\s*\{([^}]*)\}/g)].map((m) => m[1]).filter((a) => /href:/.test(a) && !/download/.test(a) && !/href: mailto\b/.test(a));
   assert.ok(odnosniki.length >= 2, "odnośnik zgody i repozytorium");
@@ -92,7 +92,7 @@ test("sekcja faktury: wstęp, potem pola w kolejności z formularza", () => {
   assert.ok(sekcja.indexOf('data-tekst="faktura_wstep"') < sekcja.indexOf("data-pole="), "wstęp przed polami");
   const pola = [...sekcja.matchAll(/data-pole="([a-z_]+)"/g)].map((m) => m[1]);
   assert.deepEqual(pola, [
-    "system_rozliczenia", "sprzedawca", "sprzedawca_nazwa", "taryfa", "taryfa_nazwa", "okres_od", "okres_do", "rodzaj_faktury",
+    "system_rozliczenia", "sprzedawca", "sprzedawca_nazwa", "taryfa", "taryfa_nazwa", "okres_miesiac", "okres_od", "okres_do", "rodzaj_faktury",
     "rodzaj_ceny", "cena_energii_netto_zl_kwh", "oplata_mocowa_zl_mies", "oplata_abonamentowa_zl_mies",
     "oplata_stala_sieciowa_zl_mies", "oplata_przejsciowa_zl_mies", "oplaty_stale_inne",
   ]);
@@ -130,15 +130,15 @@ test("„Co to znaczy?”: zwinięte <details> pod etykietą pięciu pól", () =
     assert.match(blok, POMOC, pole);
     for (const k of klucze) assert.match(blok, new RegExp(`data-tekst="${k}"`), `${pole}: ${k}`);
   }
-  // Okres ma dwie etykiety (od, do), więc podpowiedź stoi tuż pod parą pól.
-  assert.match(HTML, /<\/div>\s*<details class="pomoc">\s*<summary data-tekst="co_to_znaczy"><\/summary>\s*<p data-tekst="pomoc_okres"><\/p>/);
+  // Okres to lista miesiąca albo dwie daty, więc podpowiedź stoi pod całą grupą, po polu wyboru.
+  assert.match(HTML, /<\/label>\s*<details class="pomoc">\s*<summary data-tekst="co_to_znaczy"><\/summary>\s*<p data-tekst="pomoc_okres"><\/p>/);
   assert.equal((HTML.match(/<details class="pomoc">/g) ?? []).length, 5);
   assert.doesNotMatch(HTML, /<details[^>]*\bopen\b/, "domyślnie zwinięte");
 });
 
 test("numery przy polach jak na rysunku, ukryte przed czytnikiem ekranu", () => {
   const NUMERY = {
-    rodzaj_faktury: 1, okres_od: 2, okres_do: 2, sprzedawca: 3, taryfa: 4, system_rozliczenia: 5, cena_energii_netto_zl_kwh: 6,
+    rodzaj_faktury: 1, okres_miesiac: 2, okres_od: 2, okres_do: 2, sprzedawca: 3, taryfa: 4, system_rozliczenia: 5, cena_energii_netto_zl_kwh: 6,
     oplaty_stale_inne: 7, oplata_mocowa_zl_mies: 8, oplata_abonamentowa_zl_mies: 9, oplata_stala_sieciowa_zl_mies: 10,
     oplata_przejsciowa_zl_mies: 11, rodzaj_ceny: 12,
   };
@@ -157,6 +157,34 @@ test("cena dynamiczna: jedno pole bez stref, własna etykieta i podpowiedź", ()
   assert.match(blok, /data-tekst="faktura_cena_dynamiczna" data-warunek="rodzaj_ceny=dynamiczna"/);
   assert.match(blok, /data-tekst="faktura_cena_kilka" data-warunek="rodzaj_ceny!=dynamiczna"/);
   assert.match(MAIN, /wybrane\("rodzaj_ceny"\) !== "dynamiczna"/, "strefy tylko przy cenie stałej");
+});
+
+test("okres faktury: domyślnie miesiąc z dwóch list, pole wyboru odsłania dwie daty", () => {
+  const miesiac = blokPola("okres_miesiac");
+  assert.match(HTML, /<fieldset class="pole" data-pole="okres_miesiac">/);
+  assert.match(miesiac, /<legend><span class="nr" aria-hidden="true">2<\/span><span data-tekst="faktura_miesiac"><\/span><\/legend>\s*<div class="miesiac-rok" data-miesiac="okres_miesiac"><\/div>\s*<p class="blad" hidden><\/p>/);
+  // Dwie daty schowane na starcie, w jednym kontenerze, tuż za polem miesiąca.
+  assert.match(HTML, /<\/fieldset>\s*<div class="pole-para" id="okres-daty" hidden>\s*<div class="pole" data-pole="okres_od">/);
+  assert.match(HTML, /<label class="opcja"><input type="checkbox" id="p-okres-inny"><span data-tekst="faktura_inny_okres"><\/span><\/label>/);
+  assert.ok(HTML.indexOf('id="okres-daty"') < HTML.indexOf('id="p-okres-inny"'), "pole wyboru pod polami okresu");
+  // Lata od bieżącego do 2022 (początek net-billingu); magazyn i zmiany dalej od 2010.
+  assert.match(MAIN, /\nconst ROK_FAKTURY_OD = 2022;/);
+  assert.match(MAIN, /listyMiesiacaIRoku\("okres_miesiac", ROK_FAKTURY_OD\)/);
+  assert.match(funkcja("listyMiesiacaIRoku"), /for \(let r = rokBiezacy; r >= rokOd; r--\)/);
+  // Przełączanie tylko chowa pola: wartości zostają, a do modułu trafia miesiąc albo daty.
+  const war = funkcja("warunki");
+  assert.match(war, /pokaz\(\$\("#okres-daty"\), innyOkres\)/);
+  assert.match(war, /pokaz\(\$\('\[data-pole="okres_miesiac"\]'\), !innyOkres\)/);
+  const zbierz = funkcja("zbierzFormularz");
+  assert.match(zbierz, /okres_miesiac: innyOkres \? "" : wartoscMiesiaca\(\$\('\[data-miesiac="okres_miesiac"\]'\), \{ niepelny: true \}\)/);
+  assert.match(zbierz, /okres_od: innyOkres \? wartoscPola\("okres_od"\) : ""/);
+  assert.match(zbierz, /okres_do: innyOkres \? wartoscPola\("okres_do"\) : ""/);
+  assert.doesNotMatch(war, /\.value\s*=/, "przełączanie nie czyści pól");
+});
+
+test("pojemność magazynu: uwaga pod polem przy „tak” i pustym polu, bez blokady zapisu", () => {
+  assert.match(blokPola("magazyn_pojemnosc_kwh"), /<input type="text" id="p-magazyn_pojemnosc_kwh"[^>]*>\s*<p class="uwaga" id="pojemnosc-brak" data-tekst="instalacja_pojemnosc_brak" hidden><\/p>\s*<p class="blad" hidden><\/p>/);
+  assert.match(funkcja("pokazPola"), /pokaz\(\$\("#pojemnosc-brak"\), wybrane\("magazyn"\) === "tak" && !wartoscPola\("magazyn_pojemnosc_kwh"\)\.trim\(\)\)/);
 });
 
 test("zakres przed dodaniem pliku: zakres_pusty", () => {
@@ -194,29 +222,72 @@ test("krok 1: odnośnik „jak go pobrać z eLicznika” do /jak-pobrac-dane-z-e
   assert.match(MAIN, /el\("a", \{ href: "\/jak-pobrac-dane-z-elicznika\/", target: "_blank", rel: "noopener noreferrer"/);
 });
 
-test("zapis: przyciski zapisu i wysyłki w jednym rzędzie, pod nimi potwierdzenie zapisu, potem zapis_gdzie", () => {
-  assert.match(HTML, new RegExp([
-    '<div class="przyciski-zapisu">',
-    '<button type="button" class="przycisk" id="zapisz" data-tekst="zapisz_przycisk"></button>',
-    '<button type="button" class="przycisk" id="udostepnij-przycisk" data-tekst="udostepnij_przycisk" hidden></button>',
+// Ciąg elementów index.html, przedzielonych tylko odstępami.
+const ciag = (czesci) => new RegExp(czesci.map((s) => s.replace(/[()[\]?.*+^$|]/g, "\\$&")).join("\\s*"));
+
+test("krok 7: tytuł, powód blokady, potem dwie drogi; droga z udostępnianiem schowana na starcie", () => {
+  assert.match(HTML, ciag([
+    '<section class="krok" id="krok-zapis">',
+    '<h2 data-tekst="krok_zapis"></h2>',
+    '<p class="uwaga" id="zapis-powod" aria-live="polite" hidden></p>',
+    '<div class="droga" id="droga-udostepnianie" hidden>',
+    '<button type="button" class="przycisk" id="udostepnij-przycisk" data-tekst="udostepnij_przycisk"></button>',
+    '<p class="podpowiedz" data-tekst="udostepnij_podpowiedz"></p>',
+    '<button type="button" class="przycisk-tekstowy" id="droga-zapis-pokaz" data-tekst="droga_zapis_pokaz"></button>',
     "</div>",
-    '<p class="potwierdzenie" id="zapis-gotowe" aria-live="polite" hidden></p>',
-    '<p class="uwaga" id="zapis-ponownie" data-tekst="zapis_ponownie" hidden></p>',
-    '<p class="podpowiedz" data-tekst="zapis_gdzie"></p>',
-  ].map((s) => s.replace(/[()]/g, "\\$&")).join("\\s*")));
+    '<div class="droga" id="droga-zapis">',
+    '<p class="uwaga" id="udostepnij-niedostepne" data-tekst="udostepnij_niedostepne" hidden></p>',
+  ]));
   assert.match(HTML, /<span id="zgoda-wiecej"><\/span>\s*<\/div>\s*<p class="podpowiedz" data-tekst="zgoda_bez"><\/p>/);
 });
 
-test("po zapisie: mailto_bez_zalacznika tuż nad przyciskiem wiadomości", () => {
-  assert.match(HTML, /<p class="uwaga" id="mailto-bez-zalacznika"><\/p>\s*<a class="przycisk przycisk-drugi" id="mailto"/);
-  assert.match(funkcja("zapisz"), /t\("mailto_bez_zalacznika", \{ plik: wynik\.nazwaZip \}\)/);
+test("droga z zapisem: krok 1 zapis z potwierdzeniem i zapis_gdzie, krok 2 wiadomość nieaktywna przed zapisem", () => {
+  assert.match(HTML, ciag([
+    '<div class="krok-drogi">',
+    '<h3 data-tekst="droga_zapis_krok1"></h3>',
+    '<button type="button" class="przycisk" id="zapisz" data-tekst="zapisz_przycisk"></button>',
+    '<p class="potwierdzenie" id="zapis-gotowe" aria-live="polite" hidden></p>',
+    '<p class="uwaga" id="zapis-ponownie" data-tekst="zapis_ponownie" hidden></p>',
+    '<p class="podpowiedz" data-tekst="zapis_gdzie"></p>',
+    "</div>",
+    '<div class="krok-drogi">',
+    '<h3 data-tekst="droga_zapis_krok2"></h3>',
+    '<p id="po-zapisie" aria-live="polite" hidden></p>',
+    '<p class="uwaga" id="mailto-bez-zalacznika"></p>',
+    '<a class="przycisk przycisk-drugi" id="mailto" data-tekst="mailto_przycisk" aria-disabled="true" aria-describedby="mailto-najpierw-zapisz"></a>',
+    '<p class="podpowiedz" id="mailto-najpierw-zapisz" data-tekst="mailto_najpierw_zapisz"></p>',
+    "</div>",
+    "</div>",
+    "</section>",
+  ]));
+  // mailto_bez_zalacznika z nazwą pliku z numeru zgłoszenia, wstawione raz na starcie.
+  assert.match(funkcja("wstawTeksty"), /\$\("#mailto-bez-zalacznika"\)\.textContent = t\("mailto_bez_zalacznika", \{ plik: nazwaZip\(NUMER\) \}\)/);
 });
 
-test("po zapisie: adres w po_zapisie to odnośnik z tym samym mailto: co „Napisz wiadomość”", () => {
+test("wiadomość w kroku 2: href dopiero po zapisie, zmiana pola znów ją wyłącza", () => {
+  const wiad = funkcja("ustawWiadomosc");
+  for (const r of [
+    /m\.setAttribute\("href", mailto\)/, /m\.removeAttribute\("href"\)/,
+    /m\.removeAttribute\("aria-disabled"\)/, /m\.setAttribute\("aria-disabled", "true"\)/,
+    /m\.removeAttribute\("aria-describedby"\)/, /m\.setAttribute\("aria-describedby", "mailto-najpierw-zapisz"\)/,
+    /pokaz\(\$\("#mailto-najpierw-zapisz"\), !mailto\)/,
+  ]) assert.match(wiad, r);
+  const przel = funkcja("przelicz");
+  const bezZapisu = /if \(!poZapisie\) \{([\s\S]*?)\n  \}/.exec(przel)?.[1] ?? "";
+  assert.match(bezZapisu, /ustawWiadomosc\(null\)/);
+  assert.match(bezZapisu, /pokaz\(\$\("#po-zapisie"\), false\)/);
+  assert.match(funkcja("zapisz"), /ustawWiadomosc\(mailto\)/);
+  assert.match(funkcja("pokazBladLogiki"), /ustawWiadomosc\(null\)/);
+  // Wygląd nieaktywnego przycisku także dla odnośnika z aria-disabled.
+  const CSS = readFileSync(fileURLToPath(new URL("../app/style.css", import.meta.url)), "utf8");
+  assert.match(CSS, /\.przycisk:disabled, \.przycisk\[aria-disabled="true"\] \{/);
+});
+
+test("po zapisie: adres w po_zapisie to odnośnik z tym samym mailto: co „Otwórz wiadomość”", () => {
   const zapis = funkcja("zapisz");
   assert.match(zapis, /const mailto = odnosnikMailto\(/);
-  assert.match(zapis, /\$\("#mailto"\)\.href = mailto;/);
   assert.match(zapis, /el\("a", \{ href: mailto, tekst: ADRES \}\)/);
+  assert.match(zapis, /\$\("#po-zapisie"\)\.replaceChildren\(/);
   assert.equal((MAIN.match(/\bodnosnikMailto\(/g) ?? []).length, 1, "mailto liczony w jednym miejscu");
 });
 
@@ -231,35 +302,56 @@ test("potwierdzenie zapisu: zapis_gotowe po każdym zapisie, zapis_ponownie po z
   assert.match(przel, /pokaz\(\$\("#zapis-ponownie"\), false\)/);
 });
 
-test("wysyłka: przycisk od chwili, gdy zapis jest możliwy; ZIP przy kliknięciu; share z plikiem, tytułem i tekstem", () => {
-  assert.match(HTML, /<div id="udostepnij" hidden>\s*<p class="podpowiedz" data-tekst="udostepnij_podpowiedz"><\/p>\s*<button type="button" class="przycisk-tekstowy" id="kopiuj-adres" data-tekst="kopiuj_adres" hidden><\/button>\s*<\/div>\s*<p class="uwaga" id="udostepnij-niedostepne" data-tekst="udostepnij_niedostepne" hidden><\/p>/);
-  assert.doesNotMatch(/<div id="po-zapisie"[\s\S]*?<\/section>/.exec(HTML)[0], /udostepnij/, "wysyłka nie czeka na zapis");
-  assert.match(MAIN, /navigator\.canShare\(\{ files: \[plik\] \}\)/);
+test("wybór drogi: udostępnianie tylko przy obsłudze plików i ekranie dotykowym, do odmowy albo wyboru zapisu", () => {
   const zapisPokaz = funkcja("pokazZapis");
-  assert.match(zapisPokaz, /wynik\.moznaZapisac && !udostepnianieOdrzucone && mozeUdostepnic\(PLIK_PROBNY\)/);
+  assert.match(zapisPokaz, /const drogaUdostepniania = mozeUdostepnic\(PLIK_PROBNY\) && matchMedia\("\(pointer: coarse\)"\)\.matches && !udostepnianieOdrzucone && !drogaZapisWybrana;/);
+  assert.match(zapisPokaz, /pokaz\(\$\("#droga-udostepnianie"\), drogaUdostepniania\)/);
+  assert.match(zapisPokaz, /pokaz\(\$\("#droga-zapis"\), !drogaUdostepniania\)/);
+  // Przycisk udostępniania jest nieaktywny tak jak zapis, zamiast znikać razem z drogą.
+  assert.match(zapisPokaz, /\$\("#udostepnij-przycisk"\)\.disabled = !wynik\.moznaZapisac;/);
+  assert.match(zapisPokaz, /pokaz\(\$\("#udostepnij-niedostepne"\), udostepnianieOdrzucone\)/);
+  assert.match(MAIN, /navigator\.canShare\(\{ files: \[plik\] \}\)/);
+  assert.match(MAIN, /\nlet drogaZapisWybrana = false;/);
+  assert.equal((MAIN.match(/drogaZapisWybrana = /g) ?? []).length, 2, "ustawiane tylko na starcie i przy wyborze zapisu");
+  const wybor = funkcja("pokazDrogeZapisu");
+  assert.match(wybor, /drogaZapisWybrana = true;/);
+  assert.match(wybor, /przejdzDoZapisu\(\);/);
+  // Przejście chowa drogę z udostępnianiem i przenosi fokus na zapis (znika przycisk z fokusem).
+  const przejscie = funkcja("przejdzDoZapisu");
+  assert.match(przejscie, /pokaz\(\$\("#droga-udostepnianie"\), false\)/);
+  assert.match(przejscie, /pokaz\(\$\("#droga-zapis"\), true\)/);
+  assert.match(przejscie, /pokaz\(\$\("#udostepnij-niedostepne"\), udostepnianieOdrzucone\)/);
+  assert.match(przejscie, /\$\("#zapisz"\)\.focus\(\)/);
+  assert.match(MAIN, /\$\("#droga-zapis-pokaz"\)\.addEventListener\("click", pokazDrogeZapisu\)/);
+});
+
+test("udostępnianie: adres do schowka bez czekania, zaraz potem share z plikiem, tytułem i tekstem", () => {
   const udostepnij = funkcja("udostepnij");
   assert.match(udostepnij, /new File\(\[utworzZipZgloszenia\(wynik\)\], wynik\.nazwaZip, \{ type: "application\/zip" \}\)/);
   assert.match(udostepnij, /navigator\.share\(\{ files: \[plik\], title: t\("udostepnij_tytul", \{ numer: NUMER \}\), text: t\("udostepnij_tekst", \{ numer: NUMER \}\) \}\)/);
+  // Schowek przed share(), bez await i z pominięciem błędu (także braku schowka).
+  const schowek = udostepnij.indexOf("navigator.clipboard.writeText(ADRES)");
+  assert.ok(schowek > 0 && schowek < udostepnij.indexOf("navigator.share("), "writeText przed share");
+  assert.match(udostepnij, /try \{\n\s*navigator\.clipboard\.writeText\(ADRES\)\.catch\(\(\) => \{\}\);\n\s*\} catch \{/);
+  assert.doesNotMatch(udostepnij, /await navigator\.clipboard/);
   // Okno udostępniania wymaga gestu użytkownika: przed share() nie ma await.
   assert.ok(udostepnij.includes("await navigator.share("));
   assert.doesNotMatch(udostepnij.slice(0, udostepnij.indexOf("await navigator.share(")), /\bawait\b/);
 });
 
-test("wysyłka: odmowa inna niż AbortError chowa przycisk do końca wizyty i pokazuje udostepnij_niedostepne", () => {
+test("udostępnianie: odmowa inna niż AbortError przełącza do końca wizyty na drogę z zapisem z udostepnij_niedostepne", () => {
   const udostepnij = funkcja("udostepnij");
   assert.match(udostepnij, /blad\?\.name === "AbortError"/);
-  assert.match(udostepnij, /udostepnianieOdrzucone = true;/);
+  assert.match(udostepnij, /udostepnianieOdrzucone = true;\n\s*przejdzDoZapisu\(\);/);
   assert.doesNotMatch(udostepnij, /console\./, "komunikat na stronie zamiast wpisu w konsoli");
   assert.match(MAIN, /\nlet udostepnianieOdrzucone = false;/);
   assert.equal((MAIN.match(/udostepnianieOdrzucone = /g) ?? []).length, 2, "ustawiane tylko na starcie i przy odmowie");
-  assert.match(funkcja("pokazZapis"), /pokaz\(\$\("#udostepnij-niedostepne"\), udostepnianieOdrzucone\)/);
 });
 
-test("kopiowanie adresu: tylko z dostępem do schowka, writeText z adresem, na chwilę kopiuj_adres_gotowe", () => {
-  assert.match(funkcja("pokazZapis"), /typeof navigator\.clipboard\?\.writeText === "function"/);
-  const kopiuj = funkcja("kopiujAdres");
-  assert.match(kopiuj, /await navigator\.clipboard\.writeText\(ADRES\)/);
-  assert.match(kopiuj, /t\("kopiuj_adres_gotowe"\)/);
-  assert.match(kopiuj, /setTimeout\(/);
-  assert.match(kopiuj, /t\("kopiuj_adres"\)/);
+test("bez osobnego przycisku kopiowania adresu", () => {
+  const CSS = readFileSync(fileURLToPath(new URL("../app/style.css", import.meta.url)), "utf8");
+  for (const [nazwa, tresc] of [["main.js", MAIN], ["index.html", HTML], ["style.css", CSS]]) {
+    assert.doesNotMatch(tresc, /kopiuj/i, nazwa);
+    assert.doesNotMatch(tresc, /przyciski-zapisu|id="udostepnij"|#udostepnij\b(?!-)/, `${nazwa}: stary układ kroku 7`);
+  }
 });

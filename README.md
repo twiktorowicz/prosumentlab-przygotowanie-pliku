@@ -114,25 +114,32 @@ domowej. Używaj wyłącznie plików z generatora.
    - w danych z faktury wybierz najpierw sposób rozliczenia energii oddanej; wybór „system
      opustów” chowa pozostałe pola, a powrót do net-billingu pokazuje je z wpisanymi wartościami;
    - wypełnij pozostałe pola faktury dowolnymi zmyślonymi liczbami (na przykład 12,34): sprzedawca,
-     grupa taryfowa, okres, pole wyboru „To jest faktura korygująca” (zaznacz i odznacz), rodzaj
-     ceny i cenę; przy cenie dynamicznej jest jedno pole ceny, bez stref; rozwiń „Co to znaczy?”
-     przy kilku polach i „Opłaty stałe (nieobowiązkowe)”;
-   - zaznacz odpowiedzi o instalacji, w tym miesiąc i rok magazynu, i zgodę;
+     grupa taryfowa, miesiąc faktury, pole wyboru „To jest faktura korygująca” (zaznacz i odznacz),
+     rodzaj ceny i cenę; przy cenie dynamicznej jest jedno pole ceny, bez stref; rozwiń „Co to
+     znaczy?” przy kilku polach i „Opłaty stałe (nieobowiązkowe)”;
+   - miesiąc faktury to dwie puste listy (miesiąc, rok, lata od bieżącego do 2022); miesiąc bieżący
+     daje komunikat, że faktury za ten miesiąc jeszcze nie ma. Pole „Faktura obejmuje inny okres niż
+     jeden miesiąc” pokazuje dwa pola dat, a odznaczenie wraca do wybranego miesiąca;
+   - zaznacz odpowiedzi o instalacji, w tym miesiąc i rok magazynu, i zgodę; przy magazynie „tak”
+     bez pojemności pod polem jest uwaga, a zapis dalej działa;
    - sprawdź podgląd: pliki z ZIP-a i tabela miesięcy są zwinięte, rozwiń kilka z nich;
-     rozwinięte zostają po zmianie pola. Potem dotknij „Zapisz plik ZIP”; plik ma nazwę
+     rozwinięte zostają po zmianie pola;
+   - krok 7 „Wysyłka pliku” ma dwie drogi. Na telefonie przy stronie z HTTPS jest jeden przycisk
+     „Przygotuj wiadomość z plikiem”: kopiuje adres raporty@prosumentlab.pl do schowka i otwiera okno
+     udostępniania z plikiem w załączniku, numerem zgłoszenia i adresem w treści; pod nim jest
+     „Wolę zapisać plik i dołączyć go sam”. W odbiorze przez sieć domową (bez HTTPS), na komputerze
+     i po odmowie udostępniania jest droga z zapisem: krok 1 zapis, krok 2 wiadomość. W Chrome na
+     Androidzie przeglądarka odmawia (Chromium nie udostępnia plików ZIP): po pierwszym dotknięciu
+     strona przechodzi do drogi z zapisem z komunikatem;
+   - w drodze z zapisem „Otwórz wiadomość” jest nieaktywne, dopóki plik nie jest zapisany. Dotknij
+     „Zapisz plik ZIP”; plik ma nazwę
      `prosumentlab_<numer>.zip` z numerem ze strony (iOS: aplikacja Pliki, Pobrane;
      Android: Pobrane). Chrome może przy zapisie ostrzegać
      o pobieraniu pliku bez HTTPS; wtedy wybierz „Zachowaj”;
-   - po zapisie pod przyciskami jest „Zapisano plik …”; po zmianie pola i ponownym zapisie
-     dochodzi komunikat, że to nowsza wersja pliku;
-   - przycisk „Wyślij plik ZIP” pokazuje się tylko na stronie z HTTPS, więc w odbiorze przez sieć
-     domową go nie ma. Na stronie z HTTPS stoi obok „Zapisz plik ZIP”, gdy tylko zapis jest możliwy,
-     a wcześniejszy zapis nie jest potrzebny. W Safari i Chrome na iPhonie otwiera okno
-     udostępniania z plikiem w załączniku i numerem zgłoszenia w treści; obok jest „Kopiuj adres”.
-     W Chrome na komputerze i na Androidzie przeglądarka odmawia (Chromium nie udostępnia plików
-     ZIP): po pierwszym dotknięciu przycisk znika, a w jego miejscu jest komunikat, żeby zapisać
-     plik i użyć „Napisz wiadomość”;
-   - dotknij „Napisz wiadomość”: aplikacja poczty otwiera się z adresem raporty@prosumentlab.pl,
+   - po zapisie pod przyciskiem jest „Zapisano plik …”, a „Otwórz wiadomość” jest aktywne; po
+     zmianie pola wiadomość znów czeka na zapis, a po ponownym zapisie dochodzi komunikat, że to
+     nowsza wersja pliku;
+   - dotknij „Otwórz wiadomość”: aplikacja poczty otwiera się z adresem raporty@prosumentlab.pl,
      tematem z numerem zgłoszenia i treścią z przypomnieniem o załączniku; plik nie jest
      dołączony. **Nie wysyłaj tej wiadomości**, zamknij ją bez wysyłania;
    - dodaj `dwa_punkty.csv`: plik dostaje komunikat o kilku punktach poboru, zapis jest

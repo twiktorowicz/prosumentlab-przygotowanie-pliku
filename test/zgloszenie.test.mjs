@@ -291,8 +291,8 @@ test("podgląd: pierwsze 5 wierszy danych dokładnie jak w pliku wyjściowym, su
 // ZIP z całości (przygotujZgloszenie). Zapisany skrót to zrzut wyniku obecnego kodu: pilnuje, żeby
 // żadna zmiana nie przesunęła ani jednego bajtu bez świadomego przeliczenia skrótu.
 // Przeliczony po usunięciu pytania o pierwsze oddanie energii (instalacja.json bez tego klucza)
-// i po zmianie wersji narzędzia na 0.1.2 (pole narzedzie w zgloszenie.json; reszta ZIP-a bez zmian).
-const SKROT_SCENARIUSZA = "149d8aaa845cde5ef52f6ba16764c89f23e4b9ea135b28184fa790c2a8782250";
+// i po zmianie wersji narzędzia na 0.1.3 (pole narzedzie w zgloszenie.json; reszta ZIP-a bez zmian).
+const SKROT_SCENARIUSZA = "3489927eccdb22a12bf259dd1b1c7b580b23ba200be59bf8c1fcc9ce40029b6e";
 function scenariuszPelny() {
   return {
     pliki: [
@@ -371,6 +371,17 @@ test("podział: przygotowane pliki składa się wiele razy bez ich zmiany i bez 
   for (const wzor of [wejscie, wejscie.buffer, wejscie.subarray(1, 5), new DataView(wejscie.buffer), Buffer.from(wejscie.buffer)]) {
     assert.equal(przejdz({ pliki: [{ w: wzor }] }, "proba", []).filter(({ v }) => wspolne(v)).length, 1, wzor.constructor.name);
   }
+});
+
+test("miesiąc faktury: faktury.json bajt w bajt taki sam jak przy datach pierwszego i ostatniego dnia", () => {
+  const dane = scenariuszPelny();
+  const przygotowane = przygotujPliki(dane.pliki);
+  const zDatami = zlozZgloszenie({ przygotowane, formularz: dane.formularz, numer: NUMER, utworzono: DATA });
+  const faktura = { ...dane.formularz.faktura, okres_od: "", okres_do: "", okres_miesiac: "2025-03" };
+  const zMiesiacem = zlozZgloszenie({ przygotowane, formularz: { ...dane.formularz, faktura }, numer: NUMER, utworzono: DATA });
+  const bajty = (w) => w.zawartosc.find((p) => p.nazwa === "faktury.json").bajty;
+  assert.deepEqual(bajty(zMiesiacem), bajty(zDatami));
+  assert.equal(sha256(utworzZipZgloszenia(zMiesiacem)), SKROT_SCENARIUSZA);
 });
 
 test("ZIP powstaje dopiero przy zapisie: złożenie zgłoszenia nie zwraca archiwum", () => {

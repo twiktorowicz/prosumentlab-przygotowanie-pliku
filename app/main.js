@@ -6,10 +6,11 @@
 
 import { TEKSTY } from "./teksty.js";
 import { tekst, znacznikPolski, dataPolska, miesiacZRokiem, kwhDoWyswietlenia } from "./lib/odmiana.js";
-import { przygotujPliki, zlozZgloszenie, utworzZipZgloszenia, odnosnikMailto, WERSJA, ADRES, MAKS_PLIKOW } from "./lib/zgloszenie.js";
+import { przygotujPliki, zlozZgloszenie, utworzZipZgloszenia, odnosnikMailto, nazwaZip, WERSJA, ADRES, MAKS_PLIKOW } from "./lib/zgloszenie.js";
 import { losowyNumer } from "./lib/numer.js";
 import { LIMIT_BAJTOW } from "./lib/dekodowanie.js";
 import { liczbaZCyfr } from "./lib/kwoty.js";
+import { ROK_MIN } from "./lib/kalendarz.js";
 
 const t = (klucz, wstawki) => tekst(TEKSTY, klucz, wstawki);
 const $ = (wybor, w = document) => w.querySelector(wybor);
@@ -45,9 +46,11 @@ let wynikiPlikow = new Map(); // pozycja na liście -> wynik z przygotujPliki
 let wynik = null;
 let odlozone = null;
 let czekaPrzeliczenie = false; // zmiana pola czeka na odłożone przeliczenie
-// Udostępnianie odrzucone przez przeglądarkę innym błędem niż zamknięcie okna: przycisk wysyłki
-// znika do końca wizyty.
+// Udostępnianie odrzucone przez przeglądarkę innym błędem niż zamknięcie okna: do końca wizyty
+// zostaje droga z zapisem.
 let udostepnianieOdrzucone = false;
+// Klient wybrał drogę z zapisem zamiast udostępniania: zostaje do końca wizyty.
+let drogaZapisWybrana = false;
 // Zapisy w tej wizycie: bajty ostatniego ZIP-a i to, czy kiedykolwiek zapisano ZIP o innej treści.
 // Gdy treści były różne, każdy kolejny zapis różni się od co najmniej jednego wcześniejszego.
 let poprzedniZapis = null;
@@ -86,6 +89,7 @@ function wstawTeksty() {
   );
 
   $("#numer").replaceChildren(...zdanieZNumerem());
+  $("#mailto-bez-zalacznika").textContent = t("mailto_bez_zalacznika", { plik: nazwaZip(NUMER) });
 
   // Instrukcja pobrania pliku: odnośnik na słowach z tekstu, w nowej karcie (jak przy zgodzie).
   // Fraza służy tylko do znalezienia miejsca podziału; bez niej zostaje sam tekst.
@@ -141,16 +145,20 @@ function wartoscPola(nazwa) {
 }
 
 // Miesiąc i rok z dwóch list (pole <input type="month"> nie działa we wszystkich
-// przeglądarkach). Wartość RRRR-MM powstaje tylko, gdy wybrane są obie części.
-function listyMiesiacaIRoku(nazwa) {
+// przeglądarkach). Wartość RRRR-MM powstaje tylko, gdy wybrane są obie części. Lata od bieżącego
+// wstecz do `rokOd`; obie listy puste na starcie.
+function listyMiesiacaIRoku(nazwa, rokOd = ROK_MIN) {
   const rokBiezacy = liczbaZCyfr(dzisiaj().slice(0, 4));
   const miesiac = el("select", { "aria-label": t("instalacja_miesiac"), "data-czesc": "miesiac" }, el("option", { value: "", tekst: t("instalacja_miesiac") }),
     ...TEKSTY.miesiace_mianownik.map((m, i) => el("option", { value: String(i + 1).padStart(2, "0"), tekst: m })));
   const lata = [];
-  for (let r = rokBiezacy; r >= 2010; r--) lata.push(el("option", { value: String(r), tekst: String(r) }));
+  for (let r = rokBiezacy; r >= rokOd; r--) lata.push(el("option", { value: String(r), tekst: String(r) }));
   const rok = el("select", { "aria-label": t("instalacja_rok"), "data-czesc": "rok" }, el("option", { value: "", tekst: t("instalacja_rok") }), ...lata);
   return el("div", { klasa: "miesiac-rok", "data-miesiac": nazwa }, miesiac, rok);
 }
+
+// Miesiąc faktury: lata od początku net-billingu.
+const ROK_FAKTURY_OD = 2022;
 
 // Wartość RRRR-MM z dwóch list. Przy `niepelny` wybór tylko jednej części daje „RRRR-” albo
 // „-MM”, co moduł formularza zgłasza jako instalacja_miesiac_niepelny (pole magazynu).
@@ -251,19 +259,26 @@ function warunki() {
     pokaz(e, (wybrane(pole) === wartosc) === (znak === "="));
   }
   pokaz($("#korekta-podpowiedz"), $("#p-korekta").checked);
+  // Okres faktury: miesiąc z list albo, po zaznaczeniu pola wyboru, dwie daty. Schowane pola
+  // zachowują wartości, więc odznaczenie wraca do wybranego miesiąca.
+  const innyOkres = $("#p-okres-inny").checked;
+  pokaz($("#okres-daty"), innyOkres);
+  pokaz($('[data-pole="okres_miesiac"]'), !innyOkres);
   for (const z of $$("[data-zmiana]")) pokaz($(".miesiac-rok", z), $('input[type="checkbox"]', z).checked);
 }
 
 function zbierzFormularz() {
   const { taryfa, strefy } = wyborStref();
+  const innyOkres = $("#p-okres-inny").checked;
   const cena = strefy ? $$("[data-strefa]").map((p) => p.value) : ($("#p-cena")?.value ?? "");
   const faktura = {
     sprzedawca: wybrane("sprzedawca"),
     sprzedawca_nazwa: wartoscPola("sprzedawca_nazwa"),
     taryfa,
     taryfa_nazwa: wartoscPola("taryfa_nazwa"),
-    okres_od: wartoscPola("okres_od"),
-    okres_do: wartoscPola("okres_do"),
+    okres_miesiac: innyOkres ? "" : wartoscMiesiaca($('[data-miesiac="okres_miesiac"]'), { niepelny: true }),
+    okres_od: innyOkres ? wartoscPola("okres_od") : "",
+    okres_do: innyOkres ? wartoscPola("okres_do") : "",
     rodzaj_faktury: $("#p-korekta").checked ? "korekta" : "rozliczeniowa",
     system_rozliczenia: wybrane("system_rozliczenia"),
     rodzaj_ceny: wybrane("rodzaj_ceny"),
@@ -498,6 +513,8 @@ function pokazPola() {
   pokaz($("#faktura-poza-zakresem"), wynik.uwagi.some((u) => u.kod === "FAKTURA_R_POZA_ZAKRESEM"));
   pokaz($("#faktura-okres-dlugi"), wynik.uwagi.some((u) => u.kod === "FAKTURA_OKRES_DLUGI"));
   pokaz($("#faktura-cena-nietypowa"), wynik.uwagi.some((u) => u.kod === "FAKTURA_CENA_NIETYPOWA"));
+  // Pojemność magazynu nie jest obowiązkowa: przy „tak” i pustym polu tylko uwaga, bez blokady.
+  pokaz($("#pojemnosc-brak"), wybrane("magazyn") === "tak" && !wartoscPola("magazyn_pojemnosc_kwh").trim());
   // Uwaga o brakujących polach dopiero wtedy, gdy narzędzie przyjęło co najmniej jeden plik.
   const jestPlik = wynik.pliki.some((p) => p.stan === "przyjety" || p.stan === "uwaga");
   const brak = jestPlik && wynik.uwagi.find((u) => u.kod === "FAKTURA_BRAK_OBOWIAZKOWYCH");
@@ -590,17 +607,51 @@ function pokazZapis() {
   powod.textContent = tresc;
   pokaz(powod, Boolean(tresc));
 
-  // Wysyłka: przycisk obok przycisku zapisu od chwili, gdy zapis jest możliwy, jeśli przeglądarka
-  // umie udostępnić plik ZIP i wcześniej go nie odrzuciła.
-  const wysylka = wynik.moznaZapisac && !udostepnianieOdrzucone && mozeUdostepnic(PLIK_PROBNY);
-  pokaz($("#udostepnij-przycisk"), wysylka);
-  pokaz($("#udostepnij"), wysylka);
-  pokaz($("#kopiuj-adres"), wysylka && typeof navigator.clipboard?.writeText === "function");
+  // Droga wysyłki: z udostępnianiem tylko na ekranie dotykowym, gdy przeglądarka umie udostępnić
+  // plik ZIP, aż do odmowy udostępniania albo wyboru drogi z zapisem. W pozostałych przypadkach
+  // (komputer, przeglądarka bez udostępniania) droga z zapisem: krok 1 zapis, krok 2 wiadomość.
+  // Liczone przy każdym przeliczeniu, bo rodzaj wskaźnika może się zmienić w trakcie wizyty.
+  const drogaUdostepniania = mozeUdostepnic(PLIK_PROBNY) && matchMedia("(pointer: coarse)").matches && !udostepnianieOdrzucone && !drogaZapisWybrana;
+  pokaz($("#droga-udostepnianie"), drogaUdostepniania);
+  pokaz($("#droga-zapis"), !drogaUdostepniania);
+  $("#udostepnij-przycisk").disabled = !wynik.moznaZapisac;
   pokaz($("#udostepnij-niedostepne"), udostepnianieOdrzucone);
 }
 
-// `poZapisie`: przeliczenie wywołane samym zapisem; każde inne chowa potwierdzenie zapisu,
-// komunikat po zapisie i przycisk wiadomości, bo zapisany ZIP przestał odpowiadać danym na stronie.
+// Droga z zapisem do końca wizyty: po wyborze klienta albo po odmowie udostępniania. Fokus
+// przechodzi na przycisk zapisu, bo przycisk, który go miał, właśnie znika.
+function pokazDrogeZapisu() {
+  drogaZapisWybrana = true;
+  przejdzDoZapisu();
+}
+
+function przejdzDoZapisu() {
+  pokaz($("#droga-udostepnianie"), false);
+  pokaz($("#droga-zapis"), true);
+  pokaz($("#udostepnij-niedostepne"), udostepnianieOdrzucone);
+  $("#zapisz").focus();
+}
+
+// Krok 2: „Otwórz wiadomość” to odnośnik do wiadomości, aktywny dopiero po zapisie. Bez adresu (przed
+// zapisem i po każdej zmianie danych) odnośnik nie ma href, ma aria-disabled i opis
+// mailto_najpierw_zapisz, widoczny wtedy pod nim.
+function ustawWiadomosc(mailto) {
+  const m = $("#mailto");
+  if (mailto) {
+    m.setAttribute("href", mailto);
+    m.removeAttribute("aria-disabled");
+    m.removeAttribute("aria-describedby");
+  } else {
+    m.removeAttribute("href");
+    m.setAttribute("aria-disabled", "true");
+    m.setAttribute("aria-describedby", "mailto-najpierw-zapisz");
+  }
+  pokaz($("#mailto-najpierw-zapisz"), !mailto);
+}
+
+// `poZapisie`: przeliczenie wywołane samym zapisem; każde inne chowa potwierdzenie zapisu
+// i komunikat po zapisie, a wiadomość znów czeka na zapis, bo zapisany ZIP przestał odpowiadać
+// danym na stronie.
 function przelicz({ poZapisie = false } = {}) {
   clearTimeout(odlozone);
   czekaPrzeliczenie = false;
@@ -609,6 +660,7 @@ function przelicz({ poZapisie = false } = {}) {
     pokaz($("#zapis-gotowe"), false);
     pokaz($("#zapis-ponownie"), false);
     pokaz($("#po-zapisie"), false);
+    ustawWiadomosc(null);
   }
   try {
     wynik = zlozZgloszenie({
@@ -637,8 +689,8 @@ function pokazBladLogiki() {
   wynik = null;
   $("#blokady").replaceChildren(komunikat("blad", t("blad_nieznany")));
   $("#zapisz").disabled = true;
-  pokaz($("#udostepnij-przycisk"), false);
-  pokaz($("#udostepnij"), false);
+  $("#udostepnij-przycisk").disabled = true;
+  ustawWiadomosc(null);
   const powod = $("#zapis-powod");
   powod.textContent = t("zapis_blokada");
   pokaz(powod, true);
@@ -669,13 +721,12 @@ function zapisz() {
   pokaz($("#zapis-gotowe"), true);
   pokaz($("#zapis-ponownie"), zapisanoRozne);
 
-  // Adres w tekście po zapisie i „Napisz wiadomość” prowadzą do tej samej wiadomości.
+  // Adres w tekście po zapisie i „Otwórz wiadomość” prowadzą do tej samej wiadomości.
   const mailto = odnosnikMailto(t("mailto_temat", { numer: NUMER }), t("mailto_tresc", { plik: wynik.nazwaZip }));
   const [przed, po] = t("po_zapisie", { plik: wynik.nazwaZip }).split(ADRES);
-  $("#po-zapisie-tekst").replaceChildren(...(po === undefined ? [przed] : [przed, el("a", { href: mailto, tekst: ADRES }), po]));
-  $("#mailto-bez-zalacznika").textContent = t("mailto_bez_zalacznika", { plik: wynik.nazwaZip });
-  $("#mailto").href = mailto;
+  $("#po-zapisie").replaceChildren(...(po === undefined ? [przed] : [przed, el("a", { href: mailto, tekst: ADRES }), po]));
   pokaz($("#po-zapisie"), true);
+  ustawWiadomosc(mailto);
 }
 
 function rowneBajty(a, b) {
@@ -698,10 +749,18 @@ function mozeUdostepnic(plik) {
 
 // ZIP powstaje przy kliknięciu z danych na stronie, bez wcześniejszego zapisu. Okno udostępniania
 // wymaga gestu użytkownika, więc przed share() nie ma await. Odmowa inna niż zamknięcie okna
-// (Chromium nie udostępnia plików ZIP) chowa przycisk do końca wizyty i pokazuje komunikat.
+// (Chromium nie udostępnia plików ZIP) przełącza do końca wizyty na drogę z zapisem z komunikatem.
 async function udostepnij() {
   if (czekaPrzeliczenie) przelicz();
   if (!wynik?.moznaZapisac || udostepnianieOdrzucone) return;
+  // Adres do schowka, żeby wkleić go w polu „Do”. Bez czekania na wynik, bo share() musi być
+  // wywołane w tym samym geście. Brak schowka albo odmowa niczego nie zmienia: adres jest też
+  // w treści wiadomości.
+  try {
+    navigator.clipboard.writeText(ADRES).catch(() => {});
+  } catch {
+    // przeglądarka bez schowka
+  }
   const plik = new File([utworzZipZgloszenia(wynik)], wynik.nazwaZip, { type: "application/zip" });
   try {
     await navigator.share({ files: [plik], title: t("udostepnij_tytul", { numer: NUMER }), text: t("udostepnij_tekst", { numer: NUMER }) });
@@ -709,26 +768,8 @@ async function udostepnij() {
     // AbortError: klient zamknął okno udostępniania bez wyboru aplikacji; to nie błąd.
     if (blad?.name === "AbortError") return;
     udostepnianieOdrzucone = true;
-    if (wynik) pokazZapis();
-    else pokaz($("#udostepnij-niedostepne"), true);
+    przejdzDoZapisu();
   }
-}
-
-// Adres do schowka, żeby wkleić go w polu adresata. Po skopiowaniu przycisk na chwilę mówi,
-// że adres jest skopiowany. Nieudane kopiowanie niczego nie zmienia.
-let powrotNapisu = null;
-async function kopiujAdres() {
-  const przycisk = $("#kopiuj-adres");
-  try {
-    await navigator.clipboard.writeText(ADRES);
-  } catch {
-    return;
-  }
-  przycisk.textContent = t("kopiuj_adres_gotowe");
-  clearTimeout(powrotNapisu);
-  powrotNapisu = setTimeout(() => {
-    przycisk.textContent = t("kopiuj_adres");
-  }, 2000);
 }
 
 // --- Start -----------------------------------------------------------------------------------
@@ -736,6 +777,7 @@ async function kopiujAdres() {
 function start() {
   wstawTeksty();
   zbudujOpcje();
+  $('[data-miesiac="okres_miesiac"]').replaceWith(listyMiesiacaIRoku("okres_miesiac", ROK_FAKTURY_OD));
   $('[data-miesiac="magazyn_od"]').replaceWith(listyMiesiacaIRoku("magazyn_od"));
   zbudujZmiany();
   dodajOplate();
@@ -764,7 +806,7 @@ function start() {
   });
   $("#zapisz").addEventListener("click", zapisz);
   $("#udostepnij-przycisk").addEventListener("click", udostepnij);
-  $("#kopiuj-adres").addEventListener("click", kopiujAdres);
+  $("#droga-zapis-pokaz").addEventListener("click", pokazDrogeZapisu);
   przelicz();
 }
 

@@ -319,3 +319,68 @@ test("plik formularza: klucze operatora i pierwszego oddania już nie istnieją"
   assert.equal(bladBudowyFormularza({ instalacja: { pierwsze_oddanie: "nie_wiem" } }), "instalacja.pierwsze_oddanie");
   assert.equal(bladBudowyFormularza({ faktura: { sprzedawca: "pstryk", rodzaj_faktury: "korekta" } }), null);
 });
+
+// Miesiąc faktury (dwie listy na stronie): okres od pierwszego do ostatniego dnia miesiąca.
+const BEZ_DAT = { ...FAKTURA, okres_od: "", okres_do: "" };
+const zMiesiacem = (miesiac, opcje = {}) => czytajFormularz({ faktura: { ...BEZ_DAT, okres_miesiac: miesiac } }, opcje);
+
+test("miesiąc faktury: okres od pierwszego do ostatniego dnia, format faktury bez zmian", () => {
+  const w = zMiesiacem("2025-04");
+  assert.deepEqual(w.bledy, []);
+  assert.deepEqual(w.brakujace, []);
+  assert.deepEqual(Object.entries(w.raport), Object.entries(czytajFormularz({ faktura: FAKTURA }).raport), "jak przy datach 2025-04-01 i 2025-04-30");
+  assert.equal("okres_miesiac" in w.raport, false);
+});
+
+test("miesiąc faktury: długość miesiąca z kalendarza, luty w latach przestępnych", () => {
+  // Dzień z zegara na końcu zakresu lat, żeby żaden miesiąc nie był bieżący ani późniejszy.
+  const koniec = (m) => zMiesiacem(m, { dzisiaj: "2099-12-31" }).raport.okres_do;
+  assert.equal(koniec("2024-02"), "2024-02-29");
+  assert.equal(koniec("2025-02"), "2025-02-28");
+  assert.equal(koniec("2028-02"), "2028-02-29");
+  assert.equal(koniec("2025-12"), "2025-12-31");
+  assert.equal(koniec("2025-01"), "2025-01-31");
+  for (const m of ["2025-04", "2025-06", "2025-09", "2025-11"]) assert.equal(koniec(m), `${m}-30`, m);
+  assert.equal(zMiesiacem("2025-02").raport.okres_od, "2025-02-01");
+});
+
+test("miesiąc faktury: miesiąc bieżący i późniejsze to błąd faktura_miesiac_biezacy", () => {
+  const BLAD = [{ pole: "okres_miesiac", kod: "faktura_miesiac_biezacy" }];
+  for (const m of ["2026-11", "2026-12", "2027-01"]) {
+    const w = zMiesiacem(m);
+    assert.deepEqual(w.bledy, BLAD, m);
+    assert.equal("okres_od" in w.raport || "okres_do" in w.raport, false, m);
+    assert.deepEqual(w.brakujace, [], `${m}: pole z błędem nie jest brakujące`);
+  }
+  assert.deepEqual(zMiesiacem("2026-10").bledy, [], "poprzedni miesiąc");
+  assert.deepEqual(zMiesiacem("2026-11", { dzisiaj: "2026-11-30" }).bledy, BLAD, "ostatni dzień miesiąca");
+  assert.deepEqual(zMiesiacem("2026-11", { dzisiaj: "2026-12-01" }).bledy, [], "miesiąc już się skończył");
+  assert.deepEqual(zMiesiacem("2026-12", { dzisiaj: undefined }).bledy, [], "bez daty bez kontroli");
+});
+
+test("miesiąc faktury: niepełny wybór i zły format to błąd pola, puste listy to brak okresu", () => {
+  for (const m of ["2026-", "-04"]) assert.deepEqual(zMiesiacem(m).bledy, [{ pole: "okres_miesiac", kod: "instalacja_miesiac_niepelny" }], m);
+  for (const m of ["2026-13", "2009-12", "2025-4"]) assert.deepEqual(zMiesiacem(m).bledy, [{ pole: "okres_miesiac", kod: "instalacja_miesiac_format" }], m);
+  for (const m of ["2026-", "2026-13"]) assert.deepEqual(zMiesiacem(m).brakujace, [], `${m}: pole z błędem nie jest brakujące`);
+  const puste = zMiesiacem("");
+  assert.deepEqual(puste.bledy, []);
+  assert.deepEqual(puste.brakujace, ["okres_od", "okres_do"]);
+});
+
+test("miesiąc faktury razem z datami to błąd wyboru (plik formularza)", () => {
+  const w = czytajFormularz({ faktura: { ...FAKTURA, okres_miesiac: "2025-04" } });
+  assert.deepEqual(w.bledy, [{ pole: "okres_miesiac", kod: "blad_wyboru" }]);
+  assert.equal("okres_od" in w.raport || "okres_do" in w.raport, false);
+  assert.deepEqual(w.brakujace, []);
+});
+
+test("miesiąc faktury przy systemie opustów jest pomijany razem z błędem", () => {
+  const w = czytajFormularz({ faktura: { ...BEZ_DAT, system_rozliczenia: "opusty", okres_miesiac: "2099-12" } });
+  assert.deepEqual(w.raport, { operator_dystrybucyjny: "tauron_dystrybucja", system_rozliczenia: "opusty" });
+  assert.deepEqual(w.bledy, []);
+});
+
+test("plik formularza: okres_miesiac jako tekst", () => {
+  assert.equal(bladBudowyFormularza({ faktura: { okres_miesiac: "2025-04" } }), null);
+  assert.equal(bladBudowyFormularza({ faktura: { okres_miesiac: 202504 } }), "faktura.okres_miesiac");
+});

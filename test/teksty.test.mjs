@@ -10,6 +10,7 @@ import { fileURLToPath } from "node:url";
 
 import { TEKSTY } from "../app/teksty.js";
 import { WSTAWKI } from "../app/lib/odmiana.js";
+import { ADRES } from "../app/lib/zgloszenie.js";
 
 const APP = fileURLToPath(new URL("../app/", import.meta.url));
 const ZRODLO = readFileSync(join(APP, "teksty.js"), "utf8");
@@ -106,12 +107,8 @@ test("teksty usunięte razem z polami, których strona już nie ma", () => {
 });
 
 test("wysyłka i zapis w wersji 0.1.2: teksty zatwierdzone przez właściciela, słowo w słowo", () => {
+  // Teksty z 0.1.2, których 0.1.3 nie zmienia; zmienione są w teście wersji 0.1.3.
   const ZATWIERDZONE = {
-    udostepnij_niedostepne: "Ta przeglądarka nie wyśle pliku ZIP. Zapisz plik, a potem użyj przycisku „Napisz wiadomość” i dołącz go do wiadomości.",
-    udostepnij_tekst: "Dane do darmowego raportu, zgłoszenie {numer}",
-    udostepnij_podpowiedz: "Wybierz aplikację poczty, a w polu adresata wpisz albo wklej raporty@prosumentlab.pl. Plik będzie już w załączniku.",
-    kopiuj_adres: "Kopiuj adres",
-    kopiuj_adres_gotowe: "Adres skopiowany",
     zapis_gotowe: "Zapisano plik {plik}.",
     zapis_ponownie: "To nowsza wersja pliku. Wyślij tylko ją; jeśli przeglądarka dopisała do nazwy (1) albo (2), wybierz plik z najwyższym numerem.",
     zapis_gdzie: "Plik zapisze się na tym urządzeniu: na komputerze zwykle w folderze Pobrane, na iPhonie w aplikacji Pliki (w Safari w folderze „Pobrane rzeczy”, w Chrome w folderze „Chrome”). Narzędzie niczego nie wysyła.",
@@ -119,6 +116,40 @@ test("wysyłka i zapis w wersji 0.1.2: teksty zatwierdzone przez właściciela, 
     podglad_wstep: "Tak wygląda plik, który zapiszesz na swoim urządzeniu i wyślesz sam. Wybierz nazwę pliku, żeby zobaczyć, co jest w środku.",
   };
   for (const [klucz, tekst] of Object.entries(ZATWIERDZONE)) assert.equal(TEKSTY[klucz], tekst, klucz);
+});
+
+test("wysyłka krok po kroku, miesiąc faktury i zgoda w wersji 0.1.3: teksty zatwierdzone przez właściciela, słowo w słowo", () => {
+  const ZATWIERDZONE = {
+    krok_zapis: "Wysyłka pliku",
+    udostepnij_przycisk: "Przygotuj wiadomość z plikiem",
+    udostepnij_podpowiedz: "Otworzy się lista aplikacji. Wybierz pocztę, dotknij pola „Do” i wybierz „Wklej”: adres raporty@prosumentlab.pl skopiujemy do schowka. Plik będzie już w załączniku. Sprawdź wiadomość i ją wyślij.",
+    udostepnij_tekst: "Dane do darmowego raportu, zgłoszenie {numer}. Adres: raporty@prosumentlab.pl",
+    droga_zapis_pokaz: "Wolę zapisać plik i dołączyć go sam",
+    droga_zapis_krok1: "Krok 1. Zapisz plik na tym urządzeniu.",
+    droga_zapis_krok2: "Krok 2. Otwórz wiadomość i dołącz zapisany plik.",
+    mailto_przycisk: "Otwórz wiadomość",
+    mailto_najpierw_zapisz: "Najpierw zapisz plik w kroku 1.",
+    faktura_miesiac: "Miesiąc, za który jest faktura",
+    faktura_inny_okres: "Faktura obejmuje inny okres niż jeden miesiąc",
+    faktura_miesiac_biezacy: "Faktury za ten miesiąc jeszcze nie ma. Wybierz miesiąc, który już się skończył.",
+    udostepnij_niedostepne: "Ta przeglądarka nie wyśle pliku ZIP. Zapisz plik w kroku 1, a potem w kroku 2 otwórz wiadomość i dołącz plik.",
+    instalacja_pojemnosc_brak: "Jeśli znasz pojemność magazynu, wpisz ją. Bez niej opiszemy wyniki mniej dokładnie.",
+    zgoda_bez: "Darmowy raport przygotujemy także bez tej zgody: pomagasz nam samym plikiem i danymi z faktury, z którymi porównamy obliczenia. Bez zgody plik i liczby z faktury usuniemy najpóźniej 3 dni po wysłaniu raportu.",
+  };
+  for (const [klucz, tekst] of Object.entries(ZATWIERDZONE)) assert.equal(TEKSTY[klucz], tekst, klucz);
+  assert.equal(TEKSTY.pola_nazwy.okres_miesiac, "miesiąc faktury");
+  // Bez zmian w 0.1.3 (19.27).
+  assert.equal(TEKSTY.udostepnij_tytul, "Zgłoszenie {numer} do ProsumentLab");
+  assert.equal(TEKSTY.mailto_bez_zalacznika, "Wiadomość otworzy się bez załącznika. Zanim ją wyślesz, dołącz plik {plik} z folderu Pobrane.");
+  assert.equal(TEKSTY.faktura_okres_przyszly, "Koniec okresu jest późniejszy niż dzisiejsza data. Faktura dotyczy okresu, który już się skończył, więc sprawdź datę.");
+});
+
+test("kopiowanie adresu osobnym przyciskiem znika: bez tekstów kopiuj_adres", () => {
+  for (const k of ["kopiuj_adres", "kopiuj_adres_gotowe"]) assert.equal(k in TEKSTY, false, k);
+});
+
+test("udostępnianie: adres w podpowiedzi i w treści wiadomości dokładnie raz", () => {
+  for (const k of ["udostepnij_podpowiedz", "udostepnij_tekst"]) assert.equal(TEKSTY[k].split(ADRES).length, 2, k);
 });
 
 test("po zapisie: strona robi odnośnik z adresu, który jest w tekście dokładnie raz", () => {

@@ -11,12 +11,15 @@
 // Operatora sieci klient nie wybiera: podaje go wywołujący z trybu (plik z eLicznika Taurona
 // pochodzi zawsze od Tauron Dystrybucja). Przy systemie opustów faktura ma tylko system
 // rozliczenia i operatora; pozostałe pola są pomijane, także gdy mają błąd.
+// Okres faktury przychodzi jako miesiąc (`okres_miesiac`, RRRR-MM z dwóch list) albo jako dwie
+// daty (`okres_od`, `okres_do`); w faktury.json są zawsze dwie daty, przy miesiącu jego pierwszy
+// i ostatni dzień.
 // Kody błędów odpowiadają kluczom tekstów w app/teksty.js; `blad_wyboru` i
 // `faktura_data_format` dotyczą wartości, których strona sama nie wytwarza (np. z pliku
 // formularza w narzedzia/przygotuj.mjs).
 
 import { czytajKwote, czytajCene, czytajDziesietna, czytajTekstWolny, liczbaZCyfr } from "./kwoty.js";
-import { poprawnaDoba, rokWZakresie, numerDnia } from "./kalendarz.js";
+import { poprawnaDoba, rokWZakresie, numerDnia, dniMiesiaca } from "./kalendarz.js";
 
 const LISTY = {
   sprzedawca: ["tauron_sprzedaz", "pge_obrot", "enea", "energa_obrot", "eon", "pstryk", "inny"],
@@ -86,6 +89,26 @@ function czytajMiesiac(tekst) {
   return { ok: true, wartosc: m[0] };
 }
 
+// Miesiąc faktury: okres od pierwszego do ostatniego dnia miesiąca (długość miesiąca z kalendarza,
+// luty w latach przestępnych ma 29 dni). Faktury za miesiąc bieżący jeszcze nie ma, więc miesiąc
+// bieżący i późniejsze są błędem; RRRR-MM porównane jako tekst dają kolejność z kalendarza.
+// Strona podaje wybór z dwóch list; „RRRR-” albo „-MM” znaczy, że wybrano tylko jedną część.
+function czytajMiesiacFaktury(tekst, r, bledy, dzisiaj) {
+  const niepelny = typeof tekst === "string" && /^(\d{4}-|-\d{2})$/.test(tekst.trim());
+  const m = typeof tekst === "string" ? czytajMiesiac(tekst) : { ok: false };
+  if (!m.ok) {
+    bledy.push({ pole: "okres_miesiac", kod: niepelny ? "instalacja_miesiac_niepelny" : "instalacja_miesiac_format" });
+    return;
+  }
+  if (dzisiaj && m.wartosc >= dzisiaj.slice(0, 7)) {
+    bledy.push({ pole: "okres_miesiac", kod: "faktura_miesiac_biezacy" });
+    return;
+  }
+  const [rok, miesiac] = m.wartosc.split("-").map(liczbaZCyfr);
+  r.okres_od = `${m.wartosc}-01`;
+  r.okres_do = `${m.wartosc}-${String(dniMiesiaca(rok, miesiac)).padStart(2, "0")}`;
+}
+
 function czytajFakture(f, bledy, brakujace, uwagi, { operator, dzisiaj }) {
   let r = {};
   const wybor = (pole) => {
@@ -109,8 +132,13 @@ function czytajFakture(f, bledy, brakujace, uwagi, { operator, dzisiaj }) {
   if (r.sprzedawca === "inny") pole("sprzedawca_nazwa", czytajTekstWolny, "tekst_wolny_blad");
   wybor("taryfa");
   if (r.taryfa === "inna") pole("taryfa_nazwa", czytajTekstWolny, "tekst_wolny_blad");
-  pole("okres_od", czytajDate, "faktura_data_format");
-  pole("okres_do", czytajDate, "faktura_data_format");
+  if (!pusty(f.okres_miesiac)) {
+    if (!pusty(f.okres_od) || !pusty(f.okres_do)) bledy.push({ pole: "okres_miesiac", kod: "blad_wyboru" });
+    else czytajMiesiacFaktury(f.okres_miesiac, r, bledy, dzisiaj);
+  } else {
+    pole("okres_od", czytajDate, "faktura_data_format");
+    pole("okres_do", czytajDate, "faktura_data_format");
+  }
   if (r.okres_od && r.okres_do && r.okres_do < r.okres_od) {
     delete r.okres_do;
     bledy.push({ pole: "okres_do", kod: "faktura_okres" });
@@ -180,6 +208,8 @@ function czytajFakture(f, bledy, brakujace, uwagi, { operator, dzisiaj }) {
   if (r.sprzedawca === "inny") wymagane.splice(wymagane.indexOf("sprzedawca") + 1, 0, "sprzedawca_nazwa");
   if (r.taryfa === "inna") wymagane.splice(wymagane.indexOf("taryfa") + 1, 0, "taryfa_nazwa");
   const zBledem = new Set(bledy.map((b) => b.pole.replace(/\[.*$/, "")));
+  // Błąd przy miesiącu to błąd obu dat okresu, więc żadna nie jest brakująca.
+  if (zBledem.has("okres_miesiac")) zBledem.add("okres_od").add("okres_do");
   for (const nazwa of wymagane) if (!(nazwa in r) && !zBledem.has(nazwa)) brakujace.push(nazwa);
 
   // Niezaznaczona korekta daje domyślne „rozliczeniowa”; samo to nie jest jeszcze odpowiedzią
@@ -254,7 +284,7 @@ const TEKST = "tekst";
 const BUDOWA = {
   faktura: {
     sprzedawca: TEKST, sprzedawca_nazwa: TEKST, taryfa: TEKST, taryfa_nazwa: TEKST,
-    okres_od: TEKST, okres_do: TEKST, rodzaj_faktury: TEKST, system_rozliczenia: TEKST, rodzaj_ceny: TEKST,
+    okres_miesiac: TEKST, okres_od: TEKST, okres_do: TEKST, rodzaj_faktury: TEKST, system_rozliczenia: TEKST, rodzaj_ceny: TEKST,
     cena_energii_netto_zl_kwh: "tekst albo lista tekstów",
     oplata_mocowa_zl_mies: TEKST, oplata_abonamentowa_zl_mies: TEKST, oplata_stala_sieciowa_zl_mies: TEKST,
     oplata_przejsciowa_zl_mies: TEKST,
