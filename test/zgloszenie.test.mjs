@@ -69,7 +69,7 @@ test("N25: odnośnik mailto dla numeru K7M3-Q9TX", () => {
     odnosnikMailto(temat, tresc),
     "mailto:raporty@prosumentlab.pl" +
       "?subject=Dane%20do%20darmowego%20raportu%2C%20zg%C5%82oszenie%20K7M3-Q9TX" +
-      "&body=Za%C5%82%C4%85czam%20plik%20prosumentlab_K7M3-Q9TX.zip.",
+      "&body=Pami%C4%99taj%20o%20za%C5%82%C4%85czniku%3A%20plik%20prosumentlab_K7M3-Q9TX.zip.%20Bez%20niego%20nie%20przygotujemy%20raportu.",
   );
 });
 

@@ -8,7 +8,7 @@ export const TEKSTY = {
   "wstep_tytul": "Przygotuj plik do wysłania",
   "wstep_opis": "Narzędzie działa w Twojej przeglądarce i niczego nie wysyła. Usuwa z pliku godzinowego numer punktu poboru (PPE) i numer płatnika, a potem zapisuje na Twoim urządzeniu jeden plik ZIP. Ten plik wysyłasz nam w załączniku wiadomości.",
   "noscript": "Narzędzie do przygotowania pliku działa tylko z włączonym JavaScriptem. Włącz go w ustawieniach przeglądarki.",
-  "wersja": "To jest wersja {wersja}. Kod narzędzia jest publiczny na GitHubie. Narzędzie niczego nie wysyła, także do usług AI.",
+  "wersja": "To jest wersja {wersja}. Kod tej wersji jest publiczny na GitHubie. Narzędzie niczego nie wysyła, także do usług AI.",
 
   "panel_zostaje_tytul": "Zostaje u Ciebie",
   "panel_zostaje_lista": ["numer punktu poboru (PPE)", "numer płatnika", "nazwy Twoich plików", "faktura"],
@@ -204,6 +204,7 @@ export const TEKSTY = {
 
   "krok_zgoda": "Zgoda i numer zgłoszenia",
   "zgoda": "Zgadzam się, żeby ProsumentLab zachował moje dane godzinowe, liczby i nazwy z faktury oraz odpowiedzi o instalacji, bez adresu e-mail i danych kontaktowych, jako przypadek testowy do sprawdzania obliczeń. Zgodę mogę wycofać e-mailem, podając numer zgłoszenia. Więcej: informacja o przetwarzaniu danych, punkt 3.",
+  "zgoda_bez": "Bez tej zgody też możesz wysłać plik. Przygotujemy raport, a plik i liczby z faktury usuniemy najpóźniej 3 dni po jego wysłaniu.",
   "numer": "Numer Twojego zgłoszenia to {numer}. Zapisz go, bo przyda się, gdy zechcesz zapytać o swoje dane albo wycofać zgodę.",
 
   "podglad_tytul": "Tak wygląda to, co wyślesz",
@@ -217,16 +218,26 @@ export const TEKSTY = {
   "podglad_pobrana": "Pobrana z sieci, kWh",
   "podglad_oddana": "Oddana do sieci, kWh",
   "podglad_lista_zip": "Pliki w ZIP-ie",
+  "podglad_z_pliku": "z pliku {nazwa}",
+  "opis_zgloszenie": "opis zgłoszenia: wersja narzędzia, numer, zakres danych i uwagi",
+  "opis_faktury": "liczby i nazwy przepisane z faktury",
+  "opis_instalacja": "odpowiedzi o instalacji",
+  "opis_pomiary": "dane godzinowe z pliku {nazwa}, bez numeru punktu poboru i numeru płatnika",
   "podglad_zgoda_tak": "Zgoda zaznaczona",
   "podglad_zgoda_nie": "Zgoda niezaznaczona",
 
   "krok_zapis": "Zapis pliku ZIP",
   "zapisz_przycisk": "Zapisz plik ZIP",
+  "zapis_gdzie": "Plik zapisze się na tym urządzeniu, zwykle w folderze Pobrane. Narzędzie niczego nie wysyła.",
   "zapis_popraw": "Zanim zapiszesz plik ZIP, popraw albo wyczyść te pola: {pola}.",
   "zapis_blokada": "Narzędzie nie utworzy pliku ZIP, dopóki nie zniknie problem opisany wyżej.",
   "zapis_brak_plikow": "Najpierw wybierz plik godzinowy.",
-  "po_zapisie": "Plik {plik} jest zapisany na Twoim urządzeniu. Teraz napisz wiadomość na adres raporty@prosumentlab.pl i załącz ten plik. Nie załączaj pliku pobranego prosto z eLicznika ani faktury. Przycisk niżej otworzy nową wiadomość z numerem zgłoszenia w temacie, ale pliku nie dołączy.",
+  "po_zapisie": "Plik {plik} jest zapisany na Twoim urządzeniu. Teraz wyślij go na adres raporty@prosumentlab.pl. Nie załączaj pliku pobranego prosto z eLicznika ani faktury.",
+  "udostepnij_przycisk": "Wyślij plik ZIP",
+  "udostepnij_tytul": "Zgłoszenie {numer} do ProsumentLab",
+  "udostepnij_podpowiedz": "Wybierz aplikację poczty i wpisz adres raporty@prosumentlab.pl. Plik będzie już w załączniku.",
+  "mailto_bez_zalacznika": "Wiadomość otworzy się bez załącznika. Zanim ją wyślesz, dołącz plik {plik} z folderu Pobrane.",
   "mailto_przycisk": "Napisz wiadomość",
   "mailto_temat": "Dane do darmowego raportu, zgłoszenie {numer}",
-  "mailto_tresc": "Załączam plik {plik}."
+  "mailto_tresc": "Pamiętaj o załączniku: plik {plik}. Bez niego nie przygotujemy raportu."
 };

@@ -235,6 +235,11 @@ async function proba() {
     return { zdanie: getComputedStyle(p).fontFamily, numer: s && getComputedStyle(s).fontFamily, dzieci: p.querySelectorAll('*').length }; })()`);
   sprawdz("czcionką o stałej szerokości tylko numer", czcionki.dzieci === 1 && /Mono/.test(czcionki.numer) && !/Mono/.test(czcionki.zdanie), JSON.stringify(czcionki));
   sprawdz("zapis zablokowany bez plików", await js("document.querySelector('#zapisz').disabled"));
+  const stale = await js(`(() => {
+    const pod = (wybor, klucz) => { const e = document.querySelector(wybor).nextElementSibling; return e?.dataset.tekst === klucz && !e.hidden && e.getClientRects().length > 0; };
+    return { zapis: pod('#zapisz', 'zapis_gdzie'), zgoda: document.querySelector('.zgoda').nextElementSibling?.dataset.tekst === 'zgoda_bez' && !document.querySelector('.zgoda').nextElementSibling.hidden };
+  })()`);
+  sprawdz("zapis_gdzie stale pod przyciskiem, zgoda_bez stale pod polem zgody", stale.zapis && stale.zgoda, JSON.stringify(stale));
   sprawdz("powód: brak plików", (await tekstEl("#zapis-powod")) === "Najpierw wybierz plik godzinowy.");
   sprawdz("bez uwagi o brakujących polach na pustej stronie", await js("document.querySelector('#faktura-brak').hidden"));
   const odnosniki = await js("[...document.querySelectorAll('#zgoda-wiecej a, #wersja a')].map(a => [a.getAttribute('href'), a.target, a.rel])");
@@ -288,7 +293,21 @@ async function proba() {
   const zakres = await tekstEl("#zakres");
   sprawdz("zakres: 13 miesięcy, jedna kropka po „r.”", zakres.includes("Dane obejmują 13 pełnych miesięcy z rzędu, od stycznia 2025 r. do stycznia 2026 r. To wystarczy do pełnego raportu.") && !zakres.includes(".."), zakres.slice(0, 110));
   sprawdz("po przyjęciu pliku uwaga o brakujących polach", !(await js("document.querySelector('#faktura-brak').hidden")) && (await tekstEl("#faktura-brak")).startsWith("Bez tych danych nie przygotujemy raportu: sposób wyceny energii oddanej, sprzedawca,"), await tekstEl("#faktura-brak"));
-  sprawdz("nazwy plików z dysku nie trafiają do podglądu", !(await tekstEl("#podglad")).includes("eLicznik_2025"));
+  const podgladPlikow = await js(`(() => ({
+    tabela: [...document.querySelector('#podglad table').querySelectorAll('tbody tr td:first-child')].map(td => td.textContent),
+    lista: [...document.querySelectorAll('#podglad .lista-zip li')].map(li => li.textContent),
+    json: [...document.querySelectorAll('#podglad h3.mono')].map(h => h.textContent),
+    numer: document.querySelectorAll('#podglad .numer, #podglad .numer-zgloszenia').length,
+  }))()`);
+  sprawdz("podgląd: przy pomiary_N.csv nazwa pliku, z którego powstał",
+    JSON.stringify(podgladPlikow.tabela) === JSON.stringify(["pomiary_1.csvz pliku eLicznik_2025.csv", "pomiary_2.csvz pliku eLicznik_styczen.csv"]), JSON.stringify(podgladPlikow.tabela));
+  sprawdz("podgląd: lista plików z opisami",
+    JSON.stringify(podgladPlikow.lista) === JSON.stringify([
+      "zgloszenie.jsonopis zgłoszenia: wersja narzędzia, numer, zakres danych i uwagi",
+      "pomiary_1.csvdane godzinowe z pliku eLicznik_2025.csv, bez numeru punktu poboru i numeru płatnika",
+      "pomiary_2.csvdane godzinowe z pliku eLicznik_styczen.csv, bez numeru punktu poboru i numeru płatnika",
+    ]), JSON.stringify(podgladPlikow.lista));
+  sprawdz("podgląd: zgloszenie.json pokazany, bez zdania z numerem zgłoszenia", podgladPlikow.json[0] === "zgloszenie.json" && podgladPlikow.numer === 0, JSON.stringify(podgladPlikow));
 
   // 4. Formularz.
   await js(`(() => {
@@ -335,8 +354,9 @@ async function proba() {
   await zrzut("2-formularz-telefon", 390);
   await zrzut("2-formularz-komputer", 1280);
 
-  // 5. Zapis ZIP-a i wiadomość.
+  // 5. Zapis ZIP-a i wiadomość. Najpierw przeglądarka bez udostępniania plików.
   const numer = (await tekstEl("#numer")).match(/[0-9A-Z]{4}-[0-9A-Z]{4}/)[0];
+  await js("Object.defineProperty(navigator, 'canShare', { value: undefined, configurable: true })");
   await js("document.querySelector('#zapisz').click()");
   let nazwaZip = null;
   for (let i = 0; i < 40 && !nazwaZip; i++) {
@@ -357,12 +377,41 @@ async function proba() {
   }
   sprawdz("komunikat po zapisie widoczny", !(await js("document.querySelector('#po-zapisie').hidden")) && (await tekstEl("#po-zapisie-tekst")).startsWith(`Plik prosumentlab_${numer}.zip jest zapisany`));
   const mailto = await js("document.querySelector('#mailto').href");
-  sprawdz("odnośnik mailto", mailto.startsWith("mailto:raporty@prosumentlab.pl?subject=Dane%20do%20darmowego%20raportu%2C%20zg%C5%82oszenie%20") && mailto.includes(encodeURIComponent(`Załączam plik prosumentlab_${numer}.zip.`)));
+  sprawdz("odnośnik mailto", mailto.startsWith("mailto:raporty@prosumentlab.pl?subject=Dane%20do%20darmowego%20raportu%2C%20zg%C5%82oszenie%20") &&
+    mailto.endsWith(`&body=${encodeURIComponent(`Pamiętaj o załączniku: plik prosumentlab_${numer}.zip. Bez niego nie przygotujemy raportu.`)}`));
+  sprawdz("po zapisie: mailto_bez_zalacznika tuż nad „Napisz wiadomość”", await js(`(() => { const u = document.querySelector('#mailto').previousElementSibling;
+    return u.id === 'mailto-bez-zalacznika' && u.className === 'uwaga' && u.textContent === 'Wiadomość otworzy się bez załącznika. Zanim ją wyślesz, dołącz plik prosumentlab_${numer}.zip z folderu Pobrane.'; })()`));
+  sprawdz("po zapisie: po_zapisie bez zdania o przycisku", (await tekstEl("#po-zapisie-tekst")) === `Plik prosumentlab_${numer}.zip jest zapisany na Twoim urządzeniu. Teraz wyślij go na adres raporty@prosumentlab.pl. Nie załączaj pliku pobranego prosto z eLicznika ani faktury.`);
+  sprawdz("bez navigator.canShare przycisku „Wyślij plik ZIP” nie ma", await js("document.querySelector('#udostepnij').hidden && document.querySelector('#udostepnij-przycisk').getClientRects().length === 0"));
+
+  // Atrapy udostępniania: canShare przyjmuje pliki, share zapisuje, z czym je wywołano.
+  await js(`(() => {
+    window.__udostepnione = [];
+    Object.defineProperty(navigator, 'canShare', { value: (d) => Array.isArray(d?.files) && d.files.length > 0, configurable: true });
+    Object.defineProperty(navigator, 'share', { value: async (d) => {
+      window.__udostepnione.push({ pliki: d.files.map(f => ({ nazwa: f.name, typ: f.type, rozmiar: f.size, zip: f instanceof File })), tytul: d.title });
+      if (window.__przerwij) throw new DOMException('Zamknięte', 'AbortError');
+    }, configurable: true });
+  })()`);
+  await js("document.querySelector('#zapisz').click()");
+  await czekaj(800);
+  sprawdz("z navigator.canShare przycisk „Wyślij plik ZIP” po zapisie", await js("!document.querySelector('#udostepnij').hidden && document.querySelector('#udostepnij-przycisk').textContent === 'Wyślij plik ZIP'") &&
+    (await js("document.querySelector('#udostepnij-przycisk').nextElementSibling.textContent")).startsWith("Wybierz aplikację poczty"));
+  await js("document.querySelector('#udostepnij-przycisk').click()");
+  await czekaj(300);
+  const udostepnione = await js("window.__udostepnione");
+  sprawdz("share: jeden plik prosumentlab_<numer>.zip, typ application/zip, tytuł z numerem",
+    udostepnione.length === 1 && udostepnione[0].pliki.length === 1 && udostepnione[0].pliki[0].nazwa === `prosumentlab_${numer}.zip` &&
+    udostepnione[0].pliki[0].typ === "application/zip" && udostepnione[0].pliki[0].rozmiar > 0 && udostepnione[0].pliki[0].zip &&
+    udostepnione[0].tytul === `Zgłoszenie ${numer} do ProsumentLab`, JSON.stringify(udostepnione));
+  await js("window.__przerwij = true; document.querySelector('#udostepnij-przycisk').click()");
+  await czekaj(300);
+  sprawdz("zamknięcie okna udostępniania (AbortError) nie psuje strony", (await js("window.__udostepnione.length")) === 2 && !(await js("document.querySelector('#po-zapisie').hidden")));
   await zrzut("3-po-zapisie-komputer", 1280);
   await szerokosc(1280);
   await wpisz("#p-moc_pv_kwp", "10", "input");
   await czekaj(500);
-  sprawdz("zmiana pola po zapisie chowa komunikat i przycisk wiadomości", await js("document.querySelector('#po-zapisie').hidden"));
+  sprawdz("zmiana pola po zapisie chowa komunikat, przycisk wiadomości i wysyłki", await js("document.querySelector('#po-zapisie').hidden && document.querySelector('#udostepnij-przycisk').getClientRects().length === 0"));
 
   // 5b. System opustów, cena dynamiczna, korekta, okres: na wypełnionym formularzu.
   const klik = async (wybor) => {

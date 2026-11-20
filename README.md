@@ -109,14 +109,24 @@ domowej. Używaj wyłącznie plików z generatora.
 
 5. Na telefonie otwórz `http://<adres komputera>:8000/` w Safari (iOS) albo Chrome (Android).
 6. Przejdź cały przepływ:
+   - przed dodaniem pliku sekcja zakresu mówi, że zakres pojawi się po dodaniu pliku;
    - dodaj `rok_2025.csv`: plakietka „Przyjęty”, zakres „12 pełnych miesięcy”;
-   - wypełnij pola faktury dowolnymi zmyślonymi liczbami (na przykład 12,34), zaznacz odpowiedzi
-     o instalacji, w tym miesiąc i rok magazynu, i zgodę;
-   - sprawdź podgląd i przycisk „Zapisz plik ZIP”; plik ma nazwę `prosumentlab_<numer>.zip`
-     z numerem ze strony (iOS: aplikacja Pliki, Pobrane; Android: Pobrane);
+   - w danych z faktury wybierz najpierw sposób rozliczenia energii oddanej; wybór „system
+     opustów” chowa pozostałe pola, a powrót do net-billingu pokazuje je z wpisanymi wartościami;
+   - wypełnij pozostałe pola faktury dowolnymi zmyślonymi liczbami (na przykład 12,34): sprzedawca,
+     grupa taryfowa, okres, pole wyboru „To jest faktura korygująca” (zaznacz i odznacz), rodzaj
+     ceny i cenę; przy cenie dynamicznej jest jedno pole ceny, bez stref; rozwiń „Co to znaczy?”
+     przy kilku polach i „Opłaty stałe (nieobowiązkowe)”;
+   - zaznacz odpowiedzi o instalacji, w tym miesiąc i rok magazynu, i zgodę;
+   - sprawdź podgląd (także `zgloszenie.json` i opisy plików na liście) i przycisk
+     „Zapisz plik ZIP”; plik ma nazwę `prosumentlab_<numer>.zip` z numerem ze strony
+     (iOS: aplikacja Pliki, Pobrane; Android: Pobrane). Chrome może przy zapisie ostrzegać
+     o pobieraniu pliku bez HTTPS; wtedy wybierz „Zachowaj”;
+   - przycisk „Wyślij plik ZIP” pokazuje się tylko na stronie z HTTPS, więc w odbiorze przez sieć
+     domową go nie ma;
    - dotknij „Napisz wiadomość”: aplikacja poczty otwiera się z adresem raporty@prosumentlab.pl,
-     tematem z numerem zgłoszenia i treścią z nazwą pliku; plik nie jest dołączony.
-     **Nie wysyłaj tej wiadomości**, zamknij ją bez wysyłania;
+     tematem z numerem zgłoszenia i treścią z przypomnieniem o załączniku; plik nie jest
+     dołączony. **Nie wysyłaj tej wiadomości**, zamknij ją bez wysyłania;
    - dodaj `dwa_punkty.csv`: plik dostaje komunikat o kilku punktach poboru, zapis jest
      zablokowany; po usunięciu pliku zapis znów działa;
    - otwórz odnośnik w zgodzie: informacja o przetwarzaniu danych otwiera się w nowej karcie,

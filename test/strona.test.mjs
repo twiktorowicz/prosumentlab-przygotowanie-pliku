@@ -159,3 +159,38 @@ test("cena dynamiczna: jedno pole bez stref, własna etykieta i podpowiedź", ()
 test("zakres przed dodaniem pliku: zakres_pusty", () => {
   assert.match(MAIN, /t\("zakres_pusty"\)/);
 });
+
+// Ciało funkcji o danej nazwie z main.js (do następnej funkcji na poziomie modułu).
+function funkcja(nazwa) {
+  const m = new RegExp(`\\n(?:async )?function ${nazwa}\\([^)]*\\) \\{\\n([\\s\\S]*?)\\n\\}\\n`).exec(MAIN);
+  assert.ok(m, nazwa);
+  return m[1];
+}
+
+test("podgląd: zgloszenie.json jak pozostałe pliki JSON, bez zdania z numerem, z opisami plików", () => {
+  const podglad = funkcja("pokazPodglad");
+  assert.match(podglad, /\["zgloszenie\.json", "faktury\.json", "instalacja\.json"\]/);
+  assert.doesNotMatch(podglad, /zdanieZNumerem/, "numer zgłoszenia tylko przy zgodzie i po zapisie");
+  assert.match(podglad, /t\("podglad_z_pliku"/);
+  for (const k of ["opis_zgloszenie", "opis_faktury", "opis_instalacja", "opis_pomiary"]) assert.match(MAIN, new RegExp(`"${k}"`), k);
+});
+
+test("zapis: zapis_gdzie stale pod przyciskiem, zgoda_bez stale pod polem zgody", () => {
+  assert.match(HTML, /id="zapisz" data-tekst="zapisz_przycisk"><\/button>\s*<p class="podpowiedz" data-tekst="zapis_gdzie"><\/p>/);
+  assert.match(HTML, /<span id="zgoda-wiecej"><\/span>\s*<\/div>\s*<p class="podpowiedz" data-tekst="zgoda_bez"><\/p>/);
+});
+
+test("po zapisie: mailto_bez_zalacznika tuż nad przyciskiem wiadomości", () => {
+  assert.match(HTML, /<p class="uwaga" id="mailto-bez-zalacznika"><\/p>\s*<a class="przycisk przycisk-drugi" id="mailto"/);
+  assert.match(funkcja("zapisz"), /t\("mailto_bez_zalacznika", \{ plik: wynik\.nazwaZip \}\)/);
+});
+
+test("wysyłka: przycisk tylko, gdy canShare przyjmuje plik; share z plikiem i tytułem; AbortError to nie błąd", () => {
+  assert.match(HTML, /<div id="udostepnij" hidden>\s*<button type="button" class="przycisk" id="udostepnij-przycisk" data-tekst="udostepnij_przycisk"><\/button>\s*<p class="podpowiedz" data-tekst="udostepnij_podpowiedz"><\/p>/);
+  const zapis = funkcja("zapisz");
+  assert.match(zapis, /new File\(\[zip\], wynik\.nazwaZip, \{ type: "application\/zip" \}\)/);
+  assert.match(MAIN, /navigator\.canShare\(\{ files: \[plik\] \}\)/);
+  const udostepnij = funkcja("udostepnij");
+  assert.match(udostepnij, /navigator\.share\(\{ files: \[plik\], title: t\("udostepnij_tytul", \{ numer: NUMER \}\) \}\)/);
+  assert.match(udostepnij, /AbortError/);
+});

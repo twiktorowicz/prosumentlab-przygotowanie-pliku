@@ -44,6 +44,7 @@ let przygotowane = null; // odczyt plików: liczony tylko przy zmianie listy pli
 let wynikiPlikow = new Map(); // pozycja na liście -> wynik z przygotujPliki
 let wynik = null;
 let odlozone = null;
+let plikDoWyslania = null; // zapisany ZIP jako File, gdy przeglądarka umie go udostępnić
 
 function dzisiaj() {
   const d = new Date();
@@ -487,20 +488,37 @@ function pokazPola() {
   pokaz(brakEl, Boolean(brak));
 }
 
+// Komórka tabeli to tekst albo lista elementów.
 function tabela(naglowki, wiersze, klasy = []) {
+  const komorka = (k, i) => (typeof k === "string" ? el("td", { klasa: klasy[i] ?? "", tekst: k }) : el("td", { klasa: klasy[i] ?? "" }, ...k));
   return el("div", { klasa: "tabela-przewijana" }, el("table", {},
     el("thead", {}, el("tr", {}, ...naglowki.map((n, i) => el("th", { scope: "col", klasa: klasy[i] ?? "", tekst: n })))),
-    el("tbody", {}, ...wiersze.map((w) => el("tr", {}, ...w.map((k, i) => el("td", { klasa: klasy[i] ?? "", tekst: k })))))));
+    el("tbody", {}, ...wiersze.map((w) => el("tr", {}, ...w.map(komorka))))));
+}
+
+// Opis pliku na liście zawartości ZIP-a. Nazwa pliku z urządzenia klienta stoi tylko na stronie;
+// do ZIP-a nie trafia.
+function opisPlikuZip(nazwa, zrodlo) {
+  if (nazwa === "zgloszenie.json") return t("opis_zgloszenie");
+  if (nazwa === "faktury.json") return t("opis_faktury");
+  if (nazwa === "instalacja.json") return t("opis_instalacja");
+  return t("opis_pomiary", { nazwa: zrodlo.get(nazwa) ?? "" });
 }
 
 function pokazPodglad() {
   const przyjete = wynik.pliki.filter((p) => p.nazwa).sort((a, b) => a.nazwa.localeCompare(b.nazwa, "pl", { numeric: true }));
+  // pomiary_N.csv -> nazwa pliku z listy, z którego powstał.
+  const pozycja = new Map([...wynikiPlikow].map(([i, p]) => [p.indeks, i]));
+  const zrodlo = new Map(przyjete.map((p) => [p.nazwa, pliki[pozycja.get(p.indeks)]?.nazwa ?? ""]));
   const czesci = [];
   if (przyjete.length > 0) {
     czesci.push(tabela(
       [t("podglad_plik"), t("podglad_wiersze"), t("podglad_pierwsza"), t("podglad_ostatnia"), t("podglad_usuniete")],
-      przyjete.map((p) => [p.nazwa, String(p.wierszeDanych), znacznikPolski(p.pierwszyZnacznik), znacznikPolski(p.ostatniZnacznik), p.usunieteKolumny.join(", ")]),
-      ["mono", "liczba", "", "", ""],
+      przyjete.map((p) => [
+        [el("span", { klasa: "mono", tekst: p.nazwa }), el("span", { klasa: "z-pliku", tekst: t("podglad_z_pliku", { nazwa: zrodlo.get(p.nazwa) }) })],
+        String(p.wierszeDanych), znacznikPolski(p.pierwszyZnacznik), znacznikPolski(p.ostatniZnacznik), p.usunieteKolumny.join(", "),
+      ]),
+      ["", "liczba", "", "", ""],
     ));
     for (const p of przyjete) {
       const plikWZip = wynik.zawartosc.find((z) => z.nazwa === p.nazwa);
@@ -513,13 +531,13 @@ function pokazPodglad() {
       ["", "liczba", "liczba"],
     ));
   }
-  for (const nazwa of ["faktury.json", "instalacja.json"]) {
+  for (const nazwa of ["zgloszenie.json", "faktury.json", "instalacja.json"]) {
     const plik = wynik.zawartosc.find((z) => z.nazwa === nazwa);
     if (plik) czesci.push(el("h3", { klasa: "mono", tekst: nazwa }), el("pre", { klasa: "wiersze", tekst: new TextDecoder().decode(plik.bajty) }));
   }
   czesci.push(komunikat("", t(wynik.zgoda ? "podglad_zgoda_tak" : "podglad_zgoda_nie")));
-  czesci.push(el("p", { klasa: "numer" }, ...zdanieZNumerem()));
-  czesci.push(el("h3", { tekst: t("podglad_lista_zip") }), el("ul", { klasa: "mono" }, ...wynik.zawartosc.map((z) => el("li", { tekst: z.nazwa }))));
+  czesci.push(el("h3", { tekst: t("podglad_lista_zip") }), el("ul", { klasa: "lista-zip" }, ...wynik.zawartosc.map((z) =>
+    el("li", {}, el("span", { klasa: "mono", tekst: z.nazwa }), el("span", { klasa: "opis-pliku", tekst: opisPlikuZip(z.nazwa, zrodlo) })))));
   $("#podglad").replaceChildren(...czesci);
 }
 
@@ -549,7 +567,10 @@ function pokazZapis() {
 function przelicz({ poZapisie = false } = {}) {
   clearTimeout(odlozone);
   warunki();
-  if (!poZapisie) pokaz($("#po-zapisie"), false);
+  if (!poZapisie) {
+    pokaz($("#po-zapisie"), false);
+    plikDoWyslania = null;
+  }
   try {
     wynik = zlozZgloszenie({
       przygotowane,
@@ -600,8 +621,33 @@ function zapisz() {
   // Adres pliku musi chwilę żyć, zwłaszcza w Safari na iOS.
   setTimeout(() => URL.revokeObjectURL(adres), 60000);
   $("#po-zapisie-tekst").textContent = t("po_zapisie", { plik: wynik.nazwaZip });
+  const plik = new File([zip], wynik.nazwaZip, { type: "application/zip" });
+  plikDoWyslania = mozeUdostepnic(plik) ? plik : null;
+  pokaz($("#udostepnij"), plikDoWyslania !== null);
+  $("#mailto-bez-zalacznika").textContent = t("mailto_bez_zalacznika", { plik: wynik.nazwaZip });
   $("#mailto").href = odnosnikMailto(t("mailto_temat", { numer: NUMER }), t("mailto_tresc", { plik: wynik.nazwaZip }));
   pokaz($("#po-zapisie"), true);
+}
+
+// Systemowe okno udostępniania z plikiem w załączniku. Przeglądarka pozwala na nie zwykle tylko
+// na stronie z HTTPS; bez tego przycisku nie ma, a zostaje wiadomość bez załącznika.
+function mozeUdostepnic(plik) {
+  try {
+    return typeof navigator.canShare === "function" && Boolean(navigator.canShare({ files: [plik] }));
+  } catch {
+    return false;
+  }
+}
+
+async function udostepnij() {
+  const plik = plikDoWyslania;
+  if (!plik) return;
+  try {
+    await navigator.share({ files: [plik], title: t("udostepnij_tytul", { numer: NUMER }) });
+  } catch (blad) {
+    // AbortError: klient zamknął okno udostępniania bez wyboru aplikacji; to nie błąd.
+    if (blad?.name !== "AbortError") console.error(blad);
+  }
 }
 
 // --- Start -----------------------------------------------------------------------------------
@@ -636,6 +682,7 @@ function start() {
     przelicz();
   });
   $("#zapisz").addEventListener("click", zapisz);
+  $("#udostepnij-przycisk").addEventListener("click", udostepnij);
   przelicz();
 }
 

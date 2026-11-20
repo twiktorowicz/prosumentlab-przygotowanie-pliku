@@ -332,6 +332,8 @@ input[inputmode="decimal"] { font-family: var(--mono); max-width: 12em; }
   vertical-align: 2px;
 }
 .opcja .nr { margin-right: 0; }
+/* Pole wyboru korekty stoi wprost w .pole, jak etykiety innych pól; wygląda jak opcja. */
+.pole > label.opcja { display: inline-flex; margin-bottom: 0; padding: 8px 14px; font-weight: 400; }
 /* „Co to znaczy?” pod etykietą pola i zwinięta część z opłatami stałymi: zwykłe <details>,
    działa z klawiatury i z czytnikiem ekranu. */
 .pomoc { margin: 0 0 8px; font-size: 15px; }
@@ -356,6 +358,14 @@ input[inputmode="decimal"] { font-family: var(--mono); max-width: 12em; }
 /* W zdaniu z numerem zgłoszenia czcionką o stałej szerokości jest tylko numer. */
 .numer { font-weight: 500; margin-top: 16px; }
 .numer-zgloszenia { font-family: var(--mono); font-weight: 500; white-space: nowrap; }
+
+/* Podgląd: przy pliku pomiarów nazwa pliku z urządzenia (tylko na stronie), na liście
+   zawartości ZIP-a krótki opis każdego pliku. */
+.z-pliku, .opis-pliku { display: block; font-size: 13px; color: var(--pomocniczy); overflow-wrap: anywhere; }
+.lista-zip { margin: 0 0 16px; padding-left: 1.2em; }
+.lista-zip li { margin-bottom: 8px; }
+.lista-zip .opis-pliku { font-size: 15px; }
+#udostepnij { margin: 0 0 16px; }
 
 /* Podgląd. */
 .tabela-przewijana { overflow-x: auto; margin: 0 0 16px; }
