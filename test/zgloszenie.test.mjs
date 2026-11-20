@@ -212,6 +212,27 @@ test("uwagi: kompletność w pliku, faktura poza zakresem, system opustów, zmia
   assert.equal(w.pliki[0].stan, "uwaga");
 });
 
+test("plik z samą nieistniejącą godziną 03:00 z doby zmiany czasu na letni: zakres za krótki, bez wyjątku", () => {
+  const z = "2025-03-30 01:00";
+  const plik = generuj({
+    od: "2025-03-30", do: "2025-03-30", ziarno: 1, obetnijKoniec: 22,
+    podmien: [
+      { znacznik: z, seria: "oddanie", pole: "znacznik", tekst: "2025-03-30 03:00" },
+      { znacznik: z, seria: "pobor", pole: "znacznik", tekst: "2025-03-30 03:00" },
+    ],
+  }).surowy;
+  const w = przygotujZgloszenie({
+    pliki: [plik],
+    formularz: { instalacja: { zmiany: [{ rodzaj: "pompa_ciepla", miesiac: "2025-03" }] } },
+    numer: NUMER,
+    utworzono: DATA,
+  });
+  assert.equal(w.pliki[0].stan, "przyjety");
+  assert.deepEqual(w.zakres, { pelne_miesiace: 0, ciag_miesiace: 0, klasyfikacja: "za_krotki" });
+  assert.equal(w.uwagi.some((u) => u.kod === "INSTALACJA_MIESIAC_POZA_ZAKRESEM"), false);
+  assert.equal(w.moznaZapisac, true);
+});
+
 test("faktura w zakresie plików: bez uwagi", () => {
   const w = przygotujZgloszenie({ pliki: [generuj(N1).surowy], formularz: { faktura: FAKTURA }, numer: NUMER, utworzono: DATA });
   assert.equal(w.uwagi.some((u) => u.kod === "FAKTURA_R_POZA_ZAKRESEM"), false);

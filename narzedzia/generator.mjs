@@ -259,7 +259,8 @@ const KOLUMNA = { seria: 2, znacznik: 3, strefa: 4, wartosc: 5, kompletnosc: 6 }
  * - zanonimizowany: bajty wariantu bez dwóch pierwszych kolumn, UTF-8, LF, LF na końcu
  *   (postać, jaką ma dać narzędzie).
  *
- * Opcje: od, do (RRRR-MM-DD, włącznie), taryfa ("G11" | "G13"), ziarno, ppe (18 cyfr), platnik,
+ * Opcje: od, do (RRRR-MM-DD, włącznie), taryfa ("G11" | "G13"), ziarno, ppe (18 cyfr; pusty tekst
+ * daje pustą kolumnę), platnik (pusty tekst daje pustą kolumnę),
  * kodowanie, koniecLinii, zmianaTaryfy {od, taryfa}, obetnijPoczatek, obetnijKoniec (liczba
  * godzin), bierna (dwie serie energii biernej przed seriami czynnymi, w kolejności alfabetycznej).
  * Psucie: niepelne [{znacznik, kompletnosc}], luka {znacznik, godzin}, powtorz {znacznik,
@@ -281,8 +282,9 @@ export function generuj(opcje = {}) {
   const od = czytajDate(opcje.od, "od");
   const doDnia = czytajDate(opcje.do, "do");
   if (porownajDaty(od, doDnia) > 0) throw new Error("od jest późniejsze niż do");
-  // Kolumna PPE w eLiczniku ma postać "PPE:" i 18 cyfr; opcja `ppe` podaje same cyfry.
-  const kolumnaPpe = `PPE:${ppe}`;
+  // Kolumna PPE w eLiczniku ma postać "PPE:" i 18 cyfr; opcja `ppe` podaje same cyfry, a pusty
+  // tekst daje pustą kolumnę (plik, w którym klient sam wyczyścił numer).
+  const kolumnaPpe = ppe === "" ? "" : `PPE:${ppe}`;
   const zmiana = opcje.zmianaTaryfy ? { ...opcje.zmianaTaryfy, od: czytajDate(opcje.zmianaTaryfy.od, "zmianaTaryfy.od") } : null;
   for (const t of [taryfa, zmiana?.taryfa].filter(Boolean)) {
     if (!TARYFY.has(t)) throw new Error(`nieznana taryfa: ${t} (generator zna G11 i G13)`);
@@ -328,8 +330,8 @@ export function generuj(opcje = {}) {
   }
 
   const znajdz = (nazwaSerii, z) => {
+    if (!Object.hasOwn(serie, nazwaSerii)) throw new Error(`nieznana seria: ${nazwaSerii}`);
     const s = serie[nazwaSerii];
-    if (!s) throw new Error(`nieznana seria: ${nazwaSerii}`);
     const i = s.findIndex((w) => w[KOLUMNA.znacznik] === z);
     if (i < 0) throw new Error(`brak znacznika ${z} w serii ${nazwaSerii}`);
     return { s, i };
@@ -357,7 +359,7 @@ export function generuj(opcje = {}) {
     s[i][KOLUMNA.strefa] = kolumnaPpe;
   }
   for (const { znacznik: z, seria = "pobor", pole, tekst } of opcje.podmien ?? []) {
-    if (!(pole in KOLUMNA)) throw new Error(`podmien: nieznane pole ${pole}`);
+    if (!Object.hasOwn(KOLUMNA, pole)) throw new Error(`podmien: nieznane pole ${pole}`);
     const { s, i } = znajdz(seria, z);
     s[i][KOLUMNA[pole]] = tekst;
   }

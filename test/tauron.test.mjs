@@ -195,7 +195,7 @@ test("bezpiecznik: reguły osobno, w tym usunięte wartości od 6 znaków i gran
   assert.equal(sprawdzBezpiecznik(linie("a;12345;b"), ["12345"]), null, "wartość krótsza niż 6 znaków nie jest szukana");
   // Kolumna PPE ma postać "PPE:" i cyfry. Same cyfry bez przedrostka, które przeciekły do innej
   // kolumny, też są szukane, nawet gdy są za krótkie dla reguły 12 cyfr i wzorca GS1.
-  assert.deepEqual(sprawdzBezpiecznik(linie("a;b", "x;87654321;y"), ["PPE:87654321"]), { linia: 2 });
+  assert.deepEqual(sprawdzBezpiecznik(linie("a;b", `x;${PLATNICY_FIKCYJNI[1]};y`), [`PPE:${PLATNICY_FIKCYJNI[1]}`]), { linia: 2 });
   assert.deepEqual(sprawdzBezpiecznik(linie(`x;${PPE_FIKCYJNE[0]};y`), [`PPE:${PPE_FIKCYJNE[0]}`]), { linia: 1 });
   assert.deepEqual(sprawdzBezpiecznik(linie("strefa PPE;1"), []), { linia: 1 });
   assert.deepEqual(sprawdzBezpiecznik(linie("strefa (ppe);1"), []), { linia: 1 });
@@ -210,9 +210,11 @@ test("bezpiecznik, reguła 6: cyfry w każdym polu poza znacznikiem", () => {
   const linie = (...t) => t.map((tekst, i) => ({ tekst, linia: i + 1 }));
   const opcje = { poleZnacznika: 1 };
   // Znacznik daje 12 cyfr i mógłby przypadkiem zawierać usunięty numer, więc jest pominięty.
-  assert.equal(sprawdzBezpiecznik(linie("seria;2025-06-06 01:00;Reszta dnia;0,500;100,00"), ["06060100"], opcje), null);
+  // Usunięta wartość w tym teście to cyfry samego znacznika od miesiąca do godziny.
+  const cyfryZnacznika = "2025-06-06 01:00".slice(5).replace(/\D/g, "");
+  assert.equal(sprawdzBezpiecznik(linie("seria;2025-06-06 01:00;Reszta dnia;0,500;100,00"), [cyfryZnacznika], opcje), null);
   assert.deepEqual(
-    sprawdzBezpiecznik(linie("seria;2025-06-06 01:00;06.06.01.00;0,500;100,00"), ["06060100"], opcje),
+    sprawdzBezpiecznik(linie("seria;2025-06-06 01:00;06.06.01.00;0,500;100,00"), [cyfryZnacznika], opcje),
     { linia: 1 },
     "te same cyfry w polu strefy blokują",
   );
@@ -242,15 +244,23 @@ test("błędy wartości, znacznika i serii", () => {
   const z = "2025-02-03 05:00";
   const przypadek = (pole, tekstPola, seria = "pobor") =>
     czytaj(generuj({ ...DZIEN, podmien: [{ znacznik: z, seria, pole, tekst: tekstPola }] }).surowy);
-  for (const zla of ["1.500", "1,5000", "-1,000", "1234567890,000", "", "1,"]) {
+  for (const zla of ["1.500", "1,5000", "-1,000", "1000,000", "1000", "", "1,"]) {
     assert.equal(przypadek("wartosc", zla).kod, "blad_wartosc", zla);
   }
   assert.equal(przypadek("wartosc", "1").ok, true, "wartość bez części dziesiętnej jest dozwolona");
-  assert.equal(przypadek("wartosc", "123456789,5").ok, true);
+  assert.equal(przypadek("wartosc", "999,5").ok, true);
+  assert.equal(przypadek("wartosc", "999,999").ok, true, "najwyżej trzy cyfry przed przecinkiem");
   assert.equal(przypadek("kompletnosc", "abc").kod, "blad_wartosc");
+  for (const zla of ["100,01", "100,5", "150", "999,99"]) {
+    assert.equal(przypadek("kompletnosc", zla).kod, "blad_wartosc", `kompletność ${zla} powyżej 100`);
+  }
+  for (const dobra of ["100", "100,00", "0", "0,00", "87,5"]) assert.equal(przypadek("kompletnosc", dobra).ok, true, dobra);
   assert.equal(przypadek("znacznik", "2025-02-03 05:15").kod, "blad_nie_godzinowe");
   assert.equal(przypadek("znacznik", "2025-02-30 05:00").kod, "blad_data");
   assert.equal(przypadek("znacznik", "03.02.2025 05:00").kod, "blad_data");
+  assert.equal(przypadek("znacznik", "2009-12-31 05:00").kod, "blad_data", "rok przed 2010");
+  assert.equal(przypadek("znacznik", "2100-01-01 05:00").kod, "blad_data", "rok po 2099");
+  assert.equal(przypadek("znacznik", "1970-01-01 05:00").kod, "blad_data");
   assert.equal(przypadek("seria", "energia czynna inna").kod, "blad_seria");
   assert.equal(przypadek("seria", "energia bierna indukcyjna pobrana").ok, true, "seria bierna z eLicznika nie jest błędem");
   assert.equal(przypadek("seria", "energia bierna pojemnościowa pobrana").ok, true, "seria bierna z eLicznika nie jest błędem");
@@ -275,14 +285,19 @@ test("nazwa serii: dokładnie jedna z czterech nazw z eLicznika, każda inna to 
   }
 });
 
-test("kolumna strefy: tylko litery i pojedyncze spacje, 2–40 znaków; inaczej blad_strefa z numerem wiersza", () => {
+test("kolumna strefy: litera na początku, dalej litery, cyfry (najwyżej 2), pojedyncze spacje i myślniki, 2–40 znaków; inaczej blad_strefa", () => {
   const z = "2025-02-03 05:00";
   const strefa = (tekst) => generuj({ ...DZIEN, podmien: [{ znacznik: z, seria: "pobor", pole: "strefa", tekst }] }).surowy;
   const przypadki = {
     "imię z adresem": "Jan Kowalski ul. Polna 5",
+    "znak równości na początku (formuła arkusza)": "=SUMA",
+    "myślnik na początku": "-noc",
+    "trzy cyfry": "Strefa 123",
+    "cyfry w dwóch miejscach, razem trzy": "S1 strefa 23",
+    "spacja na końcu": "Reszta dnia ",
     "numer telefonu z odstępami (same zera, taki nie istnieje)": "000 000 000",
-    "11 cyfr": "12345678901",
-    "8 cyfr innych niż numer płatnika": "87654321",
+    "11 cyfr": "1".repeat(11),
+    "8 cyfr innych niż numer płatnika w pliku": PLATNICY_FIKCYJNI[1],
     "podwójna spacja": "Reszta  dnia",
     "spacja na początku": " Reszta dnia",
     "jeden znak": "A",
@@ -295,7 +310,7 @@ test("kolumna strefy: tylko litery i pojedyncze spacje, 2–40 znaków; inaczej 
     const linia = liniaZ(b, z, "energia czynna pobrana netto");
     assert.deepEqual(czytaj(b), { ok: false, kod: "blad_strefa", wiersz: linia }, nazwa);
   }
-  for (const dobra of ["Reszta dnia", "Szczyt przedpołudniowy", "ab", "a".repeat(40), "Strefa nocna"]) {
+  for (const dobra of ["Reszta dnia", "Szczyt przedpołudniowy", "ab", "a".repeat(40), "Strefa nocna", "Strefa 1", "T1", "Pozaszczyt - noc", "Strefa 12", "G12w-dzien"]) {
     assert.equal(czytaj(strefa(dobra)).ok, true, dobra);
   }
 });
@@ -374,4 +389,72 @@ test("wiersze wyniku niosą godzinę, porządek i wartość w Wh", () => {
   assert.equal(w.wiersze.at(-1).seria, "pobor");
   assert.deepEqual(w.wiersze.at(-1).doba, { rok: 2025, miesiac: 6, dzien: 7 });
   assert.equal(w.wiersze.at(-1).godzina, 23);
+});
+
+test("nazwa serii tylko spośród własnych nazw: nazwy wbudowane w obiekty JS dają blad_seria", () => {
+  const z = "2025-02-03 05:00";
+  for (const nazwa of ["constructor", "toString", "valueOf", "__proto__", "hasOwnProperty"]) {
+    const b = generuj({ ...DZIEN, podmien: [{ znacznik: z, seria: "pobor", pole: "seria", tekst: nazwa }] }).surowy;
+    assert.deepEqual(czytaj(b), { ok: false, kod: "blad_seria", wiersz: liniaZ(b, z, nazwa) }, nazwa);
+  }
+  // Także jako pierwszy wiersz danych, zaraz po nagłówku.
+  const pierwszy = generuj({ ...DZIEN, podmien: [{ znacznik: "2025-02-03 01:00", seria: "oddanie", pole: "seria", tekst: "toString" }] }).surowy;
+  assert.deepEqual(czytaj(pierwszy), { ok: false, kod: "blad_seria", wiersz: 2 });
+});
+
+test("pusta kolumna płatnika albo PPE: plik przyjęty bez numerów do porównania, obecny numer dalej w bezpieczniku", () => {
+  for (const opcje of [{ platnik: "" }, { ppe: "" }, { platnik: "", ppe: "" }]) {
+    const w = czytaj(generuj({ ...DZIEN, ...opcje }).surowy);
+    assert.equal(w.ok, true, JSON.stringify(opcje));
+    assert.equal(w.wariant, "surowy");
+    assert.equal(w.identyfikatory, null, "bez kompletu numerów plik nie bierze udziału w porównaniu");
+    assert.deepEqual(w.usunieteKolumny, ["Nr platnika", "Nr punktu poboru energii"]);
+  }
+  const z = "2025-02-03 05:00";
+  const bezPpe = generuj({ ...DZIEN, ppe: "", podmien: [{ znacznik: z, seria: "pobor", pole: "strefa", tekst: PLATNICY_FIKCYJNI[0] }] }).surowy;
+  assert.deepEqual(czytaj(bezPpe), { ok: false, kod: "blad_bezpiecznik", wiersz: liniaZ(bezPpe, z, "energia czynna pobrana netto"), blokada: true });
+  const cyfryPpe = generuj({ ...DZIEN, platnik: "", podmien: [{ znacznik: z, seria: "pobor", pole: "strefa", tekst: PPE_FIKCYJNE[0] }] }).surowy;
+  assert.equal(czytaj(cyfryPpe).kod, "blad_bezpiecznik");
+});
+
+test("dwie serie energii biernej mają osobne wystąpienia godziny 03:00", () => {
+  const w = czytaj(generuj({ od: "2025-10-26", do: "2025-10-26", ziarno: 3, bierna: true }).surowy);
+  assert.equal(w.ok, true);
+  const serie = [...new Set(w.wiersze.map((x) => x.seria))];
+  assert.equal(serie.length, 4, `cztery serie: ${serie.join(", ")}`);
+  for (const s of serie) {
+    const wyst = w.wiersze.filter((x) => x.seria === s && x.znacznik === "2025-10-26 03:00").map((x) => x.wystapienie);
+    assert.deepEqual(wyst, [1, 2], s);
+  }
+});
+
+test("pierwsza i ostatnia godzina pliku tylko z serii energii czynnej", () => {
+  const linie = new TextDecoder("iso-8859-2").decode(generuj({ ...DZIEN, bierna: true }).surowy).split("\r\n");
+  const bezSkrajnychCzynnych = linie.filter((l) => !/;energia czynna [a-z]+ netto;(2025-02-03 01:00|2025-02-04 00:00);/.test(l));
+  assert.equal(bezSkrajnychCzynnych.length, linie.length - 4);
+  const w = czytajTauron(bezSkrajnychCzynnych.join("\r\n"));
+  assert.equal(w.ok, true);
+  assert.equal(w.pierwszyZnacznik, "2025-02-03 02:00");
+  assert.equal(w.ostatniZnacznik, "2025-02-03 23:00");
+});
+
+// Opcja timeout z node:test nie przerywa kodu synchronicznego, więc test mierzy czas sam.
+// Przypisanie wystąpień liczone dla każdego wiersza osobno zajmowało przy tym pliku ponad minutę.
+const LIMIT_MS = 5000;
+test("50 000 wierszy godziny 03:00 doby zmiany czasu na zimowy: odczyt do końca w limicie czasu", () => {
+  const naglowek = "Rodzaj energii;Data i godzina;Strefa;Wartosc[kWh/kvar];Kompletnosc[%]\n";
+  const wiersz = (seria) => `energia czynna ${seria} netto;2025-10-26 03:00;Reszta dnia;0,100;100,00\n`;
+  // Obie serie energii czynnej, po 25 000 wierszy: plik przechodzi odczyt do końca.
+  const tekst = naglowek + wiersz("oddana").repeat(25000) + wiersz("pobrana").repeat(25000);
+  const t0 = performance.now();
+  const w = czytajTauron(tekst);
+  const czas = performance.now() - t0;
+  assert.ok(czas < LIMIT_MS, `odczyt trwał ${czas.toFixed(0)} ms`);
+  assert.equal(w.ok, true, JSON.stringify(w.ok ? "" : w));
+  assert.equal(w.wierszeDanych, 50000);
+  for (const s of ["oddanie", "pobor"]) {
+    const wyst = w.wiersze.filter((x) => x.seria === s).map((x) => x.wystapienie);
+    assert.equal(wyst[0], 1, `${s}: pierwszy wiersz w pliku to pierwsze wystąpienie`);
+    assert.ok(wyst.slice(1).every((x) => x === 2), `${s}: pozostałe to drugie wystąpienie`);
+  }
 });

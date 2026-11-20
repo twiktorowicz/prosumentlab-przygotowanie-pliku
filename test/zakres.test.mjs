@@ -47,6 +47,16 @@ test("plik zanonimizowany: punktów poboru nie da się porównać", () => {
   assert.equal(analizujZakres([plik({ od: "2025-01-01", do: "2025-01-10" }, "zanonimizowany")]).ppePorownane, false);
 });
 
+test("plik z pustą kolumną numeru: bez porównania punktów poboru i bez blokady", () => {
+  for (const pusta of [{ ppe: "" }, { platnik: "" }]) {
+    const a = analiza({ od: "2025-01-01", do: "2025-01-10" }, { od: "2025-01-11", do: "2025-01-20", ...pusta });
+    assert.deepEqual(a.blokady, [], JSON.stringify(pusta));
+    assert.equal(a.ppePorownane, false, JSON.stringify(pusta));
+  }
+  const dwaPuste = analiza({ od: "2025-01-01", do: "2025-01-10", ppe: "" }, { od: "2025-01-11", do: "2025-01-20", ppe: "" });
+  assert.equal(dwaPuste.ppePorownane, false, "dwa pliki z pustym PPE to nie dowód jednego punktu");
+});
+
 test("N8: dwa pliki zachodzące na siebie o 48 godzin, te same wartości: zakres z sumy godzin", () => {
   const a = analiza({ od: "2025-01-01", do: "2025-02-02" }, { od: "2025-02-01", do: "2025-03-31" });
   assert.deepEqual(a.blokady, []);

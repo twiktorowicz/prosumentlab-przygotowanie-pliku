@@ -13,6 +13,8 @@ import {
   porzadek,
   zPorzadku,
   istniejeGodzina,
+  ROK_MIN,
+  ROK_MAKS,
 } from "../app/lib/kalendarz.js";
 
 test("rozbiór znacznika: poprawne i błędne", () => {
@@ -23,6 +25,12 @@ test("rozbiór znacznika: poprawne i błędne", () => {
     assert.deepEqual(rozbierzZnacznik(zly), { ok: false, kod: "data" }, zly);
   }
   assert.equal(rozbierzZnacznik("2024-02-29 01:00").ok, true);
+  // Rok znacznika od 2010 do 2099.
+  assert.deepEqual([ROK_MIN, ROK_MAKS], [2010, 2099]);
+  for (const zly of ["2009-12-31 01:00", "2100-01-01 01:00", "1970-01-01 01:00", "9999-12-31 01:00"]) {
+    assert.deepEqual(rozbierzZnacznik(zly), { ok: false, kod: "data" }, zly);
+  }
+  for (const dobry of ["2010-01-01 01:00", "2010-01-01 00:00", "2099-12-31 24:00"]) assert.equal(rozbierzZnacznik(dobry).ok, true, dobry);
   assert.equal(rozbierzZnacznik("2025-02-29 01:00").ok, false);
 });
 

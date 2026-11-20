@@ -11,6 +11,13 @@ import { liczbaZCyfr } from "./kwoty.js";
 
 const MS_DOBY = 86400000;
 
+// Lata, które narzędzie przyjmuje w znacznikach pliku i w datach z formularza. Poza nimi data
+// jest błędem: eLicznik nie ma danych sprzed 2010 r., a górna granica ogranicza koszt analizy
+// zakresu (każdy miesiąc między pierwszą a ostatnią godziną jest liczony).
+export const ROK_MIN = 2010;
+export const ROK_MAKS = 2099;
+export const rokWZakresie = (rok) => rok >= ROK_MIN && rok <= ROK_MAKS;
+
 export function przestepny(rok) {
   return (rok % 4 === 0 && rok % 100 !== 0) || rok % 400 === 0;
 }
@@ -56,7 +63,7 @@ export function rozbierzZnacznik(tekst) {
   const m = /^(\d{4})-(\d{2})-(\d{2}) (\d{2}):(\d{2})$/.exec(tekst);
   if (!m) return { ok: false, kod: "data" };
   const [rok, miesiac, dzien, godzina] = [m[1], m[2], m[3], m[4]].map(liczbaZCyfr);
-  if (!poprawnaDoba(rok, miesiac, dzien) || godzina > 24) return { ok: false, kod: "data" };
+  if (!rokWZakresie(rok) || !poprawnaDoba(rok, miesiac, dzien) || godzina > 24) return { ok: false, kod: "data" };
   if (m[5] !== "00") return { ok: false, kod: "nie_godzinowe" };
   return { ok: true, rok, miesiac, dzien, godzina };
 }

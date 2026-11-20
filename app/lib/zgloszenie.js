@@ -117,7 +117,9 @@ export function zlozZgloszenie({ przygotowane, formularz, numer, utworzono }) {
   }
   if (form.brakujace.length > 0) uwagi.push({ kod: "FAKTURA_BRAK_OBOWIAZKOWYCH", gdzie: "raport", pola: [...form.brakujace] });
   if (r.system_rozliczenia === "opusty") uwagi.push({ kod: "FAKTURA_OPUSTY", gdzie: "raport" });
-  if (analiza) {
+  // Analiza bez żadnej istniejącej godziny (np. plik z samą godziną 03:00 z doby zmiany czasu
+  // na letni) nie ma miesięcy plików, więc nie ma z czym porównać miesięcy instalacji.
+  if (analiza?.miesiacePlikow) {
     const od = numerMiesiaca(analiza.miesiacePlikow.od.rok, analiza.miesiacePlikow.od.miesiac);
     const doM = numerMiesiaca(analiza.miesiacePlikow.do.rok, analiza.miesiacePlikow.do.miesiac);
     (form.instalacja.zmiany ?? []).forEach((z, i) => {

@@ -316,6 +316,20 @@ test("plik surowy w UTF-8, z BOM i z LF", () => {
   assert.equal(lf, cp.replaceAll("\r\n", "\n"));
 });
 
+test("nazwy kolumn i serii w psuciu tylko spośród własnych kluczy", () => {
+  const dzien = { od: "2025-02-03", do: "2025-02-03", ziarno: 1 };
+  for (const pole of ["constructor", "toString", "valueOf", "__proto__", "hasOwnProperty"]) {
+    assert.throws(() => generuj({ ...dzien, podmien: [{ znacznik: "2025-02-03 05:00", seria: "pobor", pole, tekst: "x" }] }), /nieznane pole/, pole);
+    assert.throws(() => generuj({ ...dzien, podmien: [{ znacznik: "2025-02-03 05:00", seria: pole, pole: "strefa", tekst: "x" }] }), /nieznana seria/, pole);
+  }
+});
+
+test("pusta kolumna płatnika albo PPE", () => {
+  const pola = (opcje) => dekodujIso(generuj({ od: "2025-02-03", do: "2025-02-03", ziarno: 1, ...opcje }).surowy).split("\r\n")[1].split(";");
+  assert.deepEqual(pola({ ppe: "" }).slice(0, 2), [PLATNICY_FIKCYJNI[0], ""]);
+  assert.deepEqual(pola({ platnik: "" }).slice(0, 2), ["", `PPE:${PPE_FIKCYJNE[0]}`]);
+});
+
 test("złe parametry: odwrotny zakres, nieznana taryfa, zła data", () => {
   assert.throws(() => generuj({ od: "2025-02-04", do: "2025-02-03" }));
   assert.throws(() => generuj({ od: "2025-02-03", do: "2025-02-03", taryfa: "G12" }));
