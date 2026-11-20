@@ -395,7 +395,8 @@ function pokazPliki() {
       ...tresc);
   }));
 
-  $("#blokady").replaceChildren(...wynik.blokady.filter((b) => b.plik === undefined).map((b) =>
+  // Pod listą plików tylko blokady z plików; blokada z pól formularza stoi przy przycisku zapisu.
+  $("#blokady").replaceChildren(...wynik.blokady.filter((b) => b.plik === undefined && b.kod !== BLOKADA_POL).map((b) =>
     komunikat("blad", tekstKodu(b.kod, b.znacznik ? { data: znacznikPolski(b.znacznik) } : {}))));
 }
 
@@ -515,12 +516,18 @@ function pokazPodglad() {
   $("#podglad").replaceChildren(...czesci);
 }
 
+// Blokada z pól wpisanych ręcznie (bezpiecznik plików JSON).
+const BLOKADA_POL = "blad_bezpiecznik_formularz";
+
 function pokazZapis() {
   const przycisk = $("#zapisz");
   przycisk.disabled = !wynik.moznaZapisac;
   const powod = $("#zapis-powod");
   let tresc = "";
   if (wynik.powod === "brak_plikow") tresc = t("zapis_brak_plikow");
+  // Przy blokadzie z pól komunikat o polach stoi przy przycisku, także gdy pliki mają własną
+  // blokadę (ta jest wtedy opisana pod listą plików).
+  else if (wynik.powod === "blokada" && wynik.blokady.some((b) => b.kod === BLOKADA_POL)) tresc = t(BLOKADA_POL);
   else if (wynik.powod === "blokada") tresc = t("zapis_blokada");
   else if (wynik.powod === "bledy_pol") {
     const nazwy = [...new Set(wynik.bledyPol.map((b) => b.pole.replace(/\[.*$/, "")))].map((p) => TEKSTY.pola_nazwy[p] ?? p);

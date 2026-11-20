@@ -28,7 +28,7 @@ import { join } from "node:path";
 import { parseArgs } from "node:util";
 
 import { utworzSerwer } from "./serwer.mjs";
-import { generuj } from "./generator.mjs";
+import { generuj, PPE_FIKCYJNE } from "./generator.mjs";
 import { czytajZip } from "../test/pomoc/czytnik-zip.mjs";
 
 const { values } = parseArgs({
@@ -114,6 +114,7 @@ async function proba() {
     return plik(`dzien_${i + 1}.csv`, generuj({ od: dzien, do: dzien, ziarno: 5 }).surowy);
   });
   const plikKopia = plik("kopia_stycznia.csv", readFileSync(plikStyczen));
+  const plikInnyPunkt = plik("inny_punkt.csv", generuj({ od: "2026-02-01", do: "2026-02-28", ziarno: 5, ppe: PPE_FIKCYJNE[1] }).surowy);
   const plikBezNumerow = plik("bez_numerow.csv", generuj({ od: "2026-02-01", do: "2026-02-28", ziarno: 5 }).bezNumerow);
   const plikMarzec = plik("marzec_0300.csv", generuj({
     od: "2025-03-30", do: "2025-03-30", ziarno: 5, obetnijKoniec: 22,
@@ -401,10 +402,21 @@ async function proba() {
   sprawdz("podpowiedź przy polu nazwy taryfy widoczna", (await js("[...document.querySelectorAll('[data-pole=\"taryfa_nazwa\"] .podpowiedz')].map(p => !p.hidden && p.textContent).join('')")).startsWith("Wpisz tylko nazwę z faktury"));
   await wpisz("#p-taryfa_nazwa", "Taryfa PPE", "input");
   await czekaj(600);
-  sprawdz("słowo PPE w polu wpisanym ręcznie: blokada zapisu z komunikatem", (await tekstEl("#blokady")).includes("W polach wpisanych ręcznie jest coś") && await js("document.querySelector('#zapisz').disabled"));
+  const POLA = "W polach wpisanych ręcznie jest coś";
+  sprawdz("słowo PPE w polu: komunikat przy przycisku zapisu, nie pod listą plików",
+    (await tekstEl("#zapis-powod")).startsWith(POLA) && !(await js("document.querySelector('#zapis-powod').hidden")) &&
+    !(await tekstEl("#blokady")).includes(POLA) && await js("document.querySelector('#zapisz').disabled"));
+  await ustawPliki([plikInnyPunkt]);
+  sprawdz("blokada z plików i z pól naraz: pliki w #blokady, pola przy przycisku",
+    (await tekstEl("#blokady")).includes("różnych punktów poboru") && !(await tekstEl("#blokady")).includes(POLA) &&
+    (await tekstEl("#zapis-powod")).startsWith(POLA));
+  await js("document.querySelectorAll('.plik')[1].querySelector('button').click()");
+  await czekaj(800);
   await wpisz("#p-taryfa_nazwa", "Taryfa X", "input");
   await czekaj(600);
-  sprawdz("po poprawie pola blokada znika", !(await tekstEl("#blokady")).includes("W polach wpisanych ręcznie"));
+  sprawdz("po poprawie pola blokada znika", !(await tekstEl("#zapis-powod")).includes(POLA) && !(await js("document.querySelector('#zapisz').disabled")));
+  await ustawPliki([plikInnyPunkt]);
+  sprawdz("sama blokada z plików: przy przycisku ogólny powód", (await tekstEl("#zapis-powod")) === "Narzędzie nie utworzy pliku ZIP, dopóki nie zniknie problem opisany wyżej.");
 
   // 7. Czas przeliczenia po zmianie jednego pola przy czterech plikach rocznych.
   await otworz();

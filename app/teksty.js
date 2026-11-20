@@ -222,7 +222,7 @@ export const TEKSTY = {
   "krok_zapis": "Zapis pliku ZIP",
   "zapisz_przycisk": "Zapisz plik ZIP",
   "zapis_popraw": "Zanim zapiszesz plik ZIP, popraw albo wyczyść te pola: {pola}.",
-  "zapis_blokada": "Narzędzie nie utworzy pliku ZIP, dopóki w plikach jest problem opisany wyżej.",
+  "zapis_blokada": "Narzędzie nie utworzy pliku ZIP, dopóki nie zniknie problem opisany wyżej.",
   "zapis_brak_plikow": "Najpierw wybierz plik godzinowy.",
   "po_zapisie": "Plik {plik} jest zapisany na Twoim urządzeniu. Teraz napisz wiadomość na adres raporty@prosumentlab.pl i załącz ten plik. Nie załączaj pliku pobranego prosto z eLicznika ani faktury. Przycisk niżej otworzy nową wiadomość z numerem zgłoszenia w temacie, ale pliku nie dołączy.",
   "mailto_przycisk": "Napisz wiadomość",
