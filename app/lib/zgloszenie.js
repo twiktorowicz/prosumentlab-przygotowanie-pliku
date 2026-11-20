@@ -65,9 +65,17 @@ function czytajPliki(bajtyPlikow) {
   const wyniki = new Set();
   return bajtyPlikow.map((bajty, indeks) => {
     if (indeks >= MAKS_PLIKOW) return { indeks, stan: "odrzucony", kod: "blad_za_duzo_plikow" };
-    const d = dekoduj(bajty);
+    // Wyjątek przy odczycie jednego pliku nie może zatrzymać pozostałych ani strony: taki plik
+    // narzędzie traktuje jak plik, którego nie odczytało.
+    let d;
+    let w;
+    try {
+      d = dekoduj(bajty);
+      if (d.ok) w = czytajTauron(d.tekst);
+    } catch {
+      return { indeks, stan: "odrzucony", kod: "blad_nieznany" };
+    }
     if (!d.ok) return { indeks, stan: "odrzucony", kod: d.kod };
-    const w = czytajTauron(d.tekst);
     if (!w.ok) {
       const wynik = { indeks, stan: w.blokada ? "blokada" : "odrzucony", kod: w.kod };
       if (w.wiersz !== undefined) wynik.wiersz = w.wiersz;

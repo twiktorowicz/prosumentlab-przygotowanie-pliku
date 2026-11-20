@@ -398,3 +398,12 @@ test("ten sam plik dwa razy: drugi odrzucony z blad_duplikat, poza ZIP-em i anal
   assert.equal(odwrotnie.pliki[0].stan, "przyjety");
   assert.equal(odwrotnie.pliki[1].kod, "blad_duplikat");
 });
+
+test("wyjątek przy odczycie jednego pliku: ten plik dostaje blad_nieznany, pozostałe działają", () => {
+  // Obiekt zamiast bajtów wywraca dekodowanie wyjątkiem (nie ma subarray).
+  const zepsuty = { length: 10 };
+  const w = przygotujZgloszenie({ pliki: [zepsuty, generuj(N1).surowy], formularz: { faktura: FAKTURA }, numer: NUMER, utworzono: DATA });
+  assert.deepEqual(w.pliki[0], { indeks: 0, stan: "odrzucony", kod: "blad_nieznany" });
+  assert.equal(w.pliki[1].stan, "przyjety");
+  assert.equal(w.moznaZapisac, true);
+});

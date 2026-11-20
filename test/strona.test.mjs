@@ -29,7 +29,7 @@ test("odnośniki otwierają się w nowej karcie, żeby nie skasować danych z pa
   assert.ok(odnosniki.length >= 2, "odnośnik zgody i repozytorium");
   for (const a of odnosniki) {
     assert.match(a, /target:\s*"_blank"/, a);
-    assert.match(a, /rel:\s*"noopener"/, a);
+    assert.match(a, /rel:\s*"noopener noreferrer"/, a);
   }
   assert.doesNotMatch(HTML, /<a\b(?![^>]*target="_blank")[^>]*href="(?:https?:|\/)/, "odnośniki w index.html");
 });
@@ -56,4 +56,21 @@ test("podpowiedź o kolejności stref tylko przy taryfie „inna”", () => {
   assert.ok(linia);
   assert.match(linia, /taryfa === "inna"/);
   assert.doesNotMatch(linia, /g12/);
+});
+
+test("uwaga o miesiącu zmiany spoza zakresu ma styl uwagi, nie błędu", () => {
+  const linie = MAIN.split("\n");
+  const i = linie.findIndex((l) => l.includes('t("instalacja_miesiac_poza_zakresem")'));
+  assert.ok(i > 0);
+  const okolica = linie.slice(i - 3, i + 1).join("\n");
+  assert.match(okolica, /\$\("\.uwaga", /, okolica);
+  assert.doesNotMatch(okolica, /\$\("\.blad", /, okolica);
+  assert.match(MAIN, /el\("p", \{ klasa: "uwaga", hidden: true \}\)/, "element uwagi w wierszu zmiany");
+});
+
+test("lista plików: limit 10 pozycji przed odczytem, odczyt z blokadą dodawania i usuwania", () => {
+  assert.match(MAIN, /MAKS_PLIKOW/, "strona używa limitu z modułu zgłoszenia");
+  assert.match(MAIN, /\$\("#wybor-plikow"\)\.disabled = /, "pole wyboru plików nieaktywne w trakcie odczytu");
+  assert.match(MAIN, /blad_za_duzo_plikow/);
+  assert.match(MAIN, /arrayBuffer\(\)/);
 });

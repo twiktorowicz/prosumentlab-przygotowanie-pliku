@@ -107,6 +107,18 @@ async function proba() {
   const plikZly = plik("zepsuty.csv", generuj({ od: "2025-02-01", do: "2025-02-02", ziarno: 5, ppeWStrefie: { znacznik: "2025-02-01 05:00", seria: "pobor" } }).surowy);
   const plikArkusz = plik("arkusz.xlsx", new Uint8Array([0x50, 0x4b, 0x03, 0x04, 0, 0]));
   const plikiRoczne = [2022, 2023, 2024, 2025].map((r) => plik(`rok_${r}.csv`, generuj({ od: `${r}-01-01`, do: `${r}-12-31`, ziarno: 3 }).surowy));
+  // Dwanaście plików jednodniowych (limit 10 pozycji), kopia pliku pod inną nazwą (duplikat),
+  // plik bez kolumn z numerami i plik z samą nieistniejącą godziną 03:00 z doby zmiany czasu.
+  const plikiDni = Array.from({ length: 12 }, (_, i) => {
+    const dzien = `2025-03-${String(i + 1).padStart(2, "0")}`;
+    return plik(`dzien_${i + 1}.csv`, generuj({ od: dzien, do: dzien, ziarno: 5 }).surowy);
+  });
+  const plikKopia = plik("kopia_stycznia.csv", readFileSync(plikStyczen));
+  const plikBezNumerow = plik("bez_numerow.csv", generuj({ od: "2026-02-01", do: "2026-02-28", ziarno: 5 }).zanonimizowany);
+  const plikMarzec = plik("marzec_0300.csv", generuj({
+    od: "2025-03-30", do: "2025-03-30", ziarno: 5, obetnijKoniec: 22,
+    podmien: ["oddanie", "pobor"].map((seria) => ({ znacznik: "2025-03-30 01:00", seria, pole: "znacznik", tekst: "2025-03-30 03:00" })),
+  }).surowy);
 
   serwer = utworzSerwer();
   await new Promise((ok) => serwer.listen(0, "127.0.0.1", ok));
@@ -225,7 +237,7 @@ async function proba() {
   sprawdz("powód: brak plików", (await tekstEl("#zapis-powod")) === "Najpierw wybierz plik godzinowy.");
   sprawdz("bez uwagi o brakujących polach na pustej stronie", await js("document.querySelector('#faktura-brak').hidden"));
   const odnosniki = await js("[...document.querySelectorAll('#zgoda-wiecej a, #wersja a')].map(a => [a.getAttribute('href'), a.target, a.rel])");
-  sprawdz("odnośniki zgody i repozytorium w nowej karcie", odnosniki.length === 2 && odnosniki.every(([, t, r]) => t === "_blank" && r.includes("noopener")), JSON.stringify(odnosniki));
+  sprawdz("odnośniki zgody i repozytorium w nowej karcie", odnosniki.length === 2 && odnosniki.every(([, t, r]) => t === "_blank" && r === "noopener noreferrer"), JSON.stringify(odnosniki));
   sprawdz("odnośnik zgody poza etykietą pola", await js("!document.querySelector('#zgoda-etykieta a') && document.querySelector('#zgoda-wiecej a').getAttribute('href') === '/prywatnosc/'"));
   const listy = await js("[...document.querySelectorAll('[data-miesiac=\"magazyn_od\"] select')].map(s => s.options[0].textContent)");
   sprawdz("puste pozycje list: „miesiąc” i „rok”", JSON.stringify(listy) === JSON.stringify(["miesiąc", "rok"]), JSON.stringify(listy));
@@ -343,6 +355,57 @@ async function proba() {
   await czekaj(800);
   sprawdz("po usunięciu pliku zapis znów możliwy", !(await js("document.querySelector('#zapisz').disabled")));
 
+  // 6b. Lista plików, duplikat, pliki bez numerów, wyjątek z logiki, podpowiedzi i uwagi pól.
+  const plakietkiTeraz = () => js("[...document.querySelectorAll('.plakietka')].map(e => e.textContent)");
+  const tekstPliku = (i) => js(`document.querySelectorAll('.plik')[${i}]?.textContent ?? ""`);
+  await otworz();
+  await ustawPliki(plikiDni, 3000);
+  const dwanascie = await plakietkiTeraz();
+  sprawdz("12 plików: 10 przyjętych, 11. i 12. odrzucone", dwanascie.length === 12 && dwanascie.slice(0, 10).every((p) => p === "Przyjęty") && dwanascie.slice(10).every((p) => p === "Odrzucony"), dwanascie.join(", "));
+  sprawdz("11. plik z komunikatem o limicie 10 plików", (await tekstPliku(10)).includes("najwyżej 10 plików"));
+  await js("document.querySelectorAll('.plik')[0].querySelector('button').click()");
+  await czekaj(1500);
+  const poUsunieciu = await plakietkiTeraz();
+  sprawdz("po usunięciu pliku z pierwszej dziesiątki następny jest czytany", poUsunieciu.length === 11 && poUsunieciu.slice(0, 10).every((p) => p === "Przyjęty") && poUsunieciu[10] === "Odrzucony", poUsunieciu.join(", "));
+
+  await otworz();
+  await ustawPliki([plikStyczen, plikKopia]);
+  sprawdz("ten sam plik drugi raz: blad_duplikat", (await tekstPliku(1)).includes("Taki sam plik jest już na liście") && (await plakietkiTeraz())[0] === "Przyjęty");
+  await ustawPliki([plikBezNumerow]);
+  sprawdz("dwa pliki, jeden bez numerów: uwaga bez numerów", (await tekstEl("#zakres")).includes("Co najmniej jeden plik nie ma już numeru punktu poboru"));
+
+  await otworz();
+  await ustawPliki([plikMarzec]);
+  sprawdz("plik z samą godziną 03:00 z doby zmiany czasu przyjęty", (await plakietkiTeraz())[0] === "Przyjęty");
+  await js(`(() => { const z = document.querySelector('[data-zmiana="0"]'); z.querySelector('input[type="checkbox"]').click(); })()`);
+  await wpisz('[data-zmiana="0"] [data-czesc="miesiac"]', "11");
+  await wpisz('[data-zmiana="0"] [data-czesc="rok"]', "2024");
+  await czekaj(300);
+  sprawdz("po zmianie pola strona dalej działa (zapis możliwy)", !(await js("document.querySelector('#zapisz').disabled")));
+
+  await otworz();
+  await ustawPliki([plikStyczen]);
+  await js(`(() => { const z = document.querySelector('[data-zmiana="0"]'); z.querySelector('input[type="checkbox"]').click(); })()`);
+  await wpisz('[data-zmiana="0"] [data-czesc="miesiac"]', "11");
+  await wpisz('[data-zmiana="0"] [data-czesc="rok"]', "2024");
+  await czekaj(300);
+  const uwagaZmiany = await js(`(() => { const z = document.querySelector('[data-zmiana="0"]'); const u = z.querySelector('.uwaga'), b = z.querySelector('.blad');
+    return { uwaga: !u.hidden && u.textContent, blad: !b.hidden, klasa: u.className }; })()`);
+  sprawdz("miesiąc zmiany spoza zakresu: styl uwagi, bez błędu, zapis możliwy", typeof uwagaZmiany.uwaga === "string" && uwagaZmiany.uwaga.startsWith("Ten miesiąc nie mieści się") && !uwagaZmiany.blad && !(await js("document.querySelector('#zapisz').disabled")), JSON.stringify(uwagaZmiany));
+  await js(`(() => { document.querySelector('input[name="taryfa"][value="g12"]').click(); document.querySelector('input[name="cena_tryb"][value="strefy"]').click(); })()`);
+  await czekaj(300);
+  sprawdz("G12: bez podpowiedzi o kolejności stref", await js("document.querySelector('#strefy-kolejnosc').hidden"));
+  await js(`document.querySelector('input[name="taryfa"][value="inna"]').click()`);
+  await czekaj(300);
+  sprawdz("taryfa inna: podpowiedź o kolejności stref", !(await js("document.querySelector('#strefy-kolejnosc').hidden")));
+  sprawdz("podpowiedź przy polu nazwy taryfy widoczna", (await js("[...document.querySelectorAll('[data-pole=\"taryfa_nazwa\"] .podpowiedz')].map(p => !p.hidden && p.textContent).join('')")).startsWith("Wpisz tylko nazwę z faktury"));
+  await wpisz("#p-taryfa_nazwa", "Taryfa PPE", "input");
+  await czekaj(600);
+  sprawdz("słowo PPE w polu wpisanym ręcznie: blokada zapisu z komunikatem", (await tekstEl("#blokady")).includes("W polach wpisanych ręcznie jest coś") && await js("document.querySelector('#zapisz').disabled"));
+  await wpisz("#p-taryfa_nazwa", "Taryfa X", "input");
+  await czekaj(600);
+  sprawdz("po poprawie pola blokada znika", !(await tekstEl("#blokady")).includes("W polach wpisanych ręcznie"));
+
   // 7. Czas przeliczenia po zmianie jednego pola przy czterech plikach rocznych.
   await otworz();
   await ustawPliki(plikiRoczne, 5000);
@@ -371,7 +434,7 @@ async function proba() {
       (z.method === "Log.entryAdded" && ["error", "warning"].includes(z.params.entry.level)))
     // Czcionki lokalnie nie istnieją (są na stronie), favicon.ico też: 404 rozpoznajemy po adresie.
     .filter((z) => !/favicon\.ico|\/czcionki\//.test(z.params.entry?.url ?? ""))
-    .map((z) => `${z.params.entry?.text ?? z.params.exceptionDetails?.exception?.description ?? JSON.stringify(z.params.args?.map((a) => a.value))} ${z.params.entry?.url ?? ""}`);
+    .map((z) => `${z.params.entry?.text ?? z.params.exceptionDetails?.exception?.description ?? JSON.stringify(z.params.args?.map((a) => a.value ?? a.description))} ${z.params.entry?.url ?? ""}`);
   sprawdz("konsola bez błędów i naruszeń polityki treści", bledy.length === 0, bledy.join(" | "));
   sprawdz("przechowywanie w przeglądarce puste", (await js("localStorage.length + sessionStorage.length + document.cookie.length")) === 0);
 

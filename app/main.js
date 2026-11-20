@@ -6,7 +6,7 @@
 
 import { TEKSTY } from "./teksty.js";
 import { tekst, znacznikPolski, dataPolska, miesiacZRokiem, kwhDoWyswietlenia } from "./lib/odmiana.js";
-import { przygotujPliki, zlozZgloszenie, utworzZipZgloszenia, odnosnikMailto, WERSJA } from "./lib/zgloszenie.js";
+import { przygotujPliki, zlozZgloszenie, utworzZipZgloszenia, odnosnikMailto, WERSJA, MAKS_PLIKOW } from "./lib/zgloszenie.js";
 import { losowyNumer } from "./lib/numer.js";
 import { LIMIT_BAJTOW } from "./lib/dekodowanie.js";
 import { liczbaZCyfr } from "./lib/kwoty.js";
@@ -35,8 +35,13 @@ const pokaz = (e, widoczny) => {
 
 const NUMER = losowyNumer();
 const ADRES_REPOZYTORIUM = `https://github.com/twiktorowicz/prosumentlab-anonimizator/releases/tag/v${WERSJA}`;
-const pliki = []; // { nazwa, bajty | null (za duży) }
+// Pozycje listy plików w kolejności dodania: { nazwa, plik (File), bajty, stan }. Stan:
+// "czeka" (jeszcze nie czytany), "wczytany", "za_duzy", "blad_odczytu". Czytane są tylko
+// pozycje z pierwszej dziesiątki; dalsze nie trafiają do pamięci.
+const pliki = [];
+let czytanie = false; // trwa odczyt plików: dodawanie i usuwanie są nieaktywne
 let przygotowane = null; // odczyt plików: liczony tylko przy zmianie listy plików
+let wynikiPlikow = new Map(); // pozycja na liście -> wynik z przygotujPliki
 let wynik = null;
 let odlozone = null;
 
@@ -68,7 +73,7 @@ function wstawTeksty() {
     reszta.slice(0, poDwukropku),
     // Nowa karta: strona trzyma dane tylko w pamięci, więc przejście w tej samej karcie
     // skasowałoby wybrane pliki i formularz.
-    el("a", { href: "/prywatnosc/", target: "_blank", rel: "noopener", tekst: reszta.slice(poDwukropku).replace(/\.$/, "") }),
+    el("a", { href: "/prywatnosc/", target: "_blank", rel: "noopener noreferrer", tekst: reszta.slice(poDwukropku).replace(/\.$/, "") }),
     reszta.endsWith(".") ? "." : "",
   );
 
@@ -80,7 +85,7 @@ function wstawTeksty() {
   if (slowo) {
     $("#wersja").replaceChildren(
       wersja.slice(0, slowo.index),
-      el("a", { href: ADRES_REPOZYTORIUM, target: "_blank", rel: "noopener", tekst: slowo[0] }),
+      el("a", { href: ADRES_REPOZYTORIUM, target: "_blank", rel: "noopener noreferrer", tekst: slowo[0] }),
       wersja.slice(slowo.index + slowo[0].length),
     );
   } else {
@@ -206,6 +211,7 @@ function zbudujZmiany() {
       el("label", { klasa: "opcja" }, el("input", { type: "checkbox", id }), el("span", { tekst: etykieta })),
       miesiac,
       el("p", { klasa: "blad", hidden: true }),
+      el("p", { klasa: "uwaga", hidden: true }),
     );
   }));
 }
@@ -264,22 +270,87 @@ function zbierzFormularz() {
 
 // Odczyt plików, kolejność, zakres i blokady plików liczą się tylko tu, przy zmianie listy
 // plików. Zmiana pola formularza tylko składa zgłoszenie z gotowego odczytu.
-function przeliczPliki() {
-  przygotowane = przygotujPliki(pliki.filter((p) => p.bajty).map((p) => p.bajty));
+// Do modułów trafiają pliki wczytane z pierwszej dziesiątki listy. Gdyby przygotowanie
+// wszystkich naraz rzuciło wyjątek, pliki są sprawdzane pojedynczo, a te, przy których wyjątek
+// się powtarza, dostają blad_nieznany; pozostałe działają dalej.
+const BEZ_PLIKOW = { pliki: [], przyjete: [], analiza: null, blokady: [] };
+
+function sprobujPrzygotowac(pozycje) {
+  try {
+    return przygotujPliki(pozycje.map(({ p }) => p.bajty));
+  } catch {
+    return null;
+  }
 }
 
-async function dodajPliki(lista) {
-  for (const plik of lista) {
-    pliki.push({ nazwa: plik.name, bajty: plik.size > LIMIT_BAJTOW ? null : new Uint8Array(await plik.arrayBuffer()) });
+function przeliczPliki() {
+  const doOdczytu = pliki.slice(0, MAKS_PLIKOW).map((p, i) => ({ p, i })).filter(({ p }) => p.stan === "wczytany");
+  let wybrane = doOdczytu;
+  let gotowe = sprobujPrzygotowac(wybrane);
+  if (!gotowe) {
+    wybrane = doOdczytu.filter((pozycja) => {
+      if (sprobujPrzygotowac([pozycja])) return true;
+      pozycja.p.stan = "blad_odczytu";
+      return false;
+    });
+    gotowe = sprobujPrzygotowac(wybrane);
   }
-  przeliczPliki();
-  przelicz();
+  if (!gotowe) {
+    for (const { p } of wybrane) p.stan = "blad_odczytu";
+    wybrane = [];
+    gotowe = BEZ_PLIKOW;
+  }
+  przygotowane = gotowe;
+  wynikiPlikow = new Map(wybrane.map(({ i }, j) => [i, przygotowane.pliki[j]]));
+}
+
+function ustawBlokadeOdczytu() {
+  $("#wybor-plikow").disabled = czytanie;
+  for (const b of $$("#lista-plikow button")) b.disabled = czytanie;
+}
+
+// Czyta pozycje z pierwszej dziesiątki, które jeszcze nie są w pamięci. Plik większy niż limit
+// nie jest czytany; błąd odczytu przez przeglądarkę daje blad_nieznany.
+async function wczytajBrakujace() {
+  for (const p of pliki.slice(0, MAKS_PLIKOW)) {
+    if (p.stan !== "czeka") continue;
+    if (p.plik.size > LIMIT_BAJTOW) {
+      p.stan = "za_duzy";
+      continue;
+    }
+    try {
+      p.bajty = new Uint8Array(await p.plik.arrayBuffer());
+      p.stan = "wczytany";
+    } catch {
+      p.stan = "blad_odczytu";
+    }
+  }
+}
+
+async function zmienListe(zmiana) {
+  if (czytanie) return;
+  czytanie = true;
+  ustawBlokadeOdczytu();
+  try {
+    zmiana();
+    await wczytajBrakujace();
+  } finally {
+    czytanie = false;
+    przeliczPliki();
+    przelicz();
+  }
+}
+
+function dodajPliki(lista) {
+  return zmienListe(() => {
+    for (const plik of lista) pliki.push({ nazwa: plik.name, plik, bajty: null, stan: "czeka" });
+  });
 }
 
 function usunPlik(i) {
-  pliki.splice(i, 1);
-  przeliczPliki();
-  przelicz();
+  return zmienListe(() => {
+    pliki.splice(i, 1);
+  });
 }
 
 // --- Wynik -----------------------------------------------------------------------------------
@@ -292,12 +363,18 @@ function tekstKodu(kod, wstawki = {}) {
   return kod in TEKSTY ? t(kod, wstawki) : t("blad_nieznany");
 }
 
+// Stan pozycji, która nie trafiła do modułów.
+function wynikBezOdczytu(plik, i) {
+  if (i >= MAKS_PLIKOW) return { stan: "odrzucony", kod: "blad_za_duzo_plikow" };
+  if (plik.stan === "za_duzy") return { stan: "odrzucony", kod: "blad_za_duzy" };
+  return { stan: "odrzucony", kod: "blad_nieznany" };
+}
+
 function pokazPliki() {
-  // Pliki za duże nie trafiają do modułów; pozostałe mają wynik w kolejności przekazania.
-  const czytelne = pliki.map((p, i) => ({ ...p, i })).filter((p) => p.bajty);
-  const wynikDla = new Map(czytelne.map((p, j) => [p.i, wynik.pliki[j]]));
+  // Wynik z modułów ma tylko pozycja wczytana z pierwszej dziesiątki; pozostałe mają stan z listy.
+  const wynikDla = new Map([...wynikiPlikow].map(([i, p]) => [i, wynik.pliki[p.indeks]]));
   $("#lista-plikow").replaceChildren(...pliki.map((plik, i) => {
-    const w = wynikDla.get(i) ?? { stan: "odrzucony", kod: "blad_za_duzy" };
+    const w = wynikDla.get(i) ?? wynikBezOdczytu(plik, i);
     const stan = w.stan === "blokada" ? "odrzucony" : w.stan;
     const tresc = [];
     if (w.stan === "odrzucony" || w.stan === "blokada") {
@@ -308,7 +385,7 @@ function pokazPliki() {
         tresc.push(komunikat("uwaga", u.kod === "UWAGA_KOMPLETNOSC" ? t("uwaga_kompletnosc", { n: u.n }) : t(u.kod.toLowerCase())));
       }
     }
-    const usun = el("button", { type: "button", klasa: "przycisk-tekstowy", tekst: t("plik_usun") });
+    const usun = el("button", { type: "button", klasa: "przycisk-tekstowy", tekst: t("plik_usun"), disabled: czytanie });
     usun.addEventListener("click", () => usunPlik(i));
     return el("li", { klasa: `plik plik-${stan}` },
       el("div", { klasa: "plik-naglowek" },
@@ -369,6 +446,10 @@ function pokazPola() {
     b.hidden = true;
     b.textContent = "";
   }
+  for (const u of $$("[data-zmiana] .uwaga")) {
+    u.hidden = true;
+    u.textContent = "";
+  }
   for (const { pole, kod } of wynik.bledyPol) {
     const b = kontenerBledu(pole);
     if (!b || !(kod in TEKSTY)) continue;
@@ -382,10 +463,11 @@ function pokazPola() {
     !wynik.bledyPol.some((b) => b.pole === `zmiany[${z.dataset.zmiana}]`));
   for (const u of wynik.uwagi.filter((x) => x.kod === "INSTALACJA_MIESIAC_POZA_ZAKRESEM")) {
     const i = liczbaZCyfr(/\[(\d+)\]/.exec(u.gdzie)[1]);
-    const b = przyjete[i] && $(".blad", przyjete[i]);
-    if (b) {
-      b.textContent = t("instalacja_miesiac_poza_zakresem");
-      b.hidden = false;
+    // Uwaga nie blokuje zapisu, więc ma styl uwagi, nie błędu.
+    const miejsce = przyjete[i] && $(".uwaga", przyjete[i]);
+    if (miejsce) {
+      miejsce.textContent = t("instalacja_miesiac_poza_zakresem");
+      miejsce.hidden = false;
     }
   }
   pokaz($("#faktura-poza-zakresem"), wynik.uwagi.some((u) => u.kod === "FAKTURA_R_POZA_ZAKRESEM"));
@@ -454,17 +536,36 @@ function przelicz({ poZapisie = false } = {}) {
   clearTimeout(odlozone);
   warunki();
   if (!poZapisie) pokaz($("#po-zapisie"), false);
-  wynik = zlozZgloszenie({
-    przygotowane,
-    formularz: zbierzFormularz(),
-    numer: NUMER,
-    utworzono: dzisiaj(),
-  });
-  pokazPliki();
-  pokazZakres();
-  pokazPola();
-  pokazPodglad();
-  pokazZapis();
+  try {
+    wynik = zlozZgloszenie({
+      przygotowane,
+      formularz: zbierzFormularz(),
+      numer: NUMER,
+      utworzono: dzisiaj(),
+    });
+    pokazPliki();
+    pokazZakres();
+    pokazPola();
+    pokazPodglad();
+    pokazZapis();
+  } catch (blad) {
+    // Błąd zostaje w konsoli przeglądarki (lokalnie, nic nie jest wysyłane), żeby dało się go
+    // znaleźć; komunikaty modułów nie zawierają danych z plików.
+    console.error(blad);
+    pokazBladLogiki();
+  }
+  ustawBlokadeOdczytu();
+}
+
+// Wyjątek z logiki nie unieruchamia strony: zapis jest zablokowany z ogólnym komunikatem,
+// a każda kolejna zmiana pola albo listy plików liczy wszystko od nowa.
+function pokazBladLogiki() {
+  wynik = null;
+  $("#blokady").replaceChildren(komunikat("blad", t("blad_nieznany")));
+  $("#zapisz").disabled = true;
+  const powod = $("#zapis-powod");
+  powod.textContent = t("zapis_blokada");
+  pokaz(powod, true);
 }
 
 function przeliczPozniej() {
@@ -474,7 +575,7 @@ function przeliczPozniej() {
 
 function zapisz() {
   przelicz({ poZapisie: true });
-  if (!wynik.moznaZapisac) return;
+  if (!wynik?.moznaZapisac) return;
   // Archiwum powstaje dopiero tu; zmiana pola formularza go nie buduje.
   const zip = utworzZipZgloszenia(wynik);
   const adres = URL.createObjectURL(new Blob([zip], { type: "application/zip" }));
@@ -501,8 +602,9 @@ function start() {
   przeliczPliki();
 
   $("#wybor-plikow").addEventListener("change", async (z) => {
-    await dodajPliki([...z.target.files]);
+    const lista = [...z.target.files];
     z.target.value = "";
+    await dodajPliki(lista);
   });
   const main = $("main");
   main.addEventListener("input", przeliczPozniej);
