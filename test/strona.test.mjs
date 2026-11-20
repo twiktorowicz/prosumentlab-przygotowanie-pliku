@@ -186,9 +186,9 @@ test("podgląd: przeliczenie nie zwija pozycji rozwiniętej przez klienta", () =
   assert.match(podglad.slice(przed), /\.open = true/, "i odtworzone po niej");
 });
 
-test("krok 1: odnośnik „jak go pobrać z eLicznika” do /elicznik/ w nowej karcie", () => {
+test("krok 1: odnośnik „jak go pobrać z eLicznika” do /jak-pobrac-dane-z-elicznika/ w nowej karcie", () => {
   assert.match(HTML, /<p data-tekst="pliki_wybor"><\/p>\s*<p id="plik-instrukcja"><\/p>/);
-  assert.match(MAIN, /el\("a", \{ href: "\/elicznik\/", target: "_blank", rel: "noopener noreferrer"/);
+  assert.match(MAIN, /el\("a", \{ href: "\/jak-pobrac-dane-z-elicznika\/", target: "_blank", rel: "noopener noreferrer"/);
 });
 
 test("zapis: zapis_gdzie stale pod przyciskiem, zgoda_bez stale pod polem zgody", () => {

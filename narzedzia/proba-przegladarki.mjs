@@ -244,8 +244,8 @@ async function proba() {
   sprawdz("bez uwagi o brakujących polach na pustej stronie", await js("document.querySelector('#faktura-brak').hidden"));
   const odnosniki = await js("[...document.querySelectorAll('#plik-instrukcja a, #zgoda-wiecej a, #wersja a')].map(a => [a.getAttribute('href'), a.target, a.rel])");
   sprawdz("odnośniki instrukcji, zgody i repozytorium w nowej karcie", odnosniki.length === 3 && odnosniki.every(([, t, r]) => t === "_blank" && r === "noopener noreferrer"), JSON.stringify(odnosniki));
-  sprawdz("krok 1: „jak go pobrać z eLicznika” prowadzi do /elicznik/", await js(`(() => { const p = document.querySelector('#plik-instrukcja'); const a = p.querySelector('a');
-    return p.previousElementSibling.dataset.tekst === 'pliki_wybor' && p.textContent === 'Nie masz jeszcze pliku? Zobacz, jak go pobrać z eLicznika.' && a.textContent === 'jak go pobrać z eLicznika' && a.getAttribute('href') === '/elicznik/'; })()`));
+  sprawdz("krok 1: „jak go pobrać z eLicznika” prowadzi do /jak-pobrac-dane-z-elicznika/", await js(`(() => { const p = document.querySelector('#plik-instrukcja'); const a = p.querySelector('a');
+    return p.previousElementSibling.dataset.tekst === 'pliki_wybor' && p.textContent === 'Nie masz jeszcze pliku? Zobacz, jak go pobrać z eLicznika.' && a.textContent === 'jak go pobrać z eLicznika' && a.getAttribute('href') === '/jak-pobrac-dane-z-elicznika/'; })()`));
   sprawdz("odnośnik zgody poza etykietą pola", await js("!document.querySelector('#zgoda-etykieta a') && document.querySelector('#zgoda-wiecej a').getAttribute('href') === '/prywatnosc/'"));
   sprawdz("zakres przed dodaniem pliku: zakres_pusty", (await tekstEl("#zakres")) === "Zakres pojawi się tu po dodaniu pliku.");
   const faktura = await js(`(() => ({

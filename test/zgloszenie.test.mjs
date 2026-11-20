@@ -290,8 +290,9 @@ test("podgląd: pierwsze 5 wierszy danych dokładnie jak w pliku wyjściowym, su
 // zgłoszenia z formularzem (zlozZgloszenie). ZIP złożony z części ma być bajt w bajt taki sam jak
 // ZIP z całości (przygotujZgloszenie). Zapisany skrót to zrzut wyniku obecnego kodu: pilnuje, żeby
 // żadna zmiana nie przesunęła ani jednego bajtu bez świadomego przeliczenia skrótu.
-// Przeliczony po usunięciu pytania o pierwsze oddanie energii (instalacja.json bez tego klucza).
-const SKROT_SCENARIUSZA = "d03a3c33c05734305e16edef988f54412c792128e785f8d8d78b4cfb99bf70c3";
+// Przeliczony po usunięciu pytania o pierwsze oddanie energii (instalacja.json bez tego klucza)
+// i po zmianie wersji narzędzia na 0.1.1 (pole narzedzie w zgloszenie.json; reszta ZIP-a bez zmian).
+const SKROT_SCENARIUSZA = "2b9f1f734f0959d804974d5fbdc953e3354202d06ea5e619f9aee22fdb63aad5";
 function scenariuszPelny() {
   return {
     pliki: [

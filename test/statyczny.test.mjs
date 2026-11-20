@@ -92,8 +92,8 @@ test("N21: jedyny adres poza stroną to mailto: do zgłoszeń i odnośniki do st
   assert.deepEqual(zle, []);
 });
 
-test("N21: odnośniki do stron serwisu tylko do /prywatnosc/ i /elicznik/", () => {
-  const DOZWOLONE = new Set(["/prywatnosc/", "/elicznik/"]);
+test("N21: odnośniki do stron serwisu tylko do /prywatnosc/ i /jak-pobrac-dane-z-elicznika/", () => {
+  const DOZWOLONE = new Set(["/prywatnosc/", "/jak-pobrac-dane-z-elicznika/"]);
   const znalezione = new Set();
   const zle = [];
   for (const sciezka of pliki()) {
@@ -106,5 +106,5 @@ test("N21: odnośniki do stron serwisu tylko do /prywatnosc/ i /elicznik/", () =
     }
   }
   assert.deepEqual(zle, []);
-  assert.deepEqual([...znalezione].sort(), ["/elicznik/", "/prywatnosc/"]);
+  assert.deepEqual([...znalezione].sort(), ["/jak-pobrac-dane-z-elicznika/", "/prywatnosc/"]);
 });

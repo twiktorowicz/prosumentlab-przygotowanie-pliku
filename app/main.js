@@ -87,7 +87,7 @@ function wstawTeksty() {
   const miejsce = instrukcja.indexOf(fraza);
   $("#plik-instrukcja").replaceChildren(...(miejsce < 0 ? [instrukcja] : [
     instrukcja.slice(0, miejsce),
-    el("a", { href: "/elicznik/", target: "_blank", rel: "noopener noreferrer", tekst: fraza }),
+    el("a", { href: "/jak-pobrac-dane-z-elicznika/", target: "_blank", rel: "noopener noreferrer", tekst: fraza }),
     instrukcja.slice(miejsce + fraza.length),
   ]));
 

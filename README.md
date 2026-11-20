@@ -130,9 +130,9 @@ domowej. Używaj wyłącznie plików z generatora.
      dołączony. **Nie wysyłaj tej wiadomości**, zamknij ją bez wysyłania;
    - dodaj `dwa_punkty.csv`: plik dostaje komunikat o kilku punktach poboru, zapis jest
      zablokowany; po usunięciu pliku zapis znów działa;
-   - otwórz odnośnik w zgodzie i odnośnik „jak go pobrać z eLicznika” w kroku 1: każdy otwiera
-     się w nowej karcie (na serwerze lokalnym ze stroną błędu 404), a dane na stronie narzędzia
-     zostają.
+   - otwórz odnośnik w zgodzie (`/prywatnosc/`) i odnośnik „jak go pobrać z eLicznika” w kroku 1
+     (`/jak-pobrac-dane-z-elicznika/`): każdy otwiera się w nowej karcie (na serwerze lokalnym
+     ze stroną błędu 404), a dane na stronie narzędzia zostają.
 7. Zatrzymaj serwer (Ctrl+C) i usuń pliki próbne z telefonu.
 
 ## Jak sprawdzić kopię na stronie
