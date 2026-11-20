@@ -6,7 +6,7 @@
 
 import { TEKSTY } from "./teksty.js";
 import { tekst, znacznikPolski, dataPolska, miesiacZRokiem, kwhDoWyswietlenia } from "./lib/odmiana.js";
-import { przygotujPliki, zlozZgloszenie, odnosnikMailto, WERSJA } from "./lib/zgloszenie.js";
+import { przygotujPliki, zlozZgloszenie, utworzZipZgloszenia, odnosnikMailto, WERSJA } from "./lib/zgloszenie.js";
 import { losowyNumer } from "./lib/numer.js";
 import { LIMIT_BAJTOW } from "./lib/dekodowanie.js";
 import { liczbaZCyfr } from "./lib/kwoty.js";
@@ -335,6 +335,7 @@ function pokazZakres() {
   }
   const z = wynik.zakres;
   const elementy = [];
+  if (wynik.uwagaBezNumerow) elementy.push(komunikat("uwaga", t("uwaga_bez_numerow")));
   if (z.ciag_miesiace === 0) elementy.push(komunikat("", t("zakres_brak")));
   else {
     const klucz = { raport: "zakres_raport", wynik_wstepny: "zakres_wstepny", za_krotki: "zakres_za_krotki" }[z.klasyfikacja];
@@ -474,7 +475,9 @@ function przeliczPozniej() {
 function zapisz() {
   przelicz({ poZapisie: true });
   if (!wynik.moznaZapisac) return;
-  const adres = URL.createObjectURL(new Blob([wynik.zip], { type: "application/zip" }));
+  // Archiwum powstaje dopiero tu; zmiana pola formularza go nie buduje.
+  const zip = utworzZipZgloszenia(wynik);
+  const adres = URL.createObjectURL(new Blob([zip], { type: "application/zip" }));
   const a = el("a", { href: adres, download: wynik.nazwaZip });
   document.body.append(a);
   a.click();

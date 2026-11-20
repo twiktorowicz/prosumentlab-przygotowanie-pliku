@@ -43,6 +43,9 @@ export const TEKSTY = {
   "blad_rozne_ppe": "Te pliki pochodzą z różnych punktów poboru. Do jednego zgłoszenia dodaj pliki tylko z jednego punktu.",
   "blad_sprzeczne": "Pliki podają różne wartości dla tej samej godziny ({data}). Sprawdź, czy pochodzą z tego samego punktu poboru, i pobierz je jeszcze raz.",
   "blad_bezpiecznik": "W wierszu {wiersz} nadal jest coś, co wygląda na numer albo adres e-mail. Narzędzie nie utworzy pliku ZIP. Napisz na adres raporty@prosumentlab.pl, bez załącznika, a ustalimy, co dalej.",
+  "blad_bezpiecznik_formularz": "W polach wpisanych ręcznie jest coś, co wygląda na numer albo adres e-mail. Narzędzie nie utworzy pliku ZIP. Sprawdź te pola i popraw je.",
+  "blad_duplikat": "Taki sam plik jest już na liście. Narzędzie doda go do pliku ZIP tylko raz.",
+  "uwaga_bez_numerow": "Co najmniej jeden plik nie ma już numeru punktu poboru, więc narzędzie nie sprawdzi, czy wszystkie pliki pochodzą z jednego punktu. Dodaj tylko pliki z jednego punktu poboru.",
   "uwaga_bierna": "W pliku jest też energia bierna. Narzędzie zostawia te wiersze bez zmian.",
   "uwaga_kompletnosc": {
     "jeden": "W {n} godzinie licznik nie zapisał pełnych danych. Narzędzie przyjęło plik, a tę godzinę sprawdzimy osobno.",

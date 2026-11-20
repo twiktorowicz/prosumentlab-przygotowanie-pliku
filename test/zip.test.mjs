@@ -51,3 +51,15 @@ test("ZIP: te same dane dają te same bajty; nazwy tylko ASCII", () => {
   assert.throws(() => utworzZip([{ nazwa: "zażółć.txt", bajty: utf8("x") }]));
   assert.throws(() => utworzZip([{ nazwa: "", bajty: utf8("x") }]));
 });
+
+test("ZIP: nazwa pliku bez /, \\ i ..", () => {
+  for (const nazwa of ["a/b.txt", "/a.txt", "a\\b.txt", "..", "../a.txt", "a..b.txt", "a/../b.txt"]) {
+    assert.throws(() => utworzZip([{ nazwa, bajty: utf8("x") }]), /nazwa/, nazwa);
+  }
+  assert.doesNotThrow(() => utworzZip([{ nazwa: "pomiary_1.csv", bajty: utf8("x") }]));
+});
+
+test("ZIP: gotowa suma CRC daje te same bajty co liczona", () => {
+  const bajty = utf8("energia;1\n");
+  assert.deepEqual(utworzZip([{ nazwa: "a.csv", bajty, crc: crc32(bajty) }]), utworzZip([{ nazwa: "a.csv", bajty }]));
+});

@@ -4,11 +4,16 @@
 //
 // ZIP powstaje tylko wtedy, gdy:
 // - jest co najmniej jeden przyjęty plik;
-// - nie ma blokady: bezpiecznik, kilka punktów poboru w pliku, różne punkty poboru w plikach,
-//   sprzeczne wartości tej samej godziny;
+// - nie ma blokady: bezpiecznik w pliku albo w plikach JSON, kilka punktów poboru w pliku, różne
+//   punkty poboru w plikach, sprzeczne wartości tej samej godziny;
 // - żadne pole formularza nie ma błędu.
 // Plik, którego narzędzie nie umie odczytać, nie blokuje: po prostu nie trafia do zgłoszenia.
-// Zakres, faktura spoza zakresu i brak pól obowiązkowych tylko informują.
+// Ten sam plik drugi raz (identyczny wynik po usunięciu kolumn) też nie trafia.
+// Zakres, faktura spoza zakresu, brak pól obowiązkowych i pliki bez numerów tylko informują.
+//
+// Treść CSV jest kodowana raz, przy odczycie plików (przygotujPliki), razem z sumą CRC. Złożenie
+// zgłoszenia po zmianie pola buduje tylko pliki JSON; archiwum powstaje dopiero przy zapisie
+// (utworzZipZgloszenia).
 
 import { dekoduj } from "./dekodowanie.js";
 import { czytajTauron } from "./tauron.js";
@@ -18,6 +23,8 @@ import { numerMiesiaca } from "./kalendarz.js";
 import { liczbaZCyfr } from "./kwoty.js";
 import { doJson } from "./json.js";
 import { utworzZip } from "./zip.js";
+import { crc32 } from "./crc32.js";
+import { sprawdzBezpiecznik } from "./bezpiecznik.js";
 
 export const WERSJA = "0.1.0";
 export const ADRES = "raporty@prosumentlab.pl";
@@ -33,15 +40,21 @@ export function odnosnikMailto(temat, tresc) {
   return `mailto:${ADRES}?subject=${encodeURIComponent(temat)}&body=${encodeURIComponent(tresc)}`;
 }
 
-// Pliki w kolejności z 8.1: zgloszenie.json, faktury.json (gdy są pola z faktury),
-// instalacja.json (gdy są odpowiedzi), pomiary_1.csv, pomiary_2.csv, …
+// Pliki w kolejności: zgloszenie.json, faktury.json (gdy są pola z faktury), instalacja.json
+// (gdy są odpowiedzi), pomiary_1.csv, pomiary_2.csv, … Pomiar to tekst albo gotowe bajty
+// z sumą CRC ({ bajty, crc }).
 export function zawartoscZip({ zgloszenie, faktury, instalacja, pomiary }) {
   const pliki = [{ nazwa: "zgloszenie.json", bajty: utf8(doJson(zgloszenie)) }];
   if (faktury) pliki.push({ nazwa: "faktury.json", bajty: utf8(doJson(faktury)) });
   if (instalacja) pliki.push({ nazwa: "instalacja.json", bajty: utf8(doJson(instalacja)) });
-  pomiary.forEach((tekst, i) => pliki.push({ nazwa: `pomiary_${i + 1}.csv`, bajty: utf8(tekst) }));
+  pomiary.forEach((p, i) => {
+    const nazwa = `pomiary_${i + 1}.csv`;
+    pliki.push(typeof p === "string" ? { nazwa, bajty: utf8(p) } : { nazwa, bajty: p.bajty, crc: p.crc });
+  });
   return pliki;
 }
+
+const PLIKI_JSON = new Set(["zgloszenie.json", "faktury.json", "instalacja.json"]);
 
 const doba = (tekst) => {
   const [rok, miesiac, dzien] = tekst.split("-").map(liczbaZCyfr);
@@ -49,6 +62,7 @@ const doba = (tekst) => {
 };
 
 function czytajPliki(bajtyPlikow) {
+  const wyniki = new Set();
   return bajtyPlikow.map((bajty, indeks) => {
     if (indeks >= MAKS_PLIKOW) return { indeks, stan: "odrzucony", kod: "blad_za_duzo_plikow" };
     const d = dekoduj(bajty);
@@ -59,13 +73,24 @@ function czytajPliki(bajtyPlikow) {
       if (w.wiersz !== undefined) wynik.wiersz = w.wiersz;
       return wynik;
     }
-    return { indeks, stan: w.uwagi.length > 0 ? "uwaga" : "przyjety", kodowanie: d.kodowanie, odczyt: w };
+    // Ten sam wynik co plik wcześniej na liście: duplikat, poza ZIP-em i analizą zakresu.
+    if (wyniki.has(w.wynik)) return { indeks, stan: "odrzucony", kod: "blad_duplikat" };
+    wyniki.add(w.wynik);
+    const bajtyCsv = utf8(w.wynik);
+    return {
+      indeks,
+      stan: w.uwagi.length > 0 ? "uwaga" : "przyjety",
+      kodowanie: d.kodowanie,
+      odczyt: w,
+      csv: { bajty: bajtyCsv, crc: crc32(bajtyCsv) },
+    };
   });
 }
 
-// Część zależna tylko od plików: odczyt, kolejność w ZIP-ie, zakres i blokady plików. Strona
-// liczy ją raz po zmianie listy plików, a przy zmianie pola formularza tylko składa zgłoszenie
-// (zlozZgloszenie). Wynik nie przechowuje bajtów wejściowych i nie jest później zmieniany.
+// Część zależna tylko od plików: odczyt, kolejność w ZIP-ie, zakres i blokady plików, a także
+// treść CSV zakodowana raz w UTF-8 z sumą CRC. Strona liczy ją raz po zmianie listy plików,
+// a przy zmianie pola formularza tylko składa zgłoszenie (zlozZgloszenie). Wynik nie przechowuje
+// bajtów wejściowych i nie jest później zmieniany.
 export function przygotujPliki(bajtyPlikow) {
   const pliki = czytajPliki(bajtyPlikow);
   const blokady = pliki
@@ -93,8 +118,18 @@ export function przygotujPliki(bajtyPlikow) {
  * @param {string} p.numer numer zgłoszenia XXXX-XXXX
  * @param {string} p.utworzono dzień RRRR-MM-DD z zegara urządzenia, tylko informacja
  */
+// Tu ZIP powstaje od razu, bo wiersz poleceń zapisuje go zawsze; `zip` to null, gdy zapis jest
+// niemożliwy.
 export function przygotujZgloszenie({ pliki, formularz, numer, utworzono }) {
-  return zlozZgloszenie({ przygotowane: przygotujPliki(pliki), formularz, numer, utworzono });
+  const wynik = zlozZgloszenie({ przygotowane: przygotujPliki(pliki), formularz, numer, utworzono });
+  return { ...wynik, zip: wynik.moznaZapisac ? utworzZipZgloszenia(wynik) : null };
+}
+
+// Archiwum ZIP ze złożonego zgłoszenia. Odmawia (wyjątek), gdy zapis jest niemożliwy: blokada,
+// brak plików albo błąd pola.
+export function utworzZipZgloszenia(wynik) {
+  if (!wynik.moznaZapisac) throw new Error(`zapis niemożliwy: ${wynik.powod}`);
+  return utworzZip(wynik.zawartosc);
 }
 
 // Zgłoszenie z przygotowanych plików (przygotujPliki) i formularza.
@@ -129,11 +164,6 @@ export function zlozZgloszenie({ przygotowane, formularz, numer, utworzono }) {
     });
   }
 
-  let powod = null;
-  if (blokady.length > 0) powod = "blokada";
-  else if (przyjete.length === 0) powod = "brak_plikow";
-  else if (form.bledy.length > 0) powod = "bledy_pol";
-
   const zgloszenie = {
     format: "prosumentlab/zgloszenie",
     wersja_formatu: 1,
@@ -164,10 +194,24 @@ export function zlozZgloszenie({ przygotowane, formularz, numer, utworzono }) {
   const instalacja = Object.keys(form.instalacja).length > 0
     ? { format: "prosumentlab/instalacja", wersja_formatu: 1, ...form.instalacja }
     : null;
-  const zawartosc = zawartoscZip({ zgloszenie, faktury, instalacja, pomiary: przyjete.map((p) => p.odczyt.wynik) });
+  const zawartosc = zawartoscZip({ zgloszenie, faktury, instalacja, pomiary: przyjete.map((p) => p.csv) });
+
+  // Reguły bezpiecznika 1–5 na plikach JSON, przy każdym złożeniu: pola wpisane ręcznie nie mogą
+  // wnieść numeru z pliku, słowa PPE, kodu GS1 ani adresu e-mail.
+  const usuniete = przyjete.flatMap((p) => p.odczyt.usunieteWartosci);
+  const dekoder = new TextDecoder();
+  const wJson = zawartosc
+    .filter((p) => PLIKI_JSON.has(p.nazwa))
+    .some((p) => sprawdzBezpiecznik(dekoder.decode(p.bajty).split("\n").map((tekst, i) => ({ tekst, linia: i + 1 })), usuniete, { regula6: false }));
+  if (wJson) blokady.push({ kod: "blad_bezpiecznik_formularz" });
+
+  let powod = null;
+  if (blokady.length > 0) powod = "blokada";
+  else if (przyjete.length === 0) powod = "brak_plikow";
+  else if (form.bledy.length > 0) powod = "bledy_pol";
 
   return {
-    pliki: pliki.map(({ odczyt, ...p }) => ({
+    pliki: pliki.map(({ odczyt, csv, ...p }) => ({
       ...p,
       ...(odczyt && {
         wariant: odczyt.wariant,
@@ -186,10 +230,12 @@ export function zlozZgloszenie({ przygotowane, formularz, numer, utworzono }) {
     zakres: zgloszenie.zakres,
     miesiace: analiza ? analiza.miesiace : [],
     zgoda: form.zgoda,
+    // Kilka plików, a punktów poboru nie da się porównać (plik bez numerów): tylko informacja na
+    // stronie, bez zmiany formatu JSON.
+    uwagaBezNumerow: przyjete.length > 1 && !zgloszenie.ppe_porownane,
     zawartosc,
     moznaZapisac: powod === null,
     powod,
     nazwaZip: nazwaZip(numer),
-    zip: powod === null ? utworzZip(zawartosc) : null,
   };
 }

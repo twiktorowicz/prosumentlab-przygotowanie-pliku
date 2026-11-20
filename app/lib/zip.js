@@ -1,7 +1,10 @@
 // Plik ZIP bez kompresji (metoda 0, „store”), bez zależności.
 // - Stała data w nagłówkach: 1.01.1980, 00:00, więc te same dane dają ten sam plik co do bajtu.
-// - Bez pól dodatkowych, bez deskryptora danych, bez ZIP64; nazwy plików w ASCII.
+// - Bez pól dodatkowych, bez deskryptora danych, bez ZIP64; nazwy plików w ASCII, bez katalogów:
+//   nazwa z „/”, „\” albo „..” jest odrzucana, żeby rozpakowanie nie pisało poza katalog.
 // - Kolejność plików jak w liście wejściowej.
+// - Plik może przyjść z gotową sumą `crc` (CSV zakodowany raz przy odczycie pliku); bez niej
+//   suma jest liczona tutaj.
 
 import { crc32 } from "./crc32.js";
 
@@ -10,9 +13,10 @@ const WERSJA_POTRZEBNA = 10; // 1.0 wystarcza dla zapisu bez kompresji
 const WERSJA_TWORZENIA = 20; // 2.0, system 0 (MS-DOS)
 
 export function utworzZip(pliki) {
-  const wpisy = pliki.map(({ nazwa, bajty }) => {
+  const wpisy = pliki.map(({ nazwa, bajty, crc }) => {
     if (typeof nazwa !== "string" || !/^[\x21-\x7e]+$/.test(nazwa)) throw new Error("nazwa pliku w ZIP-ie musi być w ASCII");
-    return { nazwa: new TextEncoder().encode(nazwa), bajty, crc: crc32(bajty) };
+    if (/[/\\]|\.\./.test(nazwa)) throw new Error("nazwa pliku w ZIP-ie nie może zawierać /, \\ ani ..");
+    return { nazwa: new TextEncoder().encode(nazwa), bajty, crc: crc ?? crc32(bajty) };
   });
 
   const rozmiarLokalnych = wpisy.reduce((s, w) => s + 30 + w.nazwa.length + w.bajty.length, 0);

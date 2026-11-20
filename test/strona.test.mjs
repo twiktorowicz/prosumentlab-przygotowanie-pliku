@@ -10,6 +10,14 @@ import { ROK_MIN, ROK_MAKS } from "../app/lib/kalendarz.js";
 const MAIN = readFileSync(fileURLToPath(new URL("../app/main.js", import.meta.url)), "utf8");
 const HTML = readFileSync(fileURLToPath(new URL("../app/index.html", import.meta.url)), "utf8");
 
+test("ZIP powstaje tylko przy zapisie: utworzZipZgloszenia wołane wyłącznie w funkcji zapisz", () => {
+  const funkcja = /\nfunction zapisz\(\) \{\n([\s\S]*?)\n\}\n/.exec(MAIN);
+  assert.ok(funkcja, "funkcja zapisz");
+  assert.equal((MAIN.match(/\butworzZipZgloszenia\s*\(/g) ?? []).length, 1);
+  assert.match(funkcja[1], /\butworzZipZgloszenia\s*\(/);
+  assert.doesNotMatch(MAIN, /wynik\.zip\b/);
+});
+
 test("pliki przetwarzane raz: strona nie woła przygotujZgloszenie, tylko przygotujPliki i zlozZgloszenie", () => {
   assert.doesNotMatch(MAIN, /\bprzygotujZgloszenie\s*\(/);
   assert.equal((MAIN.match(/\bprzygotujPliki\s*\(/g) ?? []).length, 1, "przygotujPliki w jednym miejscu (zmiana listy plików)");

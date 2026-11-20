@@ -7,7 +7,7 @@ import { readFileSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
-import { przygotujZgloszenie, przygotujPliki, zlozZgloszenie, odnosnikMailto, nazwaZip, WERSJA } from "../app/lib/zgloszenie.js";
+import { przygotujZgloszenie, przygotujPliki, zlozZgloszenie, utworzZipZgloszenia, odnosnikMailto, nazwaZip, WERSJA } from "../app/lib/zgloszenie.js";
 import { createHash } from "node:crypto";
 import { tekst } from "../app/lib/odmiana.js";
 import { TEKSTY } from "../app/teksty.js";
@@ -277,8 +277,9 @@ function scenariuszPelny() {
 }
 const sha256 = (b) => createHash("sha256").update(b).digest("hex");
 
+// Tablic bajtów nie da się zamrozić; to, że złożenie ich nie zmienia, test sprawdza kopią.
 function zamroz(o) {
-  if (o && typeof o === "object" && !Object.isFrozen(o)) {
+  if (o && typeof o === "object" && !ArrayBuffer.isView(o) && !Object.isFrozen(o)) {
     Object.freeze(o);
     for (const w of Object.values(o)) zamroz(w);
   }
@@ -289,7 +290,7 @@ test("podział: ZIP złożony z części równy ZIP-owi z całości i zapisanemu
   const dane = scenariuszPelny();
   const zCalosci = przygotujZgloszenie(dane).zip;
   const przygotowane = przygotujPliki(dane.pliki);
-  const zCzesci = zlozZgloszenie({ przygotowane, formularz: dane.formularz, numer: NUMER, utworzono: DATA }).zip;
+  const zCzesci = utworzZipZgloszenia(zlozZgloszenie({ przygotowane, formularz: dane.formularz, numer: NUMER, utworzono: DATA }));
   assert.deepEqual(zCzesci, zCalosci);
   assert.equal(sha256(zCalosci), SKROT_SCENARIUSZA);
 });
@@ -297,26 +298,103 @@ test("podział: ZIP złożony z części równy ZIP-owi z całości i zapisanemu
 test("podział: przygotowane pliki składa się wiele razy bez ich zmiany i bez ponownego czytania bajtów", () => {
   const dane = scenariuszPelny();
   const przygotowane = zamroz(przygotujPliki(dane.pliki));
+  const kopieCsv = przygotowane.przyjete.map((p) => Buffer.from(p.csv.bajty));
   const a = zlozZgloszenie({ przygotowane, formularz: dane.formularz, numer: NUMER, utworzono: DATA });
   const b = zlozZgloszenie({ przygotowane, formularz: {}, numer: NUMER, utworzono: DATA });
   const c = zlozZgloszenie({ przygotowane, formularz: dane.formularz, numer: NUMER, utworzono: DATA });
-  assert.equal(sha256(a.zip), SKROT_SCENARIUSZA);
-  assert.deepEqual(c.zip, a.zip);
+  assert.equal(sha256(utworzZipZgloszenia(a)), SKROT_SCENARIUSZA);
+  assert.deepEqual(utworzZipZgloszenia(c), utworzZipZgloszenia(a));
+  przygotowane.przyjete.forEach((p, i) => assert.deepEqual(Buffer.from(p.csv.bajty), kopieCsv[i], "bajty CSV bez zmian po złożeniu"));
   assert.deepEqual(b.zawartosc.map((p) => p.nazwa), ["zgloszenie.json", "pomiary_1.csv", "pomiary_2.csv", "pomiary_3.csv"]);
-  // W przygotowanych plikach nie zostają bajty wejściowe w żadnej postaci: złożenie korzysta tylko
-  // z odczytu. Przeglądamy obiekty sami, bo JSON.stringify zamienia Buffer przez toJSON, zanim
-  // zobaczy go funkcja zastępująca, a ArrayBuffer zapisuje jako pusty obiekt.
-  const bajty = [];
-  const przejdz = (v, sciezka) => {
-    if (v instanceof ArrayBuffer || ArrayBuffer.isView(v)) bajty.push(sciezka);
-    else if (v && typeof v === "object") for (const [k, w] of Object.entries(v)) przejdz(w, `${sciezka}.${k}`);
+  // Przygotowane pliki nie trzymają bajtów wejściowych: zostaje tylko wynik odczytu zakodowany
+  // raz w UTF-8. Wynik nie może dzielić bufora z wejściem (ten sam obiekt albo widok na ten sam
+  // ArrayBuffer), nawet gdy ma tę samą treść: plik bez numerów w UTF-8 z LF wychodzi bez zmian.
+  // Przeglądamy obiekty sami, bo JSON.stringify zamienia Buffer przez toJSON, zanim zobaczy go
+  // funkcja zastępująca, a ArrayBuffer zapisuje jako pusty obiekt.
+  const wspolne = (v) => dane.pliki.some((wejscie) => v === wejscie || v === wejscie.buffer || (ArrayBuffer.isView(v) && v.buffer === wejscie.buffer));
+  const przejdz = (v, sciezka, znalezione) => {
+    if (v instanceof ArrayBuffer || ArrayBuffer.isView(v)) znalezione.push({ sciezka, v });
+    else if (v && typeof v === "object") for (const [k, w] of Object.entries(v)) przejdz(w, `${sciezka}.${k}`, znalezione);
+    return znalezione;
   };
-  przejdz(przygotowane, "przygotowane");
-  assert.deepEqual(bajty, []);
-  // Sprawdzenie samo musi wykrywać każdą z tych postaci.
-  for (const wzor of [new Uint8Array(1), Buffer.from("x"), new ArrayBuffer(1), new DataView(new ArrayBuffer(1))]) {
-    bajty.length = 0;
-    przejdz({ pliki: [{ wejscie: wzor }] }, "proba");
-    assert.deepEqual(bajty, ["proba.pliki.0.wejscie"], wzor.constructor.name);
+  const bajty = przejdz(przygotowane, "przygotowane", []);
+  assert.ok(bajty.length > 0, "zakodowane wyniki CSV są w przygotowanych plikach");
+  assert.deepEqual(bajty.filter(({ v }) => wspolne(v)).map(({ sciezka }) => sciezka), []);
+  const bezNumerow = przygotowane.przyjete.find((p) => p.odczyt.wariant !== "surowy");
+  const wejscieBezNumerow = dane.pliki[bezNumerow.indeks];
+  assert.equal(Buffer.compare(Buffer.from(bezNumerow.csv.bajty), Buffer.from(wejscieBezNumerow)), 0, "ta sama treść co wejście");
+  assert.notEqual(bezNumerow.csv.bajty.buffer, wejscieBezNumerow.buffer, "ale inny bufor");
+  // Sprawdzenie samo musi wykrywać każdą postać wspólnego bufora.
+  const wejscie = dane.pliki[0];
+  for (const wzor of [wejscie, wejscie.buffer, wejscie.subarray(1, 5), new DataView(wejscie.buffer), Buffer.from(wejscie.buffer)]) {
+    assert.equal(przejdz({ pliki: [{ w: wzor }] }, "proba", []).filter(({ v }) => wspolne(v)).length, 1, wzor.constructor.name);
   }
+});
+
+test("ZIP powstaje dopiero przy zapisie: złożenie zgłoszenia nie zwraca archiwum", () => {
+  const przygotowane = przygotujPliki([generuj(N1).surowy]);
+  const w = zlozZgloszenie({ przygotowane, formularz: { faktura: FAKTURA }, numer: NUMER, utworzono: DATA });
+  assert.equal("zip" in w, false);
+  assert.equal(w.moznaZapisac, true);
+  assert.deepEqual(utworzZipZgloszenia(w), przygotujZgloszenie({ pliki: [generuj(N1).surowy], formularz: { faktura: FAKTURA }, numer: NUMER, utworzono: DATA }).zip);
+});
+
+test("utworzZipZgloszenia odmawia, gdy zapis jest niemożliwy: blokada, brak plików, błąd pola", () => {
+  const zloz = (pliki, formularz = {}) => zlozZgloszenie({ przygotowane: przygotujPliki(pliki), formularz, numer: NUMER, utworzono: DATA });
+  const blokada = zloz([generuj({ ...N1, ppeWStrefie: { znacznik: "2025-06-06 05:00", seria: "pobor" } }).surowy]);
+  const brak = zloz([]);
+  const pole = zloz([generuj(N1).surowy], { faktura: { oplata_mocowa_zl_mies: "12,345" } });
+  for (const [w, powod] of [[blokada, "blokada"], [brak, "brak_plikow"], [pole, "bledy_pol"]]) {
+    assert.equal(w.powod, powod);
+    assert.throws(() => utworzZipZgloszenia(w), new RegExp(powod), powod);
+  }
+});
+
+test("bezpiecznik w plikach JSON: słowo PPE w polu wpisanym ręcznie blokuje zapis", () => {
+  const przypadki = {
+    "nazwa opłaty": { ...FAKTURA, oplaty_stale_inne: [{ nazwa: "Opłata PPE", kwota_zl_mies: "1,00" }] },
+    "nazwa taryfy": { ...FAKTURA, taryfa: "inna", taryfa_nazwa: "Taryfa PPE", cena_energii_netto_zl_kwh: "0,50" },
+    "nazwa sprzedawcy": { ...FAKTURA, sprzedawca: "inny", sprzedawca_nazwa: "ppe" },
+  };
+  for (const [nazwa, faktura] of Object.entries(przypadki)) {
+    const w = przygotujZgloszenie({ pliki: [generuj(N1).surowy], formularz: { faktura }, numer: NUMER, utworzono: DATA });
+    assert.deepEqual(w.bledyPol, [], `${nazwa}: pole przechodzi własną kontrolę`);
+    assert.deepEqual(w.blokady, [{ kod: "blad_bezpiecznik_formularz" }], nazwa);
+    assert.equal(w.powod, "blokada", nazwa);
+    assert.equal(w.zip, null, nazwa);
+  }
+  // Zwykły formularz i klucz ppe_porownane w zgloszenie.json nie trafiają w reguły.
+  const zwykly = przygotujZgloszenie({ pliki: [generuj(N1).surowy], formularz: { faktura: FAKTURA, instalacja: INSTALACJA, zgoda: true }, numer: NUMER, utworzono: DATA });
+  assert.deepEqual(zwykly.blokady, []);
+});
+
+test("więcej niż jeden przyjęty plik i punkty poboru nieporównane: uwaga bez numerów, JSON bez zmian", () => {
+  const surowy = generuj({ od: "2025-01-01", do: "2025-01-10", ziarno: 2 }).surowy;
+  const bezNumerow = generuj({ od: "2025-01-11", do: "2025-01-20", ziarno: 2 }).zanonimizowany;
+  const dwa = przygotujZgloszenie({ pliki: [surowy, bezNumerow], formularz: {}, numer: NUMER, utworzono: DATA });
+  assert.equal(dwa.uwagaBezNumerow, true);
+  assert.equal(dwa.moznaZapisac, true);
+  const z = jsonPliku(dwa, "zgloszenie.json");
+  assert.equal(z.ppe_porownane, false);
+  assert.equal(z.uwagi.some((u) => /numer/i.test(u.kod)), false, "format JSON bez nowych uwag");
+  assert.equal(przygotujZgloszenie({ pliki: [bezNumerow], formularz: {}, numer: NUMER, utworzono: DATA }).uwagaBezNumerow, false, "jeden plik");
+  const dwaSurowe = przygotujZgloszenie({ pliki: [surowy, generuj({ od: "2025-01-11", do: "2025-01-20", ziarno: 2 }).surowy], formularz: {}, numer: NUMER, utworzono: DATA });
+  assert.equal(dwaSurowe.uwagaBezNumerow, false, "dwa pliki z numerami");
+});
+
+test("ten sam plik dwa razy: drugi odrzucony z blad_duplikat, poza ZIP-em i analizą zakresu", () => {
+  const plik = generuj(N1).surowy;
+  const w = przygotujZgloszenie({ pliki: [plik, plik], formularz: {}, numer: NUMER, utworzono: DATA });
+  assert.deepEqual(w.pliki[1], { indeks: 1, stan: "odrzucony", kod: "blad_duplikat" });
+  assert.equal(w.pliki[0].stan, "przyjety");
+  assert.deepEqual(czytajZip(w.zip).map((p) => p.nazwa), ["zgloszenie.json", "pomiary_1.csv"]);
+  assert.equal(jsonPliku(w, "zgloszenie.json").pliki.length, 1);
+  // Plik bez numerów o tym samym wyniku co plik surowy wcześniej na liście też jest duplikatem.
+  const zBezNumerow = przygotujZgloszenie({ pliki: [plik, generuj(N1).zanonimizowany], formularz: {}, numer: NUMER, utworzono: DATA });
+  assert.equal(zBezNumerow.pliki[1].kod, "blad_duplikat");
+  assert.equal(jsonPliku(zBezNumerow, "zgloszenie.json").ppe_porownane, true, "duplikat nie bierze udziału w porównaniu punktów");
+  // Rozstrzyga kolejność na liście, nie pierwsza godzina.
+  const odwrotnie = przygotujZgloszenie({ pliki: [generuj(N1).zanonimizowany, plik], formularz: {}, numer: NUMER, utworzono: DATA });
+  assert.equal(odwrotnie.pliki[0].stan, "przyjety");
+  assert.equal(odwrotnie.pliki[1].kod, "blad_duplikat");
 });

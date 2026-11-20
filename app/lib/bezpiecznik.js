@@ -13,6 +13,9 @@
 //    z odstępami, kropkami albo ukośnikami. Pole znacznika jest pominięte, bo data i godzina dają
 //    12 cyfr i mogłyby przypadkiem zawierać numer.
 // Wynik podaje tylko numer wiersza, nigdy treść.
+// Pliki JSON zgłoszenia (pola wpisane ręcznie) przechodzą reguły 1–5 bez reguły 6 (opcja
+// `regula6: false`): reguła 6 jest dla kolumn pliku z licznika, a w JSON-ie dwie daty w jednej
+// linii dałyby 16 cyfr.
 
 const REGULY = [
   /\d{12,}/,
@@ -23,7 +26,8 @@ const REGULY = [
 
 // `linie`: [{tekst, linia}], gdzie `linia` to numer linii w pliku wejściowym.
 // `poleZnacznika`: numer pola (od 0, separator średnik) pomijanego w regule 6.
-export function sprawdzBezpiecznik(linie, usunieteWartosci, { poleZnacznika = -1 } = {}) {
+// `regula6`: false wyłącza regułę 6.
+export function sprawdzBezpiecznik(linie, usunieteWartosci, { poleZnacznika = -1, regula6: zRegula6 = true } = {}) {
   const szukane = new Set();
   const cyfryUsunietych = new Set();
   for (const w of usunieteWartosci) {
@@ -43,7 +47,7 @@ export function sprawdzBezpiecznik(linie, usunieteWartosci, { poleZnacznika = -1
       return cyfry.length >= 12 || listaCyfr.some((w) => cyfry.includes(w));
     });
   for (const { tekst, linia } of linie) {
-    if (lista.some((w) => tekst.includes(w)) || REGULY.some((r) => r.test(tekst)) || regula6(tekst)) return { linia };
+    if (lista.some((w) => tekst.includes(w)) || REGULY.some((r) => r.test(tekst)) || (zRegula6 && regula6(tekst))) return { linia };
   }
   return null;
 }

@@ -224,6 +224,19 @@ test("bezpiecznik, reguła 6: cyfry w każdym polu poza znacznikiem", () => {
   assert.equal(sprawdzBezpiecznik(linie("s;2025-01-01 01:00;1.2.3.4.5.6.7.8.9.0.1;1,000;100,00"), [], opcje), null);
 });
 
+test("bezpiecznik bez reguły 6 (pliki JSON): reguły 1–5 działają, cyfry rozdzielone znakami nie", () => {
+  const linie = (...t) => t.map((tekst, i) => ({ tekst, linia: i + 1 }));
+  const bez6 = { regula6: false };
+  assert.deepEqual(sprawdzBezpiecznik(linie('{', `  "nazwa": "x ${PLATNICY_FIKCYJNI[0]}"`), [PLATNICY_FIKCYJNI[0]], bez6), { linia: 2 }, "reguła 1");
+  assert.deepEqual(sprawdzBezpiecznik(linie(`"a": "${"1".repeat(12)}"`), [], bez6), { linia: 1 }, "reguła 2");
+  assert.deepEqual(sprawdzBezpiecznik(linie('"nazwa": "Opłata PPE"'), [], bez6), { linia: 1 }, "reguła 3");
+  assert.deepEqual(sprawdzBezpiecznik(linie(`"a": "${["590", "1234", "5678", "9012", "345"].join(" ")}"`), [], bez6), { linia: 1 }, "reguła 4");
+  assert.deepEqual(sprawdzBezpiecznik(linie(`"a": "${["jan", "example.invalid"].join("@")}"`), [], bez6), { linia: 1 }, "reguła 5");
+  assert.equal(sprawdzBezpiecznik(linie('"ppe_porownane": true,'), [], bez6), null, "klucz z podkreśleniem to nie słowo PPE");
+  assert.equal(sprawdzBezpiecznik(linie('"okres_od": "2025-06-01", "okres_do": "2025-06-30"'), [], bez6), null);
+  assert.deepEqual(sprawdzBezpiecznik(linie('"a": "2025-06-01", "b": "2025-06-30"'), []), { linia: 1 }, "z regułą 6 te same daty dałyby trafienie");
+});
+
 test("wiersz z inną liczbą kolumn: blad_wiersz z numerem linii pliku", () => {
   const tekst = new TextDecoder().decode(generuj({ ...DZIEN, kodowanie: "utf-8", koniecLinii: "\n" }).surowy).split("\n");
   tekst[5] += ";nadmiar";
