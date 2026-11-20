@@ -152,6 +152,7 @@ export const TEKSTY = {
   "faktura_strefy_liczba": "Wpisz wartość w każdej strefie albo wyczyść te pola.",
   "faktura_oplata_niepelna": "Wpisz nazwę i kwotę tej opłaty albo wyczyść oba pola.",
   "tekst_wolny_blad": "Wpisz tu tylko nazwę z faktury, bez numerów i adresów e-mail.",
+  "tekst_wolny_podpowiedz": "Wpisz tylko nazwę z faktury. Nie wpisuj nazwiska ani adresu.",
   "faktura_opusty": "Raport przygotowujemy tylko dla rozliczenia net-billing. Dla systemu opustów jeszcze go nie mamy.",
   "faktura_brak_obowiazkowych": "Bez tych danych nie przygotujemy raportu: {pola}. Jeśli ich nie znajdziesz, wyślij sam plik, bo on też pomoże nam sprawdzić obliczenia.",
   "faktura_r_poza_zakresem": "Ta faktura dotyczy okresu, którego nie ma w całości w plikach. Ceny i opłaty z niej wykorzystamy, ale nie porównamy z nią obliczeń.",

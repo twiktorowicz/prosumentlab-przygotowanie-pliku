@@ -5,6 +5,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
+import { ROK_MIN, ROK_MAKS } from "../app/lib/kalendarz.js";
 
 const MAIN = readFileSync(fileURLToPath(new URL("../app/main.js", import.meta.url)), "utf8");
 const HTML = readFileSync(fileURLToPath(new URL("../app/index.html", import.meta.url)), "utf8");
@@ -23,4 +24,28 @@ test("odnośniki otwierają się w nowej karcie, żeby nie skasować danych z pa
     assert.match(a, /rel:\s*"noopener"/, a);
   }
   assert.doesNotMatch(HTML, /<a\b(?![^>]*target="_blank")[^>]*href="(?:https?:|\/)/, "odnośniki w index.html");
+});
+
+test("pola daty okresu faktury w zakresie lat narzędzia", () => {
+  const pola = [...HTML.matchAll(/<input type="date"[^>]*>/g)].map((m) => m[0]);
+  assert.equal(pola.length, 2);
+  for (const p of pola) {
+    assert.match(p, new RegExp(`min="${ROK_MIN}-01-01"`), p);
+    assert.match(p, new RegExp(`max="${ROK_MAKS}-12-31"`), p);
+  }
+});
+
+test("podpowiedź przy każdym polu na nazwę, widoczna stale", () => {
+  for (const pole of ["sprzedawca_nazwa", "taryfa_nazwa", "oplaty_stale_inne"]) {
+    const kontener = new RegExp(`data-pole="${pole}"[^>]*>([\\s\\S]*?)</(?:div|fieldset)>`).exec(HTML);
+    assert.ok(kontener, pole);
+    assert.match(kontener[1], /<p class="podpowiedz" data-tekst="tekst_wolny_podpowiedz"><\/p>/, pole);
+  }
+});
+
+test("podpowiedź o kolejności stref tylko przy taryfie „inna”", () => {
+  const linia = MAIN.split("\n").find((l) => l.includes('$("#strefy-kolejnosc")'));
+  assert.ok(linia);
+  assert.match(linia, /taryfa === "inna"/);
+  assert.doesNotMatch(linia, /g12/);
 });

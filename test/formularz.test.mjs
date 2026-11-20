@@ -96,6 +96,39 @@ test("cena w strefach: liczba wartości równa liczbie stref taryfy", () => {
   assert.deepEqual(bezTaryfy.bledy, [{ pole: "cena_energii_netto_zl_kwh", kod: "faktura_strefy_liczba" }]);
 });
 
+test("taryfa „inna”: puste pola stref na końcu się nie liczą, puste w środku to błąd", () => {
+  const inna = (cena) => czytajFormularz({ faktura: { ...FAKTURA, taryfa: "inna", taryfa_nazwa: "Taryfa X", cena_energii_netto_zl_kwh: cena } });
+  const dwie = inna(["0,10", "0,20", "", " "]);
+  assert.deepEqual(dwie.bledy, []);
+  assert.deepEqual(dwie.raport.cena_energii_netto_zl_kwh, ["0.10", "0.20"]);
+  assert.deepEqual(inna(["0,10", "", "0,30"]).bledy, [{ pole: "cena_energii_netto_zl_kwh", kod: "faktura_strefy_liczba" }]);
+  assert.deepEqual(inna(["", "0,20"]).bledy, [{ pole: "cena_energii_netto_zl_kwh", kod: "faktura_strefy_liczba" }]);
+  // Przy taryfie o stałej liczbie stref puste pole na końcu dalej jest błędem.
+  const g13 = czytajFormularz({ faktura: { ...FAKTURA, taryfa: "g13", cena_energii_netto_zl_kwh: ["0,60", "0,70", ""] } });
+  assert.deepEqual(g13.bledy, [{ pole: "cena_energii_netto_zl_kwh", kod: "faktura_strefy_liczba" }]);
+});
+
+test("kwota najwyżej 4 cyfry, cena najwyżej 2 cyfry przed przecinkiem", () => {
+  const w = czytajFormularz({ faktura: { ...FAKTURA, oplata_mocowa_zl_mies: "10000", cena_energii_netto_zl_kwh: "100,50" } });
+  assert.deepEqual(w.bledy, [
+    { pole: "cena_energii_netto_zl_kwh", kod: "faktura_cena_format" },
+    { pole: "oplata_mocowa_zl_mies", kod: "faktura_kwota_format" },
+  ]);
+});
+
+test("jeden zakres lat 2010–2099: okres faktury i miesiące w odpowiedziach o instalacji", () => {
+  for (const zla of ["2009-12-31", "2100-01-01"]) {
+    assert.deepEqual(czytajFormularz({ faktura: { ...FAKTURA, okres_od: zla, okres_do: "" } }).bledy, [{ pole: "okres_od", kod: "faktura_data_format" }], zla);
+  }
+  assert.deepEqual(czytajFormularz({ faktura: { ...FAKTURA, okres_od: "2010-01-01", okres_do: "2099-12-31" } }).bledy, []);
+  for (const zly of ["2009-12", "2100-01"]) {
+    const w = czytajFormularz({ instalacja: { magazyn: "tak", magazyn_od: zly, zmiany: [{ rodzaj: "pompa_ciepla", miesiac: zly }] } });
+    assert.deepEqual(w.bledy, [{ pole: "magazyn_od", kod: "instalacja_miesiac_format" }, { pole: "zmiany[0]", kod: "instalacja_miesiac_format" }], zly);
+  }
+  const dobre = czytajFormularz({ instalacja: { magazyn: "tak", magazyn_od: "2010-01", zmiany: [{ rodzaj: "pompa_ciepla", miesiac: "2099-12" }] } });
+  assert.deepEqual(dobre.bledy, []);
+});
+
 test("pola tekstowe tylko przy „inny” i „inna”, obowiązkowe przy nich", () => {
   const inny = czytajFormularz({ faktura: { ...FAKTURA, sprzedawca: "inny", sprzedawca_nazwa: "Sprzedawca Prądu 2025" } });
   assert.deepEqual(Object.keys(inny.raport).slice(0, 3), ["sprzedawca", "sprzedawca_nazwa", "operator_dystrybucyjny"]);

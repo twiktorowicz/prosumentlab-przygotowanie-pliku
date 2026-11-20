@@ -12,7 +12,7 @@
 // formularza w narzedzia/przygotuj.mjs).
 
 import { czytajKwote, czytajCene, czytajDziesietna, czytajTekstWolny, liczbaZCyfr } from "./kwoty.js";
-import { poprawnaDoba } from "./kalendarz.js";
+import { poprawnaDoba, rokWZakresie } from "./kalendarz.js";
 
 const LISTY = {
   sprzedawca: ["tauron_sprzedaz", "pge_obrot", "enea", "energa_obrot", "eon", "inny"],
@@ -40,7 +40,9 @@ const pusty = (w) => w === undefined || w === null || (typeof w === "string" && 
 
 function czytajDate(tekst) {
   const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(tekst.trim());
-  if (!m || !poprawnaDoba(liczbaZCyfr(m[1]), liczbaZCyfr(m[2]), liczbaZCyfr(m[3]))) return { ok: false };
+  if (!m) return { ok: false };
+  const rok = liczbaZCyfr(m[1]);
+  if (!rokWZakresie(rok) || !poprawnaDoba(rok, liczbaZCyfr(m[2]), liczbaZCyfr(m[3]))) return { ok: false };
   return { ok: true, wartosc: m[0] };
 }
 
@@ -49,7 +51,7 @@ function czytajMiesiac(tekst) {
   if (!m) return { ok: false };
   const rok = liczbaZCyfr(m[1]);
   const miesiac = liczbaZCyfr(m[2]);
-  if (rok < 2000 || rok > 2099 || miesiac < 1 || miesiac > 12) return { ok: false };
+  if (!rokWZakresie(rok) || miesiac < 1 || miesiac > 12) return { ok: false };
   return { ok: true, wartosc: m[0] };
 }
 
@@ -82,7 +84,14 @@ function czytajFakture(f, bledy, brakujace) {
   wybor("system_rozliczenia");
   wybor("rodzaj_ceny");
 
-  const cena = f.cena_energii_netto_zl_kwh;
+  let cena = f.cena_energii_netto_zl_kwh;
+  // Taryfa „inna”: klient może dodać pole strefy i zostawić je puste; puste pola na końcu listy
+  // się nie liczą. Puste pole w środku dalej jest błędem liczby stref.
+  if (Array.isArray(cena) && r.taryfa === "inna") {
+    let koniec = cena.length;
+    while (koniec > 0 && pusty(cena[koniec - 1])) koniec -= 1;
+    cena = cena.slice(0, koniec);
+  }
   if (Array.isArray(cena)) {
     if (!cena.every(pusty)) {
       const liczba = STREFY[r.taryfa] ?? (r.taryfa === "inna" ? cena.length : 0);

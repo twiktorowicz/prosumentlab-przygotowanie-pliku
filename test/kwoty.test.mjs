@@ -6,10 +6,8 @@ import assert from "node:assert/strict";
 import {
   czytajKwote,
   czytajCene,
-  czytajEnergie,
   czytajDziesietna,
   czytajTekstWolny,
-  naGrosze,
   liczbaZCyfr,
 } from "../app/lib/kwoty.js";
 
@@ -24,6 +22,11 @@ test("N16: kwoty", () => {
     ["12,340", "12.34"], // zera na końcu są dozwolone, jak w kolumnie cen na fakturze
     ["12,3,4", "błąd"],
     ["-3,00", "błąd"],
+    ["9999,99", "9999.99"], // najwyżej 4 cyfry przed przecinkiem
+    ["9 999,99", "9999.99"],
+    ["10000", "błąd"],
+    ["10 000,00", "błąd"],
+    ["9".repeat(15), "błąd"],
   ];
   for (const [wejscie, oczekiwane] of przypadki) assert.equal(wartosc(czytajKwote(wejscie)), oczekiwane, wejscie);
 });
@@ -39,7 +42,7 @@ test("kwoty: zera na końcu jak w kolumnie „Cena netto (zł)” na fakturze, z
 
 test("kwoty: separator tysięcy tylko w grupach po trzy cyfry, także twarda spacja", () => {
   assert.equal(wartosc(czytajKwote("12 34")), "błąd");
-  assert.equal(wartosc(czytajKwote("1 234 567,8")), "1234567.80");
+  assert.equal(wartosc(czytajKwote("1 234 567,8")), "błąd", "7 cyfr przed przecinkiem");
   assert.equal(wartosc(czytajKwote("1\u00a0234,50")), "1234.50");
   assert.equal(wartosc(czytajKwote("1\u202f234")), "1234.00");
   assert.equal(wartosc(czytajKwote("1234 567")), "błąd");
@@ -60,18 +63,18 @@ test("N17: ceny", () => {
   assert.equal(wartosc(czytajCene("0,1234567")), "błąd");
 });
 
+test("ceny: najwyżej 2 cyfry przed przecinkiem", () => {
+  assert.equal(wartosc(czytajCene("99,50")), "99.50");
+  assert.equal(wartosc(czytajCene("100,50")), "błąd");
+  assert.equal(wartosc(czytajCene("12345678,00")), "błąd");
+  assert.equal(wartosc(czytajCene("007,50")), "7.50", "zera wiodące się nie liczą");
+});
+
 test("ceny: bez dopisywania zer, od 2 do 6 miejsc", () => {
   assert.equal(wartosc(czytajCene("0,50")), "0.50");
   assert.equal(wartosc(czytajCene("1.123456")), "1.123456");
   assert.equal(wartosc(czytajCene("1")), "błąd");
   assert.equal(wartosc(czytajCene("-0,50")), "błąd");
-});
-
-test("energia: liczba całkowita, spacje w grupach po trzy", () => {
-  assert.equal(wartosc(czytajEnergie("357")), 357);
-  assert.equal(wartosc(czytajEnergie("1 482")), 1482);
-  assert.equal(czytajEnergie("12,5").ok, false);
-  assert.equal(czytajEnergie("-4").ok, false);
 });
 
 test("liczby z sekcji o instalacji: do 2 miejsc, najwyżej 3 cyfry przed przecinkiem, większe od zera", () => {
@@ -92,9 +95,10 @@ test("N18: pola na dowolny tekst", () => {
     ["Prąd 2025", true],
     ["Jan@x", false],
     ["31-123", false],
-    ["Taryfa 1234", false],
-    ["Oferta 2025 123", false],
-    ["Oferta 1999", false],
+    ["Taryfa 1234", true], // 4 cyfry poza latami są dozwolone
+    ["Oferta 2025 123", true],
+    ["Oferta 1999", true],
+    ["Oferta 12345", false],
     ["a".repeat(61), false],
   ];
   for (const [wejscie, dobre] of przypadki) assert.equal(czytajTekstWolny(wejscie).ok, dobre, wejscie);
@@ -106,7 +110,7 @@ test("pola na dowolny tekst: separatory między cyframi, krótkie ciągi, przyci
   assert.equal(czytajTekstWolny("Taryfa G12w").ok, true);
   assert.equal(czytajTekstWolny("Opcja 123").ok, true);
   assert.equal(czytajTekstWolny("Rok 2099").ok, true);
-  assert.equal(czytajTekstWolny("Rok 2100").ok, false);
+  assert.equal(czytajTekstWolny("Rok 2100").ok, true, "4 cyfry, choć nie rok");
   assert.equal(czytajTekstWolny("a".repeat(60)).ok, true);
   assert.equal(czytajTekstWolny("ą".repeat(60)).ok, true, "limit liczony w znakach");
   assert.deepEqual(czytajTekstWolny("  Opłata handlowa "), { ok: true, wartosc: "Opłata handlowa" });
@@ -141,10 +145,17 @@ test("pola na dowolny tekst: tylko litery, cyfry ASCII, spacja i znaki . , - / (
   assert.deepEqual(czytajTekstWolny("Opa\u0328ta"), { ok: true, wartosc: "Opąta" });
 });
 
-test("grosze z kwoty i liczby z cyfr", () => {
-  assert.equal(naGrosze("12.34"), 1234);
-  assert.equal(naGrosze("0.05"), 5);
-  assert.equal(naGrosze("1234.50"), 123450);
+test("pola na nazwę: grupy cyfr, najwyżej dwa lata 2000–2099 pomijane, poza nimi najwyżej 4 cyfry", () => {
+  for (const dobry of ["Taryfa G12 2026", "G12w 2025/2026", "E.ON", "Opłata OZE", "ul. Polna 12/4", "Plan 2025 2026 12", "Opcja 1234"]) {
+    assert.equal(czytajTekstWolny(dobry).ok, true, dobry);
+  }
+  for (const zly of ["(+48) 600,123,456", "90,01,01,123,45", "600 123 456", "40-001", "12345", "Plan 2025 2026 2027 12",
+    "Opcja 12 345", "Opłata (12)(34)(5)", "Nr 2000,2001,2002,1"]) {
+    assert.equal(czytajTekstWolny(zly).ok, false, zly);
+  }
+});
+
+test("liczby z cyfr", () => {
   assert.equal(liczbaZCyfr("0042"), 42);
   assert.equal(liczbaZCyfr("4a"), null);
   assert.equal(liczbaZCyfr(""), null);

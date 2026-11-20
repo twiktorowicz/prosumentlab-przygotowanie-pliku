@@ -1,5 +1,5 @@
 // Odczyt liczb wpisanych przez klienta. Działa wyłącznie na tekście: kwoty i ceny zostają
-// tekstem dziesiętnym z kropką, energia i grosze są liczbami całkowitymi. Bez liczb
+// tekstem dziesiętnym z kropką. Bez liczb
 // zmiennoprzecinkowych, więc nie ma błędów zaokrągleń.
 //
 // Zasady wspólne:
@@ -32,27 +32,21 @@ function rozbierz(tekst) {
 }
 
 // Kwota w złotych, zapis z dwoma miejscami po przecinku: „12,34” -> "12.34", „10” -> "10.00",
-// „1 234,5” -> "1234.50". Dalsze miejsca są dozwolone tylko jako zera, bo opłaty stałe stoją
-// na fakturze w kolumnie „Cena netto (zł)” z pięcioma miejscami: „12,34000” -> "12.34".
-// Cyfra inna niż zero na trzecim i dalszym miejscu to błąd („12,341”), bo nie wiadomo,
-// czy to pomyłka.
+// „1 234,5” -> "1234.50". Najwyżej 4 cyfry przed przecinkiem: miesięczna opłata nie przekracza
+// 9999,99 zł, a w polu liczbowym nie zmieści się numer klienta ani telefon. Dalsze miejsca
+// po przecinku są dozwolone tylko jako zera, bo opłaty stałe stoją na fakturze w kolumnie
+// „Cena netto (zł)” z pięcioma miejscami: „12,34000” -> "12.34". Cyfra inna niż zero na trzecim
+// i dalszym miejscu to błąd („12,341”), bo nie wiadomo, czy to pomyłka.
 export function czytajKwote(tekst) {
-  return czytajDziesietna(tekst, { miejsc: 2, zeraNaKoncu: true });
+  return czytajDziesietna(tekst, { miejsc: 2, calkowitych: 4, zeraNaKoncu: true });
 }
 
-// Cena za kWh: od 2 do 6 miejsc po przecinku, zapis bez dopisywania zer.
+// Cena za kWh: najwyżej 2 cyfry przed przecinkiem, od 2 do 6 miejsc po przecinku, zapis bez
+// dopisywania zer.
 export function czytajCene(tekst) {
   const c = rozbierz(tekst);
-  if (!c || c.ulamek === undefined || c.ulamek.length < 2 || c.ulamek.length > 6) return blad;
+  if (!c || c.calkowite.length > 2 || c.ulamek === undefined || c.ulamek.length < 2 || c.ulamek.length > 6) return blad;
   return { ok: true, wartosc: `${c.calkowite}.${c.ulamek}` };
-}
-
-// Energia w kWh: liczba całkowita.
-export function czytajEnergie(tekst) {
-  const c = rozbierz(tekst);
-  if (!c || c.ulamek !== undefined) return blad;
-  const wartosc = liczbaZCyfr(c.calkowite);
-  return wartosc === null ? blad : { ok: true, wartosc };
 }
 
 // Liczba dziesiętna z najwyżej `miejsc` miejscami po przecinku, zapis uzupełniony do `miejsc`.
@@ -69,33 +63,28 @@ export function czytajDziesietna(tekst, { miejsc, calkowitych = 15, dodatnia = f
   return { ok: true, wartosc: miejsc > 0 ? `${c.calkowite}.${uzupelniony}` : c.calkowite };
 }
 
-// Kwota zapisana jako "1234.50" (albo "-12.34") w groszach.
-export function naGrosze(kwota) {
-  const m = /^(-?)(\d+)\.(\d{2})$/.exec(kwota);
-  if (!m) throw new Error("oczekiwana kwota z dwoma miejscami po przecinku");
-  const grosze = liczbaZCyfr(m[2]) * 100 + liczbaZCyfr(m[3]);
-  return m[1] ? -grosze : grosze;
-}
-
 // Pole na dowolny tekst (nazwa sprzedawcy, taryfy, opłaty): najwyżej 60 znaków. Dozwolone są
 // tylko litery, cyfry ASCII, spacja i znaki . , - / ( ) + & ' %. Lista dozwolonych zamiast
 // zakazanych zamyka drogę numerom z niewidocznymi znakami, cyframi pełnej szerokości albo
 // znakami zmiany kierunku pisma. Tekst jest najpierw składany (NFC), więc litera zapisana jako
 // litera i znak łączący też przechodzi.
-// Ciągi cyfr liczone po pominięciu spacji, myślników, kropek i ukośników między cyframi:
-// 5 i więcej cyfr to błąd (kod pocztowy, telefon, numer klienta), 4 cyfry tylko jako rok
-// 2000–2099, krótsze ciągi są dozwolone.
+// Cyfry: grupa to cyfry stojące obok siebie. Najwyżej dwie grupy czterocyfrowe o wartości
+// 2000–2099 liczą się jako lata („Taryfa G12 2026”, „G12w 2025/2026”) i są pomijane. Poza nimi
+// całe pole ma najwyżej 4 cyfry, bez względu na to, co je rozdziela: telefon, kod pocztowy albo
+// numer klienta zapisany z przecinkami czy nawiasami też przekroczy limit.
+const MAKS_LAT = 2;
+const MAKS_CYFR = 4;
 export function czytajTekstWolny(tekst) {
   if (typeof tekst !== "string") return blad;
   const t = tekst.normalize("NFC").replace(/^ +| +$/g, "");
   if ([...t].length > 60 || !/^[\p{L}0-9 .,\-/()+&'%]*$/u.test(t)) return blad;
-  for (const ciag of t.matchAll(/\d(?:[ \u00a0\-./]*\d)*/g)) {
-    const cyfry = ciag[0].replace(/\D/g, "");
-    if (cyfry.length >= 5) return blad;
-    if (cyfry.length === 4) {
-      const rok = liczbaZCyfr(cyfry);
-      if (rok < 2000 || rok > 2099) return blad;
-    }
+  let lata = 0;
+  let cyfr = 0;
+  for (const grupa of t.match(/[0-9]+/g) ?? []) {
+    const rok = grupa.length === 4 ? liczbaZCyfr(grupa) : null;
+    if (lata < MAKS_LAT && rok !== null && rok >= 2000 && rok <= 2099) lata += 1;
+    else cyfr += grupa.length;
   }
+  if (cyfr > MAKS_CYFR) return blad;
   return { ok: true, wartosc: t };
 }

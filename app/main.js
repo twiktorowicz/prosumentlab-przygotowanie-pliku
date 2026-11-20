@@ -177,7 +177,9 @@ function zbudujPolaCen() {
     kontener.replaceChildren(pole);
   }
   pokaz($("#dodaj-strefe"), strefy && taryfa === "inna" && strefInnej < 4);
-  pokaz($("#strefy-kolejnosc"), strefy && (taryfa === "g12" || taryfa === "g12w"));
+  // G12 i G12w mają nazwane pola („dzienna”, „nocna”), więc kolejność wynika z nazw; przy taryfie
+  // „inna” pola mają tylko numery i trzeba je wypełnić w kolejności z faktury.
+  pokaz($("#strefy-kolejnosc"), strefy && taryfa === "inna");
 }
 
 const MAKS_OPLAT = 5;

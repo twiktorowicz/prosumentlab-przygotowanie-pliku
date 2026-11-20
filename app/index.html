@@ -68,6 +68,7 @@
       <div class="pole" data-pole="sprzedawca_nazwa" data-warunek="sprzedawca=inny" hidden>
         <label for="p-sprzedawca_nazwa" data-tekst="faktura_sprzedawca_nazwa"></label>
         <input type="text" id="p-sprzedawca_nazwa" maxlength="60" autocomplete="off">
+        <p class="podpowiedz" data-tekst="tekst_wolny_podpowiedz"></p>
         <p class="blad" hidden></p>
       </div>
 
@@ -86,18 +87,19 @@
       <div class="pole" data-pole="taryfa_nazwa" data-warunek="taryfa=inna" hidden>
         <label for="p-taryfa_nazwa" data-tekst="faktura_taryfa_nazwa"></label>
         <input type="text" id="p-taryfa_nazwa" maxlength="60" autocomplete="off">
+        <p class="podpowiedz" data-tekst="tekst_wolny_podpowiedz"></p>
         <p class="blad" hidden></p>
       </div>
 
       <div class="pole-para">
         <div class="pole" data-pole="okres_od">
           <label for="p-okres_od" data-tekst="faktura_okres_od"></label>
-          <input type="date" id="p-okres_od" min="2020-01-01" max="2099-12-31">
+          <input type="date" id="p-okres_od" min="2010-01-01" max="2099-12-31">
           <p class="blad" hidden></p>
         </div>
         <div class="pole" data-pole="okres_do">
           <label for="p-okres_do" data-tekst="faktura_okres_do"></label>
-          <input type="date" id="p-okres_do" min="2020-01-01" max="2099-12-31">
+          <input type="date" id="p-okres_do" min="2010-01-01" max="2099-12-31">
           <p class="blad" hidden></p>
         </div>
       </div>
@@ -159,6 +161,7 @@
 
       <fieldset class="pole" data-pole="oplaty_stale_inne">
         <legend data-tekst="faktura_inne"></legend>
+        <p class="podpowiedz" data-tekst="tekst_wolny_podpowiedz"></p>
         <div id="oplaty-inne"></div>
         <button type="button" class="przycisk przycisk-drugi" id="dodaj-oplate" data-tekst="faktura_dodaj_oplate"></button>
       </fieldset>
