@@ -359,12 +359,17 @@ input[inputmode="decimal"] { font-family: var(--mono); max-width: 12em; }
 .numer { font-weight: 500; margin-top: 16px; }
 .numer-zgloszenia { font-family: var(--mono); font-weight: 500; white-space: nowrap; }
 
-/* Podgląd: przy pliku pomiarów nazwa pliku z urządzenia (tylko na stronie), na liście
-   zawartości ZIP-a krótki opis każdego pliku. */
-.z-pliku, .opis-pliku { display: block; font-size: 13px; color: var(--pomocniczy); overflow-wrap: anywhere; }
-.lista-zip { margin: 0 0 16px; padding-left: 1.2em; }
-.lista-zip li { margin-bottom: 8px; }
-.lista-zip .opis-pliku { font-size: 15px; }
+/* Podgląd zwarty: każdy plik z ZIP-a i tabela miesięcy jako zwinięte <details>; w nagłówku
+   nazwa pliku i krótki opis (przy pomiarach z nazwą pliku z urządzenia, tylko na stronie). */
+.lista-zip { list-style: none; margin: 0 0 12px; padding: 0; }
+.plik-zip, .miesiace { margin: 0 0 8px; padding: 0 12px; border: 1px solid var(--linia); border-radius: 10px; }
+.plik-zip > summary, .miesiace > summary { padding: 10px 0; cursor: pointer; }
+.miesiace > summary { font-weight: 500; }
+.plik-zip > summary .mono { font-weight: 500; }
+.opis-pliku { display: block; margin-left: 1.2em; font-size: 15px; color: var(--pomocniczy); overflow-wrap: anywhere; }
+.dane-pliku { display: grid; grid-template-columns: max-content 1fr; gap: 4px 16px; margin: 0 0 8px; font-size: 15px; }
+.dane-pliku dt { color: var(--pomocniczy); }
+.dane-pliku dd { margin: 0; overflow-wrap: anywhere; }
 #udostepnij { margin: 0 0 16px; }
 
 /* Podgląd. */

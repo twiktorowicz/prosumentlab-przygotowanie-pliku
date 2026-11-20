@@ -80,6 +80,17 @@ function wstawTeksty() {
 
   $("#numer").replaceChildren(...zdanieZNumerem());
 
+  // Instrukcja pobrania pliku: odnośnik na słowach z tekstu, w nowej karcie (jak przy zgodzie).
+  // Fraza służy tylko do znalezienia miejsca podziału; bez niej zostaje sam tekst.
+  const instrukcja = t("plik_instrukcja");
+  const fraza = "jak go pobrać z eLicznika";
+  const miejsce = instrukcja.indexOf(fraza);
+  $("#plik-instrukcja").replaceChildren(...(miejsce < 0 ? [instrukcja] : [
+    instrukcja.slice(0, miejsce),
+    el("a", { href: "/elicznik/", target: "_blank", rel: "noopener noreferrer", tekst: fraza }),
+    instrukcja.slice(miejsce + fraza.length),
+  ]));
+
   // Odnośnik do repozytorium na słowie z tekstu wersji („GitHubie”).
   const wersja = t("wersja", { wersja: WERSJA });
   const slowo = /GitHub\p{L}*/u.exec(wersja);
@@ -488,12 +499,10 @@ function pokazPola() {
   pokaz(brakEl, Boolean(brak));
 }
 
-// Komórka tabeli to tekst albo lista elementów.
 function tabela(naglowki, wiersze, klasy = []) {
-  const komorka = (k, i) => (typeof k === "string" ? el("td", { klasa: klasy[i] ?? "", tekst: k }) : el("td", { klasa: klasy[i] ?? "" }, ...k));
   return el("div", { klasa: "tabela-przewijana" }, el("table", {},
     el("thead", {}, el("tr", {}, ...naglowki.map((n, i) => el("th", { scope: "col", klasa: klasy[i] ?? "", tekst: n })))),
-    el("tbody", {}, ...wiersze.map((w) => el("tr", {}, ...w.map(komorka))))));
+    el("tbody", {}, ...wiersze.map((w) => el("tr", {}, ...w.map((k, i) => el("td", { klasa: klasy[i] ?? "", tekst: k })))))));
 }
 
 // Opis pliku na liście zawartości ZIP-a. Nazwa pliku z urządzenia klienta stoi tylko na stronie;
@@ -505,40 +514,53 @@ function opisPlikuZip(nazwa, zrodlo) {
   return t("opis_pomiary", { nazwa: zrodlo.get(nazwa) ?? "" });
 }
 
+// Zawartość pozycji na liście: plik JSON w całości; plik pomiarów jako liczba wierszy, pierwsza
+// i ostatnia godzina, usunięte kolumny i pierwsze wiersze (nagłówek z pliku w ZIP-ie).
+function trescPliku(plikWZip, odczyt, dekoder) {
+  if (!odczyt) return [el("pre", { klasa: "wiersze", tekst: dekoder.decode(plikWZip.bajty) })];
+  const naglowek = dekoder.decode(plikWZip.bajty.subarray(0, plikWZip.bajty.indexOf(10)));
+  const dane = [
+    [t("podglad_wiersze"), String(odczyt.wierszeDanych)],
+    [t("podglad_pierwsza"), znacznikPolski(odczyt.pierwszyZnacznik)],
+    [t("podglad_ostatnia"), znacznikPolski(odczyt.ostatniZnacznik)],
+  ];
+  if (odczyt.usunieteKolumny.length > 0) dane.push([t("podglad_usuniete"), odczyt.usunieteKolumny.join(", ")]);
+  return [
+    el("dl", { klasa: "dane-pliku" }, ...dane.flatMap(([nazwa, wartosc]) => [el("dt", { tekst: nazwa }), el("dd", { tekst: wartosc })])),
+    el("p", { klasa: "drobny", tekst: t("podglad_pierwsze_wiersze") }),
+    el("pre", { klasa: "wiersze", tekst: [naglowek, ...odczyt.pierwszeWiersze].join("\n") }),
+  ];
+}
+
+// Podgląd zwarty: lista plików w kolejności z ZIP-a, każdy zwinięty, i osobno zwinięta tabela
+// miesięcy. Pozycje rozwinięte przez klienta zostają rozwinięte po przeliczeniu; kluczem jest
+// nazwa pliku w ZIP-ie, a dla tabeli miesięcy "miesiace".
 function pokazPodglad() {
-  const przyjete = wynik.pliki.filter((p) => p.nazwa).sort((a, b) => a.nazwa.localeCompare(b.nazwa, "pl", { numeric: true }));
+  const otwarte = new Set($$("#podglad details[data-plik]").filter((d) => d.open).map((d) => d.dataset.plik));
+  const odczyty = new Map(wynik.pliki.filter((p) => p.nazwa).map((p) => [p.nazwa, p]));
   // pomiary_N.csv -> nazwa pliku z listy, z którego powstał.
   const pozycja = new Map([...wynikiPlikow].map(([i, p]) => [p.indeks, i]));
-  const zrodlo = new Map(przyjete.map((p) => [p.nazwa, pliki[pozycja.get(p.indeks)]?.nazwa ?? ""]));
-  const czesci = [];
-  if (przyjete.length > 0) {
-    czesci.push(tabela(
-      [t("podglad_plik"), t("podglad_wiersze"), t("podglad_pierwsza"), t("podglad_ostatnia"), t("podglad_usuniete")],
-      przyjete.map((p) => [
-        [el("span", { klasa: "mono", tekst: p.nazwa }), el("span", { klasa: "z-pliku", tekst: t("podglad_z_pliku", { nazwa: zrodlo.get(p.nazwa) }) })],
-        String(p.wierszeDanych), znacznikPolski(p.pierwszyZnacznik), znacznikPolski(p.ostatniZnacznik), p.usunieteKolumny.join(", "),
-      ]),
-      ["", "liczba", "", "", ""],
-    ));
-    for (const p of przyjete) {
-      const plikWZip = wynik.zawartosc.find((z) => z.nazwa === p.nazwa);
-      const naglowek = new TextDecoder().decode(plikWZip.bajty.subarray(0, plikWZip.bajty.indexOf(10)));
-      czesci.push(el("h3", { tekst: `${t("podglad_pierwsze_wiersze")}, ${p.nazwa}` }), el("pre", { klasa: "wiersze", tekst: [naglowek, ...p.pierwszeWiersze].join("\n") }));
-    }
-    czesci.push(tabela(
-      [t("podglad_miesiac"), t("podglad_pobrana"), t("podglad_oddana")],
-      wynik.miesiace.map((m) => [`${TEKSTY.miesiace_mianownik[m.miesiac - 1]} ${m.rok}`, kwhDoWyswietlenia(m.poborWh), kwhDoWyswietlenia(m.oddanieWh)]),
-      ["", "liczba", "liczba"],
-    ));
+  const zrodlo = new Map([...odczyty].map(([nazwa, p]) => [nazwa, pliki[pozycja.get(p.indeks)]?.nazwa ?? ""]));
+  const dekoder = new TextDecoder();
+  const czesci = [
+    komunikat("", t("podglad_wstep")),
+    komunikat("", t(wynik.zgoda ? "podglad_zgoda_tak" : "podglad_zgoda_nie")),
+    el("ul", { klasa: "lista-zip" }, ...wynik.zawartosc.map((z) => el("li", {},
+      el("details", { klasa: "plik-zip", "data-plik": z.nazwa },
+        el("summary", {}, el("span", { klasa: "mono", tekst: z.nazwa }), el("span", { klasa: "opis-pliku", tekst: opisPlikuZip(z.nazwa, zrodlo) })),
+        ...trescPliku(z, odczyty.get(z.nazwa), dekoder))))),
+  ];
+  if (wynik.miesiace.length > 0) {
+    czesci.push(el("details", { klasa: "miesiace", "data-plik": "miesiace" },
+      el("summary", { tekst: t("podglad_miesiace_tytul") }),
+      tabela(
+        [t("podglad_miesiac"), t("podglad_pobrana"), t("podglad_oddana")],
+        wynik.miesiace.map((m) => [`${TEKSTY.miesiace_mianownik[m.miesiac - 1]} ${m.rok}`, kwhDoWyswietlenia(m.poborWh), kwhDoWyswietlenia(m.oddanieWh)]),
+        ["", "liczba", "liczba"],
+      )));
   }
-  for (const nazwa of ["zgloszenie.json", "faktury.json", "instalacja.json"]) {
-    const plik = wynik.zawartosc.find((z) => z.nazwa === nazwa);
-    if (plik) czesci.push(el("h3", { klasa: "mono", tekst: nazwa }), el("pre", { klasa: "wiersze", tekst: new TextDecoder().decode(plik.bajty) }));
-  }
-  czesci.push(komunikat("", t(wynik.zgoda ? "podglad_zgoda_tak" : "podglad_zgoda_nie")));
-  czesci.push(el("h3", { tekst: t("podglad_lista_zip") }), el("ul", { klasa: "lista-zip" }, ...wynik.zawartosc.map((z) =>
-    el("li", {}, el("span", { klasa: "mono", tekst: z.nazwa }), el("span", { klasa: "opis-pliku", tekst: opisPlikuZip(z.nazwa, zrodlo) })))));
   $("#podglad").replaceChildren(...czesci);
+  for (const d of $$("#podglad details[data-plik]")) if (otwarte.has(d.dataset.plik)) d.open = true;
 }
 
 // Blokada z pól wpisanych ręcznie (bezpiecznik plików JSON).

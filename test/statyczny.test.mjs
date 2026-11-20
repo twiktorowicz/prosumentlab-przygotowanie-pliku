@@ -91,3 +91,20 @@ test("N21: jedyny adres poza stroną to mailto: do zgłoszeń i odnośniki do st
   }
   assert.deepEqual(zle, []);
 });
+
+test("N21: odnośniki do stron serwisu tylko do /prywatnosc/ i /elicznik/", () => {
+  const DOZWOLONE = new Set(["/prywatnosc/", "/elicznik/"]);
+  const znalezione = new Set();
+  const zle = [];
+  for (const sciezka of pliki()) {
+    const p = wzgledna(sciezka);
+    if (p === "SHA256SUMS") continue;
+    const tresc = readFileSync(sciezka, "utf8");
+    for (const m of tresc.matchAll(/\bhref(?:\s*=\s*|:\s*)["'](\/[^"']*)["']/g)) {
+      znalezione.add(m[1]);
+      if (!DOZWOLONE.has(m[1])) zle.push(`${p}: ${m[1]}`);
+    }
+  }
+  assert.deepEqual(zle, []);
+  assert.deepEqual([...znalezione].sort(), ["/elicznik/", "/prywatnosc/"]);
+});

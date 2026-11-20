@@ -102,6 +102,11 @@ test("teksty usunięte razem z polami, których strona już nie ma", () => {
   ]) assert.equal(k in TEKSTY, false, k);
   assert.equal("operator_dystrybucyjny" in TEKSTY.pola_nazwy, false);
   assert.equal("rodzaj_faktury" in TEKSTY.pola_nazwy, false);
+  for (const k of ["podglad_plik", "podglad_lista_zip", "podglad_z_pliku"]) assert.equal(k in TEKSTY, false, k);
+});
+
+test("instrukcja pobrania pliku: strona robi odnośnik z frazy, która jest w tekście dokładnie raz", () => {
+  assert.equal(TEKSTY.plik_instrukcja.split("jak go pobrać z eLicznika").length, 2);
 });
 
 test("N22: każdy klucz użyty na stronie istnieje", () => {

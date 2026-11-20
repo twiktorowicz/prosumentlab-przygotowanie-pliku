@@ -242,8 +242,10 @@ async function proba() {
   sprawdz("zapis_gdzie stale pod przyciskiem, zgoda_bez stale pod polem zgody", stale.zapis && stale.zgoda, JSON.stringify(stale));
   sprawdz("powód: brak plików", (await tekstEl("#zapis-powod")) === "Najpierw wybierz plik godzinowy.");
   sprawdz("bez uwagi o brakujących polach na pustej stronie", await js("document.querySelector('#faktura-brak').hidden"));
-  const odnosniki = await js("[...document.querySelectorAll('#zgoda-wiecej a, #wersja a')].map(a => [a.getAttribute('href'), a.target, a.rel])");
-  sprawdz("odnośniki zgody i repozytorium w nowej karcie", odnosniki.length === 2 && odnosniki.every(([, t, r]) => t === "_blank" && r === "noopener noreferrer"), JSON.stringify(odnosniki));
+  const odnosniki = await js("[...document.querySelectorAll('#plik-instrukcja a, #zgoda-wiecej a, #wersja a')].map(a => [a.getAttribute('href'), a.target, a.rel])");
+  sprawdz("odnośniki instrukcji, zgody i repozytorium w nowej karcie", odnosniki.length === 3 && odnosniki.every(([, t, r]) => t === "_blank" && r === "noopener noreferrer"), JSON.stringify(odnosniki));
+  sprawdz("krok 1: „jak go pobrać z eLicznika” prowadzi do /elicznik/", await js(`(() => { const p = document.querySelector('#plik-instrukcja'); const a = p.querySelector('a');
+    return p.previousElementSibling.dataset.tekst === 'pliki_wybor' && p.textContent === 'Nie masz jeszcze pliku? Zobacz, jak go pobrać z eLicznika.' && a.textContent === 'jak go pobrać z eLicznika' && a.getAttribute('href') === '/elicznik/'; })()`));
   sprawdz("odnośnik zgody poza etykietą pola", await js("!document.querySelector('#zgoda-etykieta a') && document.querySelector('#zgoda-wiecej a').getAttribute('href') === '/prywatnosc/'"));
   sprawdz("zakres przed dodaniem pliku: zakres_pusty", (await tekstEl("#zakres")) === "Zakres pojawi się tu po dodaniu pliku.");
   const faktura = await js(`(() => ({
@@ -293,21 +295,37 @@ async function proba() {
   const zakres = await tekstEl("#zakres");
   sprawdz("zakres: 13 miesięcy, jedna kropka po „r.”", zakres.includes("Dane obejmują 13 pełnych miesięcy z rzędu, od stycznia 2025 r. do stycznia 2026 r. To wystarczy do pełnego raportu.") && !zakres.includes(".."), zakres.slice(0, 110));
   sprawdz("po przyjęciu pliku uwaga o brakujących polach", !(await js("document.querySelector('#faktura-brak').hidden")) && (await tekstEl("#faktura-brak")).startsWith("Bez tych danych nie przygotujemy raportu: sposób wyceny energii oddanej, sprzedawca,"), await tekstEl("#faktura-brak"));
-  const podgladPlikow = await js(`(() => ({
-    tabela: [...document.querySelector('#podglad table').querySelectorAll('tbody tr td:first-child')].map(td => td.textContent),
-    lista: [...document.querySelectorAll('#podglad .lista-zip li')].map(li => li.textContent),
-    json: [...document.querySelectorAll('#podglad h3.mono')].map(h => h.textContent),
-    numer: document.querySelectorAll('#podglad .numer, #podglad .numer-zgloszenia').length,
-  }))()`);
-  sprawdz("podgląd: przy pomiary_N.csv nazwa pliku, z którego powstał",
-    JSON.stringify(podgladPlikow.tabela) === JSON.stringify(["pomiary_1.csvz pliku eLicznik_2025.csv", "pomiary_2.csvz pliku eLicznik_styczen.csv"]), JSON.stringify(podgladPlikow.tabela));
-  sprawdz("podgląd: lista plików z opisami",
+  const podgladPlikow = await js(`(() => {
+    const pod = document.querySelector('#podglad');
+    const csv = pod.querySelector('details[data-plik="pomiary_1.csv"]');
+    return {
+      akapity: [...pod.children].filter(e => e.tagName === 'P').map(p => p.textContent),
+      lista: [...pod.querySelectorAll('.lista-zip > li > details.plik-zip > summary')].map(s => s.textContent),
+      details: pod.querySelectorAll('details').length,
+      otwarte: pod.querySelectorAll('details[open]').length,
+      widoczne: [...pod.querySelectorAll('pre, table')].filter(e => e.checkVisibility()).length,
+      tabele: [...pod.querySelectorAll('table')].map(t => t.closest('details')?.dataset.plik ?? ''),
+      miesiace: pod.querySelector('details.miesiace > summary')?.textContent,
+      dane: [...csv.querySelectorAll('dt')].map(d => d.textContent),
+      wiersze: csv.querySelector('pre').textContent.split('\\n').length,
+      numer: pod.querySelectorAll('.numer, .numer-zgloszenia').length,
+      starych: pod.querySelectorAll('h3, .z-pliku').length,
+    };
+  })()`);
+  sprawdz("podgląd: wstęp i stan zgody na górze", JSON.stringify(podgladPlikow.akapity) === JSON.stringify(["Wybierz nazwę pliku, żeby zobaczyć, co jest w środku.", "Zgoda niezaznaczona"]), JSON.stringify(podgladPlikow.akapity));
+  sprawdz("podgląd: lista plików w kolejności z ZIP-a, z opisami i nazwą pliku źródłowego",
     JSON.stringify(podgladPlikow.lista) === JSON.stringify([
       "zgloszenie.jsonopis zgłoszenia: wersja narzędzia, numer, zakres danych i uwagi",
       "pomiary_1.csvdane godzinowe z pliku eLicznik_2025.csv, bez numeru punktu poboru i numeru płatnika",
       "pomiary_2.csvdane godzinowe z pliku eLicznik_styczen.csv, bez numeru punktu poboru i numeru płatnika",
     ]), JSON.stringify(podgladPlikow.lista));
-  sprawdz("podgląd: zgloszenie.json pokazany, bez zdania z numerem zgłoszenia", podgladPlikow.json[0] === "zgloszenie.json" && podgladPlikow.numer === 0, JSON.stringify(podgladPlikow));
+  sprawdz("podgląd: po przeliczeniu żaden <details> nie jest otwarty, treść niewidoczna",
+    podgladPlikow.details === 4 && podgladPlikow.otwarte === 0 && podgladPlikow.widoczne === 0, JSON.stringify(podgladPlikow));
+  sprawdz("podgląd: tabela miesięcy tylko w osobnym <details>, bez tabeli plików i listy na końcu",
+    JSON.stringify(podgladPlikow.tabele) === JSON.stringify(["miesiace"]) && podgladPlikow.miesiace === "Energia pobrana i oddana w każdym miesiącu" && podgladPlikow.starych === 0);
+  sprawdz("podgląd: pomiary_N.csv z wierszami, godzinami, usuniętymi kolumnami i pierwszymi wierszami",
+    JSON.stringify(podgladPlikow.dane) === JSON.stringify(["Wiersze", "Pierwsza godzina", "Ostatnia godzina", "Usunięte kolumny"]) && podgladPlikow.wiersze === 6, JSON.stringify(podgladPlikow));
+  sprawdz("podgląd: bez zdania z numerem zgłoszenia", podgladPlikow.numer === 0);
 
   // 4. Formularz.
   await js(`(() => {
@@ -374,6 +392,21 @@ async function proba() {
     sprawdz("w ZIP-ie nie ma numerów PPE ani płatnika ani nazw plików", !tekstZip.includes("590000000000000010") && !tekstZip.includes("10000001") && !tekstZip.includes("eLicznik"));
     const inst = JSON.parse(new TextDecoder().decode(zawartosc[2].bajty));
     sprawdz("instalacja.json z list miesiąca i roku", inst.magazyn_od === "2022-04" && inst.zmiany?.[0]?.miesiac === "2025-07", JSON.stringify(inst));
+    // Rozwinięcie pozycji kliknięciem w nazwę; treść ma być równa bajtom pliku w zapisanym ZIP-ie.
+    const rozwiniete = await js(`(() => {
+      const wynik = {};
+      for (const n of ['zgloszenie.json', 'faktury.json']) {
+        const d = document.querySelector('#podglad details[data-plik="' + n + '"]');
+        d.querySelector('summary').click();
+        const pre = d.querySelector('pre');
+        wynik[n] = { open: d.open, widoczny: pre.checkVisibility(), tekst: pre.textContent };
+      }
+      return wynik;
+    })()`);
+    for (const [i, n] of [[0, "zgloszenie.json"], [1, "faktury.json"]]) {
+      sprawdz(`podgląd: rozwinięty ${n} równy bajtom pliku w ZIP-ie`,
+        rozwiniete[n].open && rozwiniete[n].widoczny && rozwiniete[n].tekst === new TextDecoder("utf-8", { fatal: true }).decode(zawartosc[i].bajty));
+    }
   }
   sprawdz("komunikat po zapisie widoczny", !(await js("document.querySelector('#po-zapisie').hidden")) && (await tekstEl("#po-zapisie-tekst")).startsWith(`Plik prosumentlab_${numer}.zip jest zapisany`));
   const mailto = await js("document.querySelector('#mailto').href");
@@ -412,6 +445,8 @@ async function proba() {
   await wpisz("#p-moc_pv_kwp", "10", "input");
   await czekaj(500);
   sprawdz("zmiana pola po zapisie chowa komunikat, przycisk wiadomości i wysyłki", await js("document.querySelector('#po-zapisie').hidden && document.querySelector('#udostepnij-przycisk').getClientRects().length === 0"));
+  const poPrzeliczeniu = await js("[...document.querySelectorAll('#podglad details')].filter(d => d.open).map(d => d.dataset.plik)");
+  sprawdz("przeliczenie po zmianie pola nie zwija pozycji rozwiniętych przez klienta", JSON.stringify(poPrzeliczeniu) === JSON.stringify(["zgloszenie.json", "faktury.json"]), JSON.stringify(poPrzeliczeniu));
 
   // 5b. System opustów, cena dynamiczna, korekta, okres: na wypełnionym formularzu.
   const klik = async (wybor) => {
@@ -421,7 +456,7 @@ async function proba() {
   const widoczny = (wybor) => js(`(() => { const e = document.querySelector(${JSON.stringify(wybor)}); return Boolean(e) && !e.hidden && e.getClientRects().length > 0; })()`);
   await klik('input[name="system_rozliczenia"][value="opusty"]');
   // Treść faktury.json z podglądu: <pre> tuż po nagłówku z nazwą pliku.
-  const fakturyWPodgladzie = () => js("[...document.querySelectorAll('#podglad h3')].find(h => h.textContent === 'faktury.json')?.nextElementSibling.textContent ?? ''");
+  const fakturyWPodgladzie = () => js("document.querySelector('#podglad details[data-plik=\"faktury.json\"] pre')?.textContent ?? ''");
   let podgladTeraz = await fakturyWPodgladzie();
   sprawdz("opusty: pozostałe pola faktury schowane, tekst o opustach widoczny",
     !(await widoczny("#faktura-pola")) && !(await widoczny("#p-okres_od")) && (await tekstEl('[data-pole="system_rozliczenia"] .uwaga')).startsWith("Raportu dla systemu opustów jeszcze nie mamy"));

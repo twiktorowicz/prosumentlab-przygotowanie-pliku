@@ -167,12 +167,28 @@ function funkcja(nazwa) {
   return m[1];
 }
 
-test("podgląd: zgloszenie.json jak pozostałe pliki JSON, bez zdania z numerem, z opisami plików", () => {
+test("podgląd zwarty: wstęp, zgoda, lista plików z ZIP-a jako zwinięte <details>, osobno miesiące", () => {
   const podglad = funkcja("pokazPodglad");
-  assert.match(podglad, /\["zgloszenie\.json", "faktury\.json", "instalacja\.json"\]/);
   assert.doesNotMatch(podglad, /zdanieZNumerem/, "numer zgłoszenia tylko przy zgodzie i po zapisie");
-  assert.match(podglad, /t\("podglad_z_pliku"/);
+  for (const k of ["podglad_wstep", "podglad_miesiace_tytul", "podglad_zgoda_tak", "podglad_zgoda_nie"]) assert.match(podglad, new RegExp(`"${k}"`), k);
+  for (const k of ["podglad_plik", "podglad_lista_zip", "podglad_z_pliku"]) assert.doesNotMatch(MAIN, new RegExp(`"${k}"`), `${k}: tabela plików i lista na końcu znikają`);
   for (const k of ["opis_zgloszenie", "opis_faktury", "opis_instalacja", "opis_pomiary"]) assert.match(MAIN, new RegExp(`"${k}"`), k);
+  assert.match(podglad, /wynik\.zawartosc\.map\(/, "pozycje w kolejności z ZIP-a");
+  assert.match(podglad, /el\("details", \{ klasa: "plik-zip", "data-plik": /);
+  assert.doesNotMatch(MAIN, /\bopen: true\b/, "domyślnie zwinięte");
+});
+
+test("podgląd: przeliczenie nie zwija pozycji rozwiniętej przez klienta", () => {
+  const podglad = funkcja("pokazPodglad");
+  const przed = podglad.indexOf("replaceChildren");
+  assert.ok(przed > 0);
+  assert.match(podglad.slice(0, przed), /\$\$\("#podglad details\[data-plik\]"\)\.filter\(\(d\) => d\.open\)/, "otwarte zapamiętane przed przebudową");
+  assert.match(podglad.slice(przed), /\.open = true/, "i odtworzone po niej");
+});
+
+test("krok 1: odnośnik „jak go pobrać z eLicznika” do /elicznik/ w nowej karcie", () => {
+  assert.match(HTML, /<p data-tekst="pliki_wybor"><\/p>\s*<p id="plik-instrukcja"><\/p>/);
+  assert.match(MAIN, /el\("a", \{ href: "\/elicznik\/", target: "_blank", rel: "noopener noreferrer"/);
 });
 
 test("zapis: zapis_gdzie stale pod przyciskiem, zgoda_bez stale pod polem zgody", () => {

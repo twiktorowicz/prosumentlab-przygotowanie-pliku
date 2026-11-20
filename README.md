@@ -118,9 +118,10 @@ domowej. Używaj wyłącznie plików z generatora.
      ceny i cenę; przy cenie dynamicznej jest jedno pole ceny, bez stref; rozwiń „Co to znaczy?”
      przy kilku polach i „Opłaty stałe (nieobowiązkowe)”;
    - zaznacz odpowiedzi o instalacji, w tym miesiąc i rok magazynu, i zgodę;
-   - sprawdź podgląd (także `zgloszenie.json` i opisy plików na liście) i przycisk
-     „Zapisz plik ZIP”; plik ma nazwę `prosumentlab_<numer>.zip` z numerem ze strony
-     (iOS: aplikacja Pliki, Pobrane; Android: Pobrane). Chrome może przy zapisie ostrzegać
+   - sprawdź podgląd: pliki z ZIP-a i tabela miesięcy są zwinięte, rozwiń kilka z nich;
+     rozwinięte zostają po zmianie pola. Potem dotknij „Zapisz plik ZIP”; plik ma nazwę
+     `prosumentlab_<numer>.zip` z numerem ze strony (iOS: aplikacja Pliki, Pobrane;
+     Android: Pobrane). Chrome może przy zapisie ostrzegać
      o pobieraniu pliku bez HTTPS; wtedy wybierz „Zachowaj”;
    - przycisk „Wyślij plik ZIP” pokazuje się tylko na stronie z HTTPS, więc w odbiorze przez sieć
      domową go nie ma;
@@ -129,8 +130,9 @@ domowej. Używaj wyłącznie plików z generatora.
      dołączony. **Nie wysyłaj tej wiadomości**, zamknij ją bez wysyłania;
    - dodaj `dwa_punkty.csv`: plik dostaje komunikat o kilku punktach poboru, zapis jest
      zablokowany; po usunięciu pliku zapis znów działa;
-   - otwórz odnośnik w zgodzie: informacja o przetwarzaniu danych otwiera się w nowej karcie,
-     a dane na stronie narzędzia zostają.
+   - otwórz odnośnik w zgodzie i odnośnik „jak go pobrać z eLicznika” w kroku 1: każdy otwiera
+     się w nowej karcie (na serwerze lokalnym ze stroną błędu 404), a dane na stronie narzędzia
+     zostają.
 7. Zatrzymaj serwer (Ctrl+C) i usuń pliki próbne z telefonu.
 
 ## Jak sprawdzić kopię na stronie
