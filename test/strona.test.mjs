@@ -10,12 +10,13 @@ import { ROK_MIN, ROK_MAKS } from "../app/lib/kalendarz.js";
 const MAIN = readFileSync(fileURLToPath(new URL("../app/main.js", import.meta.url)), "utf8");
 const HTML = readFileSync(fileURLToPath(new URL("../app/index.html", import.meta.url)), "utf8");
 
-test("ZIP powstaje tylko przy zapisie: utworzZipZgloszenia wołane wyłącznie w funkcji zapisz", () => {
-  const funkcja = /\nfunction zapisz\(\) \{\n([\s\S]*?)\n\}\n/.exec(MAIN);
-  assert.ok(funkcja, "funkcja zapisz");
-  assert.equal((MAIN.match(/\butworzZipZgloszenia\s*\(/g) ?? []).length, 1);
-  assert.match(funkcja[1], /\butworzZipZgloszenia\s*\(/);
+test("ZIP powstaje tylko przy zapisie albo wysyłce: utworzZipZgloszenia wołane w zapisz i udostepnij", () => {
+  assert.equal((MAIN.match(/\butworzZipZgloszenia\s*\(/g) ?? []).length, 2);
+  assert.match(funkcja("zapisz"), /\butworzZipZgloszenia\s*\(/);
+  assert.match(funkcja("udostepnij"), /\butworzZipZgloszenia\s*\(/);
+  assert.doesNotMatch(funkcja("przelicz"), /\butworzZipZgloszenia\s*\(/);
   assert.doesNotMatch(MAIN, /wynik\.zip\b/);
+  assert.doesNotMatch(MAIN, /plikDoWyslania/, "bez zapamiętanego ZIP-a do wysyłki");
 });
 
 test("pliki przetwarzane raz: strona nie woła przygotujZgloszenie, tylko przygotujPliki i zlozZgloszenie", () => {
@@ -24,8 +25,10 @@ test("pliki przetwarzane raz: strona nie woła przygotujZgloszenie, tylko przygo
   assert.match(MAIN, /\bzlozZgloszenie\s*\(/);
 });
 
+// Wyjątki: odnośnik do pobrania ZIP-a (download) i odnośnik mailto: na adresie po zapisie, który
+// otwiera program poczty, a nie kartę (tak jak „Napisz wiadomość” w index.html).
 test("odnośniki otwierają się w nowej karcie, żeby nie skasować danych z pamięci strony", () => {
-  const odnosniki = [...MAIN.matchAll(/el\("a",\s*\{([^}]*)\}/g)].map((m) => m[1]).filter((a) => /href:/.test(a) && !/download/.test(a));
+  const odnosniki = [...MAIN.matchAll(/el\("a",\s*\{([^}]*)\}/g)].map((m) => m[1]).filter((a) => /href:/.test(a) && !/download/.test(a) && !/href: mailto\b/.test(a));
   assert.ok(odnosniki.length >= 2, "odnośnik zgody i repozytorium");
   for (const a of odnosniki) {
     assert.match(a, /target:\s*"_blank"/, a);
@@ -191,8 +194,16 @@ test("krok 1: odnośnik „jak go pobrać z eLicznika” do /jak-pobrac-dane-z-e
   assert.match(MAIN, /el\("a", \{ href: "\/jak-pobrac-dane-z-elicznika\/", target: "_blank", rel: "noopener noreferrer"/);
 });
 
-test("zapis: zapis_gdzie stale pod przyciskiem, zgoda_bez stale pod polem zgody", () => {
-  assert.match(HTML, /id="zapisz" data-tekst="zapisz_przycisk"><\/button>\s*<p class="podpowiedz" data-tekst="zapis_gdzie"><\/p>/);
+test("zapis: przyciski zapisu i wysyłki w jednym rzędzie, pod nimi potwierdzenie zapisu, potem zapis_gdzie", () => {
+  assert.match(HTML, new RegExp([
+    '<div class="przyciski-zapisu">',
+    '<button type="button" class="przycisk" id="zapisz" data-tekst="zapisz_przycisk"></button>',
+    '<button type="button" class="przycisk" id="udostepnij-przycisk" data-tekst="udostepnij_przycisk" hidden></button>',
+    "</div>",
+    '<p class="potwierdzenie" id="zapis-gotowe" aria-live="polite" hidden></p>',
+    '<p class="uwaga" id="zapis-ponownie" data-tekst="zapis_ponownie" hidden></p>',
+    '<p class="podpowiedz" data-tekst="zapis_gdzie"></p>',
+  ].map((s) => s.replace(/[()]/g, "\\$&")).join("\\s*")));
   assert.match(HTML, /<span id="zgoda-wiecej"><\/span>\s*<\/div>\s*<p class="podpowiedz" data-tekst="zgoda_bez"><\/p>/);
 });
 
@@ -201,12 +212,54 @@ test("po zapisie: mailto_bez_zalacznika tuż nad przyciskiem wiadomości", () =>
   assert.match(funkcja("zapisz"), /t\("mailto_bez_zalacznika", \{ plik: wynik\.nazwaZip \}\)/);
 });
 
-test("wysyłka: przycisk tylko, gdy canShare przyjmuje plik; share z plikiem i tytułem; AbortError to nie błąd", () => {
-  assert.match(HTML, /<div id="udostepnij" hidden>\s*<button type="button" class="przycisk" id="udostepnij-przycisk" data-tekst="udostepnij_przycisk"><\/button>\s*<p class="podpowiedz" data-tekst="udostepnij_podpowiedz"><\/p>/);
+test("po zapisie: adres w po_zapisie to odnośnik z tym samym mailto: co „Napisz wiadomość”", () => {
   const zapis = funkcja("zapisz");
-  assert.match(zapis, /new File\(\[zip\], wynik\.nazwaZip, \{ type: "application\/zip" \}\)/);
+  assert.match(zapis, /const mailto = odnosnikMailto\(/);
+  assert.match(zapis, /\$\("#mailto"\)\.href = mailto;/);
+  assert.match(zapis, /el\("a", \{ href: mailto, tekst: ADRES \}\)/);
+  assert.equal((MAIN.match(/\bodnosnikMailto\(/g) ?? []).length, 1, "mailto liczony w jednym miejscu");
+});
+
+test("potwierdzenie zapisu: zapis_gotowe po każdym zapisie, zapis_ponownie po zapisie innej treści", () => {
+  const zapis = funkcja("zapisz");
+  assert.match(zapis, /t\("zapis_gotowe", \{ plik: wynik\.nazwaZip \}\)/);
+  assert.match(zapis, /rowneBajty\(poprzedniZapis, zip\)/);
+  assert.match(zapis, /pokaz\(\$\("#zapis-ponownie"\), zapisanoRozne\)/);
+  // Zmiana pola chowa potwierdzenie razem z komunikatem po zapisie.
+  const przel = funkcja("przelicz");
+  assert.match(przel, /pokaz\(\$\("#zapis-gotowe"\), false\)/);
+  assert.match(przel, /pokaz\(\$\("#zapis-ponownie"\), false\)/);
+});
+
+test("wysyłka: przycisk od chwili, gdy zapis jest możliwy; ZIP przy kliknięciu; share z plikiem, tytułem i tekstem", () => {
+  assert.match(HTML, /<div id="udostepnij" hidden>\s*<p class="podpowiedz" data-tekst="udostepnij_podpowiedz"><\/p>\s*<button type="button" class="przycisk-tekstowy" id="kopiuj-adres" data-tekst="kopiuj_adres" hidden><\/button>\s*<\/div>\s*<p class="uwaga" id="udostepnij-niedostepne" data-tekst="udostepnij_niedostepne" hidden><\/p>/);
+  assert.doesNotMatch(/<div id="po-zapisie"[\s\S]*?<\/section>/.exec(HTML)[0], /udostepnij/, "wysyłka nie czeka na zapis");
   assert.match(MAIN, /navigator\.canShare\(\{ files: \[plik\] \}\)/);
+  const zapisPokaz = funkcja("pokazZapis");
+  assert.match(zapisPokaz, /wynik\.moznaZapisac && !udostepnianieOdrzucone && mozeUdostepnic\(PLIK_PROBNY\)/);
   const udostepnij = funkcja("udostepnij");
-  assert.match(udostepnij, /navigator\.share\(\{ files: \[plik\], title: t\("udostepnij_tytul", \{ numer: NUMER \}\) \}\)/);
-  assert.match(udostepnij, /AbortError/);
+  assert.match(udostepnij, /new File\(\[utworzZipZgloszenia\(wynik\)\], wynik\.nazwaZip, \{ type: "application\/zip" \}\)/);
+  assert.match(udostepnij, /navigator\.share\(\{ files: \[plik\], title: t\("udostepnij_tytul", \{ numer: NUMER \}\), text: t\("udostepnij_tekst", \{ numer: NUMER \}\) \}\)/);
+  // Okno udostępniania wymaga gestu użytkownika: przed share() nie ma await.
+  assert.ok(udostepnij.includes("await navigator.share("));
+  assert.doesNotMatch(udostepnij.slice(0, udostepnij.indexOf("await navigator.share(")), /\bawait\b/);
+});
+
+test("wysyłka: odmowa inna niż AbortError chowa przycisk do końca wizyty i pokazuje udostepnij_niedostepne", () => {
+  const udostepnij = funkcja("udostepnij");
+  assert.match(udostepnij, /blad\?\.name === "AbortError"/);
+  assert.match(udostepnij, /udostepnianieOdrzucone = true;/);
+  assert.doesNotMatch(udostepnij, /console\./, "komunikat na stronie zamiast wpisu w konsoli");
+  assert.match(MAIN, /\nlet udostepnianieOdrzucone = false;/);
+  assert.equal((MAIN.match(/udostepnianieOdrzucone = /g) ?? []).length, 2, "ustawiane tylko na starcie i przy odmowie");
+  assert.match(funkcja("pokazZapis"), /pokaz\(\$\("#udostepnij-niedostepne"\), udostepnianieOdrzucone\)/);
+});
+
+test("kopiowanie adresu: tylko z dostępem do schowka, writeText z adresem, na chwilę kopiuj_adres_gotowe", () => {
+  assert.match(funkcja("pokazZapis"), /typeof navigator\.clipboard\?\.writeText === "function"/);
+  const kopiuj = funkcja("kopiujAdres");
+  assert.match(kopiuj, /await navigator\.clipboard\.writeText\(ADRES\)/);
+  assert.match(kopiuj, /t\("kopiuj_adres_gotowe"\)/);
+  assert.match(kopiuj, /setTimeout\(/);
+  assert.match(kopiuj, /t\("kopiuj_adres"\)/);
 });

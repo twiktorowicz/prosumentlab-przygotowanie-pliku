@@ -123,8 +123,15 @@ domowej. Używaj wyłącznie plików z generatora.
      `prosumentlab_<numer>.zip` z numerem ze strony (iOS: aplikacja Pliki, Pobrane;
      Android: Pobrane). Chrome może przy zapisie ostrzegać
      o pobieraniu pliku bez HTTPS; wtedy wybierz „Zachowaj”;
+   - po zapisie pod przyciskami jest „Zapisano plik …”; po zmianie pola i ponownym zapisie
+     dochodzi komunikat, że to nowsza wersja pliku;
    - przycisk „Wyślij plik ZIP” pokazuje się tylko na stronie z HTTPS, więc w odbiorze przez sieć
-     domową go nie ma;
+     domową go nie ma. Na stronie z HTTPS stoi obok „Zapisz plik ZIP”, gdy tylko zapis jest możliwy,
+     a wcześniejszy zapis nie jest potrzebny. W Safari i Chrome na iPhonie otwiera okno
+     udostępniania z plikiem w załączniku i numerem zgłoszenia w treści; obok jest „Kopiuj adres”.
+     W Chrome na komputerze i na Androidzie przeglądarka odmawia (Chromium nie udostępnia plików
+     ZIP): po pierwszym dotknięciu przycisk znika, a w jego miejscu jest komunikat, żeby zapisać
+     plik i użyć „Napisz wiadomość”;
    - dotknij „Napisz wiadomość”: aplikacja poczty otwiera się z adresem raporty@prosumentlab.pl,
      tematem z numerem zgłoszenia i treścią z przypomnieniem o załączniku; plik nie jest
      dołączony. **Nie wysyłaj tej wiadomości**, zamknij ją bez wysyłania;

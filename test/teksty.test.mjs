@@ -105,6 +105,26 @@ test("teksty usunięte razem z polami, których strona już nie ma", () => {
   for (const k of ["podglad_plik", "podglad_lista_zip", "podglad_z_pliku"]) assert.equal(k in TEKSTY, false, k);
 });
 
+test("wysyłka i zapis w wersji 0.1.2: teksty zatwierdzone przez właściciela, słowo w słowo", () => {
+  const ZATWIERDZONE = {
+    udostepnij_niedostepne: "Ta przeglądarka nie wyśle pliku ZIP. Zapisz plik, a potem użyj przycisku „Napisz wiadomość” i dołącz go do wiadomości.",
+    udostepnij_tekst: "Dane do darmowego raportu, zgłoszenie {numer}",
+    udostepnij_podpowiedz: "Wybierz aplikację poczty, a w polu adresata wpisz albo wklej raporty@prosumentlab.pl. Plik będzie już w załączniku.",
+    kopiuj_adres: "Kopiuj adres",
+    kopiuj_adres_gotowe: "Adres skopiowany",
+    zapis_gotowe: "Zapisano plik {plik}.",
+    zapis_ponownie: "To nowsza wersja pliku. Wyślij tylko ją; jeśli przeglądarka dopisała do nazwy (1) albo (2), wybierz plik z najwyższym numerem.",
+    zapis_gdzie: "Plik zapisze się na tym urządzeniu: na komputerze zwykle w folderze Pobrane, na iPhonie w aplikacji Pliki (w Safari w folderze „Pobrane rzeczy”, w Chrome w folderze „Chrome”). Narzędzie niczego nie wysyła.",
+    podglad_tytul: "Zawartość pliku ZIP",
+    podglad_wstep: "Tak wygląda plik, który zapiszesz na swoim urządzeniu i wyślesz sam. Wybierz nazwę pliku, żeby zobaczyć, co jest w środku.",
+  };
+  for (const [klucz, tekst] of Object.entries(ZATWIERDZONE)) assert.equal(TEKSTY[klucz], tekst, klucz);
+});
+
+test("po zapisie: strona robi odnośnik z adresu, który jest w tekście dokładnie raz", () => {
+  assert.equal(TEKSTY.po_zapisie.split("raporty@prosumentlab.pl").length, 2);
+});
+
 test("instrukcja pobrania pliku: strona robi odnośnik z frazy, która jest w tekście dokładnie raz", () => {
   assert.equal(TEKSTY.plik_instrukcja.split("jak go pobrać z eLicznika").length, 2);
 });

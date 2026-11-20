@@ -26,7 +26,7 @@ import { utworzZip } from "./zip.js";
 import { crc32 } from "./crc32.js";
 import { sprawdzBezpiecznik } from "./bezpiecznik.js";
 
-export const WERSJA = "0.1.1";
+export const WERSJA = "0.1.2";
 export const ADRES = "raporty@prosumentlab.pl";
 export const MAKS_PLIKOW = 10;
 // Tryb narzędzia i operator sieci, od którego pochodzi plik w tym trybie (eLicznik to portal

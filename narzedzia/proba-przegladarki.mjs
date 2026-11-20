@@ -236,10 +236,19 @@ async function proba() {
   sprawdz("czcionką o stałej szerokości tylko numer", czcionki.dzieci === 1 && /Mono/.test(czcionki.numer) && !/Mono/.test(czcionki.zdanie), JSON.stringify(czcionki));
   sprawdz("zapis zablokowany bez plików", await js("document.querySelector('#zapisz').disabled"));
   const stale = await js(`(() => {
-    const pod = (wybor, klucz) => { const e = document.querySelector(wybor).nextElementSibling; return e?.dataset.tekst === klucz && !e.hidden && e.getClientRects().length > 0; };
-    return { zapis: pod('#zapisz', 'zapis_gdzie'), zgoda: document.querySelector('.zgoda').nextElementSibling?.dataset.tekst === 'zgoda_bez' && !document.querySelector('.zgoda').nextElementSibling.hidden };
+    const rzad = document.querySelector('.przyciski-zapisu');
+    const gotowe = rzad.nextElementSibling, ponownie = gotowe?.nextElementSibling, gdzie = ponownie?.nextElementSibling;
+    return {
+      zapis: document.querySelector('#zapisz').parentElement === rzad && gotowe?.id === 'zapis-gotowe' && gotowe.hidden &&
+        ponownie?.id === 'zapis-ponownie' && ponownie.hidden && gdzie?.dataset.tekst === 'zapis_gdzie' && !gdzie.hidden && gdzie.getClientRects().length > 0,
+      wysylka: document.querySelector('#udostepnij-przycisk').hidden && document.querySelector('#udostepnij-niedostepne').hidden,
+      zgoda: document.querySelector('.zgoda').nextElementSibling?.dataset.tekst === 'zgoda_bez' && !document.querySelector('.zgoda').nextElementSibling.hidden,
+    };
   })()`);
-  sprawdz("zapis_gdzie stale pod przyciskiem, zgoda_bez stale pod polem zgody", stale.zapis && stale.zgoda, JSON.stringify(stale));
+  sprawdz("zapis_gdzie stale pod przyciskami (potwierdzenie zapisu schowane), bez wysyłki przy zablokowanym zapisie, zgoda_bez stale pod polem zgody",
+    stale.zapis && stale.wysylka && stale.zgoda, JSON.stringify(stale));
+  sprawdz("teksty 0.1.2: tytuł kroku 6 i zapis_gdzie", (await tekstEl("#krok-podglad h2")) === "Zawartość pliku ZIP" &&
+    (await tekstEl('[data-tekst="zapis_gdzie"]')).startsWith("Plik zapisze się na tym urządzeniu: na komputerze zwykle w folderze Pobrane, na iPhonie w aplikacji Pliki"));
   sprawdz("powód: brak plików", (await tekstEl("#zapis-powod")) === "Najpierw wybierz plik godzinowy.");
   sprawdz("bez uwagi o brakujących polach na pustej stronie", await js("document.querySelector('#faktura-brak').hidden"));
   const odnosniki = await js("[...document.querySelectorAll('#plik-instrukcja a, #zgoda-wiecej a, #wersja a')].map(a => [a.getAttribute('href'), a.target, a.rel])");
@@ -312,7 +321,7 @@ async function proba() {
       starych: pod.querySelectorAll('h3, .z-pliku').length,
     };
   })()`);
-  sprawdz("podgląd: wstęp i stan zgody na górze", JSON.stringify(podgladPlikow.akapity) === JSON.stringify(["Wybierz nazwę pliku, żeby zobaczyć, co jest w środku.", "Zgoda niezaznaczona"]), JSON.stringify(podgladPlikow.akapity));
+  sprawdz("podgląd: wstęp i stan zgody na górze", JSON.stringify(podgladPlikow.akapity) === JSON.stringify(["Tak wygląda plik, który zapiszesz na swoim urządzeniu i wyślesz sam. Wybierz nazwę pliku, żeby zobaczyć, co jest w środku.", "Zgoda niezaznaczona"]), JSON.stringify(podgladPlikow.akapity));
   sprawdz("podgląd: lista plików w kolejności z ZIP-a, z opisami i nazwą pliku źródłowego",
     JSON.stringify(podgladPlikow.lista) === JSON.stringify([
       "zgloszenie.jsonopis zgłoszenia: wersja narzędzia, numer, zakres danych i uwagi",
@@ -374,13 +383,27 @@ async function proba() {
 
   // 5. Zapis ZIP-a i wiadomość. Najpierw przeglądarka bez udostępniania plików.
   const numer = (await tekstEl("#numer")).match(/[0-9A-Z]{4}-[0-9A-Z]{4}/)[0];
+  // Zapisy liczone ze zdarzeń przeglądarki: plik o tej samej nazwie przeglądarka sterowana przez
+  // DevTools nadpisuje, zamiast dopisać (1), więc liczba plików w katalogu nie rośnie.
+  const zapisy = () => zdarzenia.filter((z) => z.method === "Browser.downloadWillBegin").length;
+  // Czeka, aż przeglądarka zacznie `n`-ty zapis i plik pojawi się w katalogu (najwyżej 10 s).
+  const czekajNaPobrane = async (n) => {
+    const plik = () => readdirSync(join(PRACA, "pobrane")).includes(`prosumentlab_${numer}.zip`);
+    for (let i = 0; i < 40 && !(zapisy() >= n && plik()); i++) await czekaj(250);
+    return zapisy();
+  };
+  const pobrane = () => readdirSync(join(PRACA, "pobrane")).filter((n) => n.endsWith(".zip"));
+  const przelicz = async () => {
+    await wpisz("#p-oplata_mocowa_zl_mies", "12,34");
+    await czekaj(300);
+  };
   await js("Object.defineProperty(navigator, 'canShare', { value: undefined, configurable: true })");
+  await przelicz();
+  sprawdz("bez navigator.canShare przycisku „Wyślij plik ZIP” nie ma, choć zapis jest możliwy",
+    !(await js("document.querySelector('#zapisz').disabled")) && await js("document.querySelector('#udostepnij-przycisk').hidden && document.querySelector('#udostepnij').hidden"));
   await js("document.querySelector('#zapisz').click()");
-  let nazwaZip = null;
-  for (let i = 0; i < 40 && !nazwaZip; i++) {
-    await czekaj(250);
-    nazwaZip = readdirSync(join(PRACA, "pobrane")).find((n) => n === `prosumentlab_${numer}.zip`) ?? null;
-  }
+  await czekajNaPobrane(1);
+  const nazwaZip = pobrane().find((n) => n === `prosumentlab_${numer}.zip`) ?? null;
   sprawdz("ZIP zapisany pod nazwą z numerem", Boolean(nazwaZip), nazwaZip ?? "brak");
   if (nazwaZip) {
     const zip = readFileSync(join(PRACA, "pobrane", nazwaZip));
@@ -415,38 +438,101 @@ async function proba() {
   sprawdz("po zapisie: mailto_bez_zalacznika tuż nad „Napisz wiadomość”", await js(`(() => { const u = document.querySelector('#mailto').previousElementSibling;
     return u.id === 'mailto-bez-zalacznika' && u.className === 'uwaga' && u.textContent === 'Wiadomość otworzy się bez załącznika. Zanim ją wyślesz, dołącz plik prosumentlab_${numer}.zip z folderu Pobrane.'; })()`));
   sprawdz("po zapisie: po_zapisie bez zdania o przycisku", (await tekstEl("#po-zapisie-tekst")) === `Plik prosumentlab_${numer}.zip jest zapisany na Twoim urządzeniu. Teraz wyślij go na adres raporty@prosumentlab.pl. Nie załączaj pliku pobranego prosto z eLicznika ani faktury.`);
-  sprawdz("bez navigator.canShare przycisku „Wyślij plik ZIP” nie ma", await js("document.querySelector('#udostepnij').hidden && document.querySelector('#udostepnij-przycisk').getClientRects().length === 0"));
+  const adresWTekscie = await js(`(() => { const a = [...document.querySelectorAll('#po-zapisie-tekst a')];
+    return a.map(x => ({ tekst: x.textContent, href: x.href, target: x.target, rowny: x.href === document.querySelector('#mailto').href })); })()`);
+  sprawdz("po zapisie: adres w po_zapisie to odnośnik z tym samym mailto: co „Napisz wiadomość”",
+    adresWTekscie.length === 1 && adresWTekscie[0].tekst === "raporty@prosumentlab.pl" && adresWTekscie[0].rowny && adresWTekscie[0].target === "", JSON.stringify(adresWTekscie));
+  const ZAPISANO = `Zapisano plik prosumentlab_${numer}.zip.`;
+  const potwierdzenie = () => js(`(() => { const g = document.querySelector('#zapis-gotowe'), p = document.querySelector('#zapis-ponownie');
+    return { pod: document.querySelector('.przyciski-zapisu').nextElementSibling === g, gotowe: !g.hidden && g.getClientRects().length > 0 && g.textContent,
+      ponownie: !p.hidden && p.getClientRects().length > 0 && p.textContent }; })()`);
+  let pz = await potwierdzenie();
+  sprawdz("po zapisie: zapis_gotowe tuż pod przyciskami, bez zapis_ponownie", pz.pod && pz.gotowe === ZAPISANO && pz.ponownie === false, JSON.stringify(pz));
+  sprawdz("bez navigator.canShare przycisku „Wyślij plik ZIP” nie ma także po zapisie", await js("document.querySelector('#udostepnij').hidden && document.querySelector('#udostepnij-przycisk').getClientRects().length === 0"));
+  await js("document.querySelector('#zapisz').click()");
+  const poDrugim = await czekajNaPobrane(2);
+  pz = await potwierdzenie();
+  sprawdz("drugi zapis tej samej treści: zapis_gotowe bez zapis_ponownie", poDrugim === 2 && pz.gotowe === ZAPISANO && pz.ponownie === false, `${poDrugim} ${JSON.stringify(pz)}`);
 
-  // Atrapy udostępniania: canShare przyjmuje pliki, share zapisuje, z czym je wywołano.
+  // Atrapy udostępniania i schowka: canShare przyjmuje pliki, share i writeText zapisują, z czym je
+  // wywołano; share odmawia błędem o nazwie z window.__odmowa.
   await js(`(() => {
     window.__udostepnione = [];
+    window.__skopiowane = [];
+    window.__odmowa = null;
     Object.defineProperty(navigator, 'canShare', { value: (d) => Array.isArray(d?.files) && d.files.length > 0, configurable: true });
     Object.defineProperty(navigator, 'share', { value: async (d) => {
-      window.__udostepnione.push({ pliki: d.files.map(f => ({ nazwa: f.name, typ: f.type, rozmiar: f.size, zip: f instanceof File })), tytul: d.title });
-      if (window.__przerwij) throw new DOMException('Zamknięte', 'AbortError');
+      window.__udostepnione.push({ pliki: d.files.map(f => ({ nazwa: f.name, typ: f.type, rozmiar: f.size, zip: f instanceof File })), tytul: d.title, tekst: d.text });
+      if (window.__odmowa) throw new DOMException('Odmowa', window.__odmowa);
     }, configurable: true });
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText: async (t) => { window.__skopiowane.push(t); } }, configurable: true });
   })()`);
-  await js("document.querySelector('#zapisz').click()");
-  await czekaj(800);
-  sprawdz("z navigator.canShare przycisk „Wyślij plik ZIP” po zapisie", await js("!document.querySelector('#udostepnij').hidden && document.querySelector('#udostepnij-przycisk').textContent === 'Wyślij plik ZIP'") &&
-    (await js("document.querySelector('#udostepnij-przycisk').nextElementSibling.textContent")).startsWith("Wybierz aplikację poczty"));
-  await js("document.querySelector('#udostepnij-przycisk').click()");
+  await przelicz();
+  const wysylka = await js(`(() => { const b = document.querySelector('#udostepnij-przycisk'), k = document.querySelector('#kopiuj-adres');
+    return { obok: b.parentElement.className === 'przyciski-zapisu' && b.previousElementSibling?.id === 'zapisz', widoczny: !b.hidden && b.getClientRects().length > 0,
+      napis: b.textContent, podpowiedz: document.querySelector('#udostepnij .podpowiedz').textContent, blok: !document.querySelector('#udostepnij').hidden,
+      kopiuj: !k.hidden && k.textContent, poZapisie: document.querySelector('#po-zapisie').hidden && document.querySelector('#zapis-gotowe').hidden }; })()`);
+  sprawdz("z navigator.canShare przycisk „Wyślij plik ZIP” obok przycisku zapisu, zanim cokolwiek zapisano na nowo",
+    wysylka.obok && wysylka.widoczny && wysylka.napis === "Wyślij plik ZIP" && wysylka.blok, JSON.stringify(wysylka));
+  sprawdz("pod przyciskami: udostepnij_podpowiedz i „Kopiuj adres”",
+    wysylka.podpowiedz === "Wybierz aplikację poczty, a w polu adresata wpisz albo wklej raporty@prosumentlab.pl. Plik będzie już w załączniku." && wysylka.kopiuj === "Kopiuj adres");
+  sprawdz("przeliczenie po zmianie pola chowa potwierdzenie zapisu i komunikat po zapisie", wysylka.poZapisie);
+  await wpisz("#p-oplata_mocowa_zl_mies", "12,341");
   await czekaj(300);
+  sprawdz("przy zablokowanym zapisie przycisku wysyłki nie ma", await js("document.querySelector('#zapisz').disabled && document.querySelector('#udostepnij-przycisk').hidden && document.querySelector('#udostepnij').hidden"));
+  await przelicz();
+  const przedWysylka = zapisy();
+  await js("document.querySelector('#udostepnij-przycisk').click()");
+  await czekaj(800);
   const udostepnione = await js("window.__udostepnione");
-  sprawdz("share: jeden plik prosumentlab_<numer>.zip, typ application/zip, tytuł z numerem",
+  sprawdz("share bez zapisu: jeden plik prosumentlab_<numer>.zip, typ application/zip, tytuł i tekst z numerem",
     udostepnione.length === 1 && udostepnione[0].pliki.length === 1 && udostepnione[0].pliki[0].nazwa === `prosumentlab_${numer}.zip` &&
     udostepnione[0].pliki[0].typ === "application/zip" && udostepnione[0].pliki[0].rozmiar > 0 && udostepnione[0].pliki[0].zip &&
-    udostepnione[0].tytul === `Zgłoszenie ${numer} do ProsumentLab`, JSON.stringify(udostepnione));
-  await js("window.__przerwij = true; document.querySelector('#udostepnij-przycisk').click()");
+    udostepnione[0].tytul === `Zgłoszenie ${numer} do ProsumentLab` && udostepnione[0].tekst === `Dane do darmowego raportu, zgłoszenie ${numer}`, JSON.stringify(udostepnione));
+  sprawdz("wysyłka niczego nie zapisuje na urządzeniu i nie pokazuje potwierdzenia zapisu",
+    zapisy() === przedWysylka && await js("document.querySelector('#zapis-gotowe').hidden && document.querySelector('#po-zapisie').hidden"));
+  await js("document.querySelector('#kopiuj-adres').click()");
+  await czekaj(200);
+  sprawdz("„Kopiuj adres”: writeText z adresem, na chwilę „Adres skopiowany”",
+    JSON.stringify(await js("window.__skopiowane")) === JSON.stringify(["raporty@prosumentlab.pl"]) && (await tekstEl("#kopiuj-adres")) === "Adres skopiowany");
+  await czekaj(2200);
+  sprawdz("po chwili przycisk znów mówi „Kopiuj adres”", (await tekstEl("#kopiuj-adres")) === "Kopiuj adres");
+  await js("Object.defineProperty(navigator, 'clipboard', { value: undefined, configurable: true })");
+  await przelicz();
+  sprawdz("bez dostępu do schowka przycisku „Kopiuj adres” nie ma, wysyłka zostaje",
+    await js("document.querySelector('#kopiuj-adres').hidden && !document.querySelector('#udostepnij-przycisk').hidden"));
+  await js("window.__odmowa = 'AbortError'; document.querySelector('#udostepnij-przycisk').click()");
   await czekaj(300);
-  sprawdz("zamknięcie okna udostępniania (AbortError) nie psuje strony", (await js("window.__udostepnione.length")) === 2 && !(await js("document.querySelector('#po-zapisie').hidden")));
-  await zrzut("3-po-zapisie-komputer", 1280);
-  await szerokosc(1280);
+  sprawdz("zamknięcie okna udostępniania (AbortError) nie chowa przycisku",
+    (await js("window.__udostepnione.length")) === 2 && await js("!document.querySelector('#udostepnij-przycisk').hidden && document.querySelector('#udostepnij-niedostepne').hidden"));
+
   await wpisz("#p-moc_pv_kwp", "10", "input");
   await czekaj(500);
-  sprawdz("zmiana pola po zapisie chowa komunikat, przycisk wiadomości i wysyłki", await js("document.querySelector('#po-zapisie').hidden && document.querySelector('#udostepnij-przycisk').getClientRects().length === 0"));
   const poPrzeliczeniu = await js("[...document.querySelectorAll('#podglad details')].filter(d => d.open).map(d => d.dataset.plik)");
   sprawdz("przeliczenie po zmianie pola nie zwija pozycji rozwiniętych przez klienta", JSON.stringify(poPrzeliczeniu) === JSON.stringify(["zgloszenie.json", "faktury.json"]), JSON.stringify(poPrzeliczeniu));
+  await js("document.querySelector('#zapisz').click()");
+  const poTrzecim = await czekajNaPobrane(3);
+  pz = await potwierdzenie();
+  sprawdz("zapis innej treści w tej samej wizycie: zapis_gotowe i zapis_ponownie", poTrzecim === 3 && pz.gotowe === ZAPISANO &&
+    pz.ponownie === "To nowsza wersja pliku. Wyślij tylko ją; jeśli przeglądarka dopisała do nazwy (1) albo (2), wybierz plik z najwyższym numerem.", `${poTrzecim} ${JSON.stringify(pz)}`);
+  await zrzut("3-po-zapisie-komputer", 1280);
+  await zrzut("3-po-zapisie-telefon", 390);
+  await szerokosc(1280);
+
+  await js("window.__odmowa = 'NotAllowedError'; document.querySelector('#udostepnij-przycisk').click()");
+  await czekaj(300);
+  const odmowa = async () => js(`(() => { const n = document.querySelector('#udostepnij-niedostepne');
+    return { przycisk: document.querySelector('#udostepnij-przycisk').hidden && document.querySelector('#udostepnij').hidden,
+      komunikat: !n.hidden && n.getClientRects().length > 0 && n.textContent, miejsce: n.previousElementSibling?.id }; })()`);
+  const NIEDOSTEPNE = "Ta przeglądarka nie wyśle pliku ZIP. Zapisz plik, a potem użyj przycisku „Napisz wiadomość” i dołącz go do wiadomości.";
+  let od = await odmowa();
+  sprawdz("odmowa NotAllowedError: przycisk i podpowiedź znikają, w ich miejscu udostepnij_niedostepne",
+    (await js("window.__udostepnione.length")) === 3 && od.przycisk && od.komunikat === NIEDOSTEPNE && od.miejsce === "udostepnij", JSON.stringify(od));
+  await zrzut("4-odmowa-wysylki-telefon", 390);
+  await szerokosc(1280);
+  await przelicz();
+  od = await odmowa();
+  sprawdz("po odmowie przycisk nie wraca po przeliczeniu (do końca wizyty)", od.przycisk && od.komunikat === NIEDOSTEPNE && !(await js("document.querySelector('#zapisz').disabled")), JSON.stringify(od));
 
   // 5b. System opustów, cena dynamiczna, korekta, okres: na wypełnionym formularzu.
   const klik = async (wybor) => {

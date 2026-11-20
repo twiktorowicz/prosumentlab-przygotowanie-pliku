@@ -6,7 +6,7 @@
 
 import { TEKSTY } from "./teksty.js";
 import { tekst, znacznikPolski, dataPolska, miesiacZRokiem, kwhDoWyswietlenia } from "./lib/odmiana.js";
-import { przygotujPliki, zlozZgloszenie, utworzZipZgloszenia, odnosnikMailto, WERSJA, MAKS_PLIKOW } from "./lib/zgloszenie.js";
+import { przygotujPliki, zlozZgloszenie, utworzZipZgloszenia, odnosnikMailto, WERSJA, ADRES, MAKS_PLIKOW } from "./lib/zgloszenie.js";
 import { losowyNumer } from "./lib/numer.js";
 import { LIMIT_BAJTOW } from "./lib/dekodowanie.js";
 import { liczbaZCyfr } from "./lib/kwoty.js";
@@ -44,7 +44,14 @@ let przygotowane = null; // odczyt plików: liczony tylko przy zmianie listy pli
 let wynikiPlikow = new Map(); // pozycja na liście -> wynik z przygotujPliki
 let wynik = null;
 let odlozone = null;
-let plikDoWyslania = null; // zapisany ZIP jako File, gdy przeglądarka umie go udostępnić
+let czekaPrzeliczenie = false; // zmiana pola czeka na odłożone przeliczenie
+// Udostępnianie odrzucone przez przeglądarkę innym błędem niż zamknięcie okna: przycisk wysyłki
+// znika do końca wizyty.
+let udostepnianieOdrzucone = false;
+// Zapisy w tej wizycie: bajty ostatniego ZIP-a i to, czy kiedykolwiek zapisano ZIP o innej treści.
+// Gdy treści były różne, każdy kolejny zapis różni się od co najmniej jednego wcześniejszego.
+let poprzedniZapis = null;
+let zapisanoRozne = false;
 
 function dzisiaj() {
   const d = new Date();
@@ -582,16 +589,26 @@ function pokazZapis() {
   }
   powod.textContent = tresc;
   pokaz(powod, Boolean(tresc));
+
+  // Wysyłka: przycisk obok przycisku zapisu od chwili, gdy zapis jest możliwy, jeśli przeglądarka
+  // umie udostępnić plik ZIP i wcześniej go nie odrzuciła.
+  const wysylka = wynik.moznaZapisac && !udostepnianieOdrzucone && mozeUdostepnic(PLIK_PROBNY);
+  pokaz($("#udostepnij-przycisk"), wysylka);
+  pokaz($("#udostepnij"), wysylka);
+  pokaz($("#kopiuj-adres"), wysylka && typeof navigator.clipboard?.writeText === "function");
+  pokaz($("#udostepnij-niedostepne"), udostepnianieOdrzucone);
 }
 
-// `poZapisie`: przeliczenie wywołane samym zapisem; każde inne chowa komunikat po zapisie
-// i przycisk wiadomości, bo zapisany ZIP przestał odpowiadać danym na stronie.
+// `poZapisie`: przeliczenie wywołane samym zapisem; każde inne chowa potwierdzenie zapisu,
+// komunikat po zapisie i przycisk wiadomości, bo zapisany ZIP przestał odpowiadać danym na stronie.
 function przelicz({ poZapisie = false } = {}) {
   clearTimeout(odlozone);
+  czekaPrzeliczenie = false;
   warunki();
   if (!poZapisie) {
+    pokaz($("#zapis-gotowe"), false);
+    pokaz($("#zapis-ponownie"), false);
     pokaz($("#po-zapisie"), false);
-    plikDoWyslania = null;
   }
   try {
     wynik = zlozZgloszenie({
@@ -620,6 +637,8 @@ function pokazBladLogiki() {
   wynik = null;
   $("#blokady").replaceChildren(komunikat("blad", t("blad_nieznany")));
   $("#zapisz").disabled = true;
+  pokaz($("#udostepnij-przycisk"), false);
+  pokaz($("#udostepnij"), false);
   const powod = $("#zapis-powod");
   powod.textContent = t("zapis_blokada");
   pokaz(powod, true);
@@ -627,6 +646,7 @@ function pokazBladLogiki() {
 
 function przeliczPozniej() {
   clearTimeout(odlozone);
+  czekaPrzeliczenie = true;
   odlozone = setTimeout(przelicz, 250);
 }
 
@@ -642,17 +662,32 @@ function zapisz() {
   a.remove();
   // Adres pliku musi chwilę żyć, zwłaszcza w Safari na iOS.
   setTimeout(() => URL.revokeObjectURL(adres), 60000);
-  $("#po-zapisie-tekst").textContent = t("po_zapisie", { plik: wynik.nazwaZip });
-  const plik = new File([zip], wynik.nazwaZip, { type: "application/zip" });
-  plikDoWyslania = mozeUdostepnic(plik) ? plik : null;
-  pokaz($("#udostepnij"), plikDoWyslania !== null);
+
+  if (poprzedniZapis && !rowneBajty(poprzedniZapis, zip)) zapisanoRozne = true;
+  poprzedniZapis = zip;
+  $("#zapis-gotowe").textContent = t("zapis_gotowe", { plik: wynik.nazwaZip });
+  pokaz($("#zapis-gotowe"), true);
+  pokaz($("#zapis-ponownie"), zapisanoRozne);
+
+  // Adres w tekście po zapisie i „Napisz wiadomość” prowadzą do tej samej wiadomości.
+  const mailto = odnosnikMailto(t("mailto_temat", { numer: NUMER }), t("mailto_tresc", { plik: wynik.nazwaZip }));
+  const [przed, po] = t("po_zapisie", { plik: wynik.nazwaZip }).split(ADRES);
+  $("#po-zapisie-tekst").replaceChildren(...(po === undefined ? [przed] : [przed, el("a", { href: mailto, tekst: ADRES }), po]));
   $("#mailto-bez-zalacznika").textContent = t("mailto_bez_zalacznika", { plik: wynik.nazwaZip });
-  $("#mailto").href = odnosnikMailto(t("mailto_temat", { numer: NUMER }), t("mailto_tresc", { plik: wynik.nazwaZip }));
+  $("#mailto").href = mailto;
   pokaz($("#po-zapisie"), true);
 }
 
+function rowneBajty(a, b) {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
+  return true;
+}
+
 // Systemowe okno udostępniania z plikiem w załączniku. Przeglądarka pozwala na nie zwykle tylko
-// na stronie z HTTPS; bez tego przycisku nie ma, a zostaje wiadomość bez załącznika.
+// na stronie z HTTPS; bez tego przycisku nie ma, a zostaje wiadomość bez załącznika. Obsługę
+// sprawdza pusty plik o tej samej nazwie i typie co ZIP zgłoszenia.
+const PLIK_PROBNY = new File([], "zgloszenie.zip", { type: "application/zip" });
 function mozeUdostepnic(plik) {
   try {
     return typeof navigator.canShare === "function" && Boolean(navigator.canShare({ files: [plik] }));
@@ -661,15 +696,39 @@ function mozeUdostepnic(plik) {
   }
 }
 
+// ZIP powstaje przy kliknięciu z danych na stronie, bez wcześniejszego zapisu. Okno udostępniania
+// wymaga gestu użytkownika, więc przed share() nie ma await. Odmowa inna niż zamknięcie okna
+// (Chromium nie udostępnia plików ZIP) chowa przycisk do końca wizyty i pokazuje komunikat.
 async function udostepnij() {
-  const plik = plikDoWyslania;
-  if (!plik) return;
+  if (czekaPrzeliczenie) przelicz();
+  if (!wynik?.moznaZapisac || udostepnianieOdrzucone) return;
+  const plik = new File([utworzZipZgloszenia(wynik)], wynik.nazwaZip, { type: "application/zip" });
   try {
-    await navigator.share({ files: [plik], title: t("udostepnij_tytul", { numer: NUMER }) });
+    await navigator.share({ files: [plik], title: t("udostepnij_tytul", { numer: NUMER }), text: t("udostepnij_tekst", { numer: NUMER }) });
   } catch (blad) {
     // AbortError: klient zamknął okno udostępniania bez wyboru aplikacji; to nie błąd.
-    if (blad?.name !== "AbortError") console.error(blad);
+    if (blad?.name === "AbortError") return;
+    udostepnianieOdrzucone = true;
+    if (wynik) pokazZapis();
+    else pokaz($("#udostepnij-niedostepne"), true);
   }
+}
+
+// Adres do schowka, żeby wkleić go w polu adresata. Po skopiowaniu przycisk na chwilę mówi,
+// że adres jest skopiowany. Nieudane kopiowanie niczego nie zmienia.
+let powrotNapisu = null;
+async function kopiujAdres() {
+  const przycisk = $("#kopiuj-adres");
+  try {
+    await navigator.clipboard.writeText(ADRES);
+  } catch {
+    return;
+  }
+  przycisk.textContent = t("kopiuj_adres_gotowe");
+  clearTimeout(powrotNapisu);
+  powrotNapisu = setTimeout(() => {
+    przycisk.textContent = t("kopiuj_adres");
+  }, 2000);
 }
 
 // --- Start -----------------------------------------------------------------------------------
@@ -705,6 +764,7 @@ function start() {
   });
   $("#zapisz").addEventListener("click", zapisz);
   $("#udostepnij-przycisk").addEventListener("click", udostepnij);
+  $("#kopiuj-adres").addEventListener("click", kopiujAdres);
   przelicz();
 }
 

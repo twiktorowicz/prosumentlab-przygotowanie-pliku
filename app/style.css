@@ -370,7 +370,21 @@ input[inputmode="decimal"] { font-family: var(--mono); max-width: 12em; }
 .dane-pliku { display: grid; grid-template-columns: max-content 1fr; gap: 4px 16px; margin: 0 0 8px; font-size: 15px; }
 .dane-pliku dt { color: var(--pomocniczy); }
 .dane-pliku dd { margin: 0; overflow-wrap: anywhere; }
+/* Krok zapisu: przycisk zapisu i wysyłki obok siebie, na wąskim ekranie jeden pod drugim. */
+.przyciski-zapisu { display: flex; flex-wrap: wrap; gap: 12px; }
+.potwierdzenie {
+  border-radius: 10px;
+  padding: 8px 12px;
+  margin: 12px 0 0;
+  background: var(--tlo-potwierdzenia);
+  color: var(--zielen);
+  font-size: 15px;
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
+#zapis-ponownie { margin: 8px 0 0; }
 #udostepnij { margin: 0 0 16px; }
+#udostepnij .podpowiedz { margin-bottom: 0; }
 
 /* Podgląd. */
 .tabela-przewijana { overflow-x: auto; margin: 0 0 16px; }

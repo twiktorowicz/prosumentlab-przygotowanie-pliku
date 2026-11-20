@@ -242,15 +242,21 @@
 
     <section class="krok" id="krok-zapis">
       <h2 data-tekst="krok_zapis"></h2>
-      <button type="button" class="przycisk" id="zapisz" data-tekst="zapisz_przycisk"></button>
+      <div class="przyciski-zapisu">
+        <button type="button" class="przycisk" id="zapisz" data-tekst="zapisz_przycisk"></button>
+        <button type="button" class="przycisk" id="udostepnij-przycisk" data-tekst="udostepnij_przycisk" hidden></button>
+      </div>
+      <p class="potwierdzenie" id="zapis-gotowe" aria-live="polite" hidden></p>
+      <p class="uwaga" id="zapis-ponownie" data-tekst="zapis_ponownie" hidden></p>
       <p class="podpowiedz" data-tekst="zapis_gdzie"></p>
+      <div id="udostepnij" hidden>
+        <p class="podpowiedz" data-tekst="udostepnij_podpowiedz"></p>
+        <button type="button" class="przycisk-tekstowy" id="kopiuj-adres" data-tekst="kopiuj_adres" hidden></button>
+      </div>
+      <p class="uwaga" id="udostepnij-niedostepne" data-tekst="udostepnij_niedostepne" hidden></p>
       <p class="uwaga" id="zapis-powod" aria-live="polite" hidden></p>
       <div id="po-zapisie" aria-live="polite" hidden>
         <p id="po-zapisie-tekst"></p>
-        <div id="udostepnij" hidden>
-          <button type="button" class="przycisk" id="udostepnij-przycisk" data-tekst="udostepnij_przycisk"></button>
-          <p class="podpowiedz" data-tekst="udostepnij_podpowiedz"></p>
-        </div>
         <p class="uwaga" id="mailto-bez-zalacznika"></p>
         <a class="przycisk przycisk-drugi" id="mailto" data-tekst="mailto_przycisk"></a>
       </div>
