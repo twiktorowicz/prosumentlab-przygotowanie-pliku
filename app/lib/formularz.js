@@ -35,10 +35,10 @@ const LISTY = {
 const STREFY = { g11: 1, g12: 2, g12w: 2, g13: 3 };
 const MAKS_STREF_INNA = 4;
 
-// W kolejności pól formularza. Opłaty stałe są nieobowiązkowe: gdy ich nie ma, bierze się je
-// z cennika sprzedawcy i taryfy operatora.
+// W kolejności pytań na ekranie (tak je wymienia komunikat o brakujących polach). Opłaty stałe są
+// nieobowiązkowe: gdy ich nie ma, bierze się je z cennika sprzedawcy i taryfy operatora.
 export const OBOWIAZKOWE_R = [
-  "system_rozliczenia", "sprzedawca", "taryfa", "okres_od", "okres_do", "rodzaj_ceny", "cena_energii_netto_zl_kwh",
+  "system_rozliczenia", "sprzedawca", "okres_od", "okres_do", "rodzaj_ceny", "taryfa", "cena_energii_netto_zl_kwh",
 ];
 
 // Kolejność kluczy grupy R w faktury.json (format bez zmian, niezależnie od kolejności pól).
@@ -89,9 +89,29 @@ function czytajMiesiac(tekst) {
   return { ok: true, wartosc: m[0] };
 }
 
-// Miesiąc faktury: okres od pierwszego do ostatniego dnia miesiąca (długość miesiąca z kalendarza,
-// luty w latach przestępnych ma 29 dni). Faktury za miesiąc bieżący jeszcze nie ma, więc miesiąc
-// bieżący i późniejsze są błędem; RRRR-MM porównane jako tekst dają kolejność z kalendarza.
+// Okres faktury za jeden miesiąc RRRR-MM: od pierwszego do ostatniego dnia (długość miesiąca
+// z kalendarza, luty w latach przestępnych ma 29 dni). Zły miesiąc albo pusty tekst: null.
+// Strona wpisuje te daty, gdy klient przechodzi z miesiąca do pól dat („inny okres”).
+export function okresMiesiaca(tekst) {
+  const m = typeof tekst === "string" ? czytajMiesiac(tekst) : { ok: false };
+  if (!m.ok) return null;
+  const [rok, miesiac] = m.wartosc.split("-").map(liczbaZCyfr);
+  return { od: `${m.wartosc}-01`, do: `${m.wartosc}-${String(dniMiesiaca(rok, miesiac)).padStart(2, "0")}` };
+}
+
+// Sprzedawca z listy wpisany w polu „inny”: nazwa po ujednoliceniu (małe litery, bez polskich
+// znaków, znaki inne niż litery i cyfry jako spacje) zawiera jako osobne słowo albo frazę jedną
+// z nazw. Tylko podpowiedź na stronie: bez błędu, bez uwagi w zgłoszeniu.
+const NAZWY_Z_LISTY = ["tauron", "pge", "enea", "energa", "eon", "e on", "pstryk"];
+export function sprzedawcaZListy(tekst) {
+  if (typeof tekst !== "string" || tekst.length > 120) return false;
+  const t = tekst.normalize("NFD").replace(/\p{M}/gu, "").toLowerCase().replace(/ł/g, "l").replace(/[^a-z0-9]+/g, " ");
+  return NAZWY_Z_LISTY.some((nazwa) => ` ${t} `.includes(` ${nazwa} `));
+}
+
+// Miesiąc faktury: okres od pierwszego do ostatniego dnia miesiąca (okresMiesiaca). Faktury za
+// miesiąc bieżący jeszcze nie ma, więc miesiąc bieżący i późniejsze są błędem; RRRR-MM porównane
+// jako tekst dają kolejność z kalendarza.
 // Strona podaje wybór z dwóch list; „RRRR-” albo „-MM” znaczy, że wybrano tylko jedną część.
 function czytajMiesiacFaktury(tekst, r, bledy, dzisiaj) {
   const niepelny = typeof tekst === "string" && /^(\d{4}-|-\d{2})$/.test(tekst.trim());
@@ -104,9 +124,9 @@ function czytajMiesiacFaktury(tekst, r, bledy, dzisiaj) {
     bledy.push({ pole: "okres_miesiac", kod: "faktura_miesiac_biezacy" });
     return;
   }
-  const [rok, miesiac] = m.wartosc.split("-").map(liczbaZCyfr);
-  r.okres_od = `${m.wartosc}-01`;
-  r.okres_do = `${m.wartosc}-${String(dniMiesiaca(rok, miesiac)).padStart(2, "0")}`;
+  const okres = okresMiesiaca(m.wartosc);
+  r.okres_od = okres.od;
+  r.okres_do = okres.do;
 }
 
 function czytajFakture(f, bledy, brakujace, uwagi, { operator, dzisiaj }) {
@@ -120,7 +140,8 @@ function czytajFakture(f, bledy, brakujace, uwagi, { operator, dzisiaj }) {
     if (pusty(f[nazwa])) return;
     const w = typeof f[nazwa] === "string" ? czytaj(f[nazwa]) : { ok: false };
     if (w.ok) r[nazwa] = w.wartosc;
-    else bledy.push({ pole: nazwa, kod });
+    // Kod z odczytu, gdy go podaje (cena w groszach), w pozostałych przypadkach kod pola.
+    else bledy.push({ pole: nazwa, kod: w.kod ?? kod });
   };
 
   wybor("system_rozliczenia");
@@ -169,7 +190,7 @@ function czytajFakture(f, bledy, brakujace, uwagi, { operator, dzisiaj }) {
       } else {
         const ceny = cena.map((c) => (typeof c === "string" ? czytajCene(c) : { ok: false }));
         const zle = ceny.findIndex((c) => !c.ok);
-        if (zle >= 0) bledy.push({ pole: `cena_energii_netto_zl_kwh[${zle}]`, kod: "faktura_cena_format" });
+        if (zle >= 0) bledy.push({ pole: `cena_energii_netto_zl_kwh[${zle}]`, kod: ceny[zle].kod ?? "faktura_cena_format" });
         else r.cena_energii_netto_zl_kwh = ceny.map((c) => c.wartosc);
       }
     }

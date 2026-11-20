@@ -9,6 +9,57 @@ import { ROK_MIN, ROK_MAKS } from "../app/lib/kalendarz.js";
 
 const MAIN = readFileSync(fileURLToPath(new URL("../app/main.js", import.meta.url)), "utf8");
 const HTML = readFileSync(fileURLToPath(new URL("../app/index.html", import.meta.url)), "utf8");
+const CSS = readFileSync(fileURLToPath(new URL("../app/style.css", import.meta.url)), "utf8");
+
+// main.js bez komentarzy: linie zaczynające się od „//” i komentarze na końcu linii po odstępie.
+// Adresy w tekstach („https://…”) mają przed „//” dwukropek, więc zostają.
+const KOD = MAIN.replace(/^[ \t]*\/\/.*\n/gm, "").replace(/[ \t]+\/\/ .*$/gm, "");
+
+// Ciało funkcji o danej nazwie z main.js: od linii nagłówka „function nazwa(” do pierwszej linii
+// „}” na początku linii. Bez wyrażenia na parametry, więc domyślne wartości z nawiasami nie
+// psują wycinania; dwie definicje o tej samej nazwie to błąd testu.
+function funkcja(nazwa) {
+  const naglowki = [...MAIN.matchAll(new RegExp(`\\n(?:async )?function ${nazwa}\\(`, "g"))];
+  assert.equal(naglowki.length, 1, `jedna definicja: ${nazwa}`);
+  const koniecNaglowka = MAIN.indexOf("\n", naglowki[0].index + 1);
+  assert.ok(MAIN.slice(naglowki[0].index, koniecNaglowka).endsWith("{"), `${nazwa}: nagłówek kończy się „{”`);
+  const koniec = MAIN.indexOf("\n}\n", koniecNaglowka);
+  assert.ok(koniec > 0, nazwa);
+  return MAIN.slice(koniecNaglowka + 1, koniec);
+}
+
+// Atrybuty każdego wywołania el("a", { … }) z main.js, z liczeniem zagnieżdżonych nawiasów
+// klamrowych (wstawki ${…} w szablonach); nawiasy w tekstach w cudzysłowie się nie liczą.
+function atrybutyOdnosnikow() {
+  const wynik = [];
+  for (const m of MAIN.matchAll(/el\("a",\s*\{/g)) {
+    let glebokosc = 1;
+    let cudzyslow = null;
+    let i = m.index + m[0].length;
+    for (; i < MAIN.length && glebokosc > 0; i++) {
+      const z = MAIN[i];
+      if (cudzyslow) {
+        if (z === "\\") i++;
+        else if (z === cudzyslow) cudzyslow = null;
+      } else if (z === '"' || z === "'") cudzyslow = z;
+      else if (z === "{") glebokosc++;
+      else if (z === "}") glebokosc--;
+    }
+    assert.equal(glebokosc, 0, "domknięte atrybuty el(\"a\", …)");
+    wynik.push(MAIN.slice(m.index + m[0].length, i - 1));
+  }
+  return wynik;
+}
+
+test("pomocnicze testu: wycinanie funkcji i atrybutów odnośników działa na trudnych przypadkach", () => {
+  assert.match(funkcja("wartoscMiesiaca"), /const m = /, "parametr z domyślnym obiektem");
+  assert.match(funkcja("przelicz"), /zlozZgloszenie/, "parametr z domyślną wartością");
+  assert.match(funkcja("udostepnij"), /navigator\.share/, "funkcja async");
+  const repo = atrybutyOdnosnikow().find((a) => a.includes("ADRES_REPOZYTORIUM"));
+  assert.match(repo, /rel: "noopener noreferrer"/, "atrybuty po wstawce ze zmienną");
+  assert.doesNotMatch(KOD, /^\s*\/\//m, "bez linii komentarza");
+  assert.match(KOD, /https:\/\/github\.com\//, "adres w tekście zostaje");
+});
 
 test("ZIP powstaje tylko przy zapisie albo wysyłce: utworzZipZgloszenia wołane w zapisz i udostepnij", () => {
   assert.equal((MAIN.match(/\butworzZipZgloszenia\s*\(/g) ?? []).length, 2);
@@ -26,10 +77,10 @@ test("pliki przetwarzane raz: strona nie woła przygotujZgloszenie, tylko przygo
 });
 
 // Wyjątki: odnośnik do pobrania ZIP-a (download) i odnośnik mailto: na adresie po zapisie, który
-// otwiera program poczty, a nie kartę (tak jak „Otwórz wiadomość” w index.html).
+// otwiera program poczty, a nie kartę (tak jak „Napisz nową wiadomość” w index.html).
 test("odnośniki otwierają się w nowej karcie, żeby nie skasować danych z pamięci strony", () => {
-  const odnosniki = [...MAIN.matchAll(/el\("a",\s*\{([^}]*)\}/g)].map((m) => m[1]).filter((a) => /href:/.test(a) && !/download/.test(a) && !/href: mailto\b/.test(a));
-  assert.ok(odnosniki.length >= 2, "odnośnik zgody i repozytorium");
+  const odnosniki = atrybutyOdnosnikow().filter((a) => /href:/.test(a) && !/download/.test(a) && !/href: mailto\b/.test(a));
+  assert.equal(odnosniki.length, 3, "odnośnik zgody, instrukcji pobrania i repozytorium");
   for (const a of odnosniki) {
     assert.match(a, /target:\s*"_blank"/, a);
     assert.match(a, /rel:\s*"noopener noreferrer"/, a);
@@ -72,10 +123,15 @@ test("uwaga o miesiącu zmiany spoza zakresu ma styl uwagi, nie błędu", () => 
 });
 
 test("lista plików: limit 10 pozycji przed odczytem, odczyt z blokadą dodawania i usuwania", () => {
-  assert.match(MAIN, /MAKS_PLIKOW/, "strona używa limitu z modułu zgłoszenia");
-  assert.match(MAIN, /\$\("#wybor-plikow"\)\.disabled = /, "pole wyboru plików nieaktywne w trakcie odczytu");
-  assert.match(MAIN, /blad_za_duzo_plikow/);
-  assert.match(MAIN, /arrayBuffer\(\)/);
+  // Sprawdzane w kodzie bez komentarzy, żeby wzmianka w komentarzu nie zastąpiła kodu.
+  assert.match(KOD, /import \{[^}]*\bMAKS_PLIKOW\b[^}]*\} from "\.\/lib\/zgloszenie\.js"/, "limit z modułu zgłoszenia");
+  assert.match(KOD, /pliki\.slice\(0, MAKS_PLIKOW\)/, "odczyt tylko pierwszej dziesiątki");
+  assert.match(KOD, /if \(i >= MAKS_PLIKOW\) return \{ stan: "odrzucony", kod: "blad_za_duzo_plikow" \}/);
+  assert.match(KOD, /\$\("#wybor-plikow"\)\.disabled = czytanie/, "pole wyboru plików nieaktywne w trakcie odczytu");
+  assert.match(KOD, /arrayBuffer\(\)/);
+  // Etykieta-przycisk „Dodaj plik” wygląda na nieaktywną, gdy pole wyboru jest zablokowane.
+  assert.match(HTML, /<input class="ukryte-pole" type="file" id="wybor-plikow"[^>]*>\s*<label class="przycisk przycisk-drugi" for="wybor-plikow"/);
+  assert.match(CSS, /\.przycisk:disabled, \.przycisk\[aria-disabled="true"\], \.ukryte-pole:disabled \+ \.przycisk \{/);
 });
 
 // Fragment index.html od elementu z data-pole="nazwa" do następnego pola albo końca sekcji.
@@ -87,15 +143,22 @@ function blokPola(nazwa) {
   return reszta.slice(0, koniec);
 }
 
-test("sekcja faktury: wstęp, potem pola w kolejności z formularza", () => {
+test("sekcja faktury: wstęp, potem pola w kolejności pytań: grupa „Faktura”, grupa „Cena energii”", () => {
   const sekcja = /<section class="krok" id="krok-faktura">([\s\S]*?)<\/section>/.exec(HTML)[1];
   assert.ok(sekcja.indexOf('data-tekst="faktura_wstep"') < sekcja.indexOf("data-pole="), "wstęp przed polami");
   const pola = [...sekcja.matchAll(/data-pole="([a-z_]+)"/g)].map((m) => m[1]);
   assert.deepEqual(pola, [
-    "system_rozliczenia", "sprzedawca", "sprzedawca_nazwa", "taryfa", "taryfa_nazwa", "okres_miesiac", "okres_od", "okres_do", "rodzaj_faktury",
-    "rodzaj_ceny", "cena_energii_netto_zl_kwh", "oplata_mocowa_zl_mies", "oplata_abonamentowa_zl_mies",
+    "system_rozliczenia", "sprzedawca", "sprzedawca_nazwa", "okres_miesiac", "okres_od", "okres_do", "rodzaj_faktury",
+    "rodzaj_ceny", "taryfa", "taryfa_nazwa", "cena_energii_netto_zl_kwh", "oplata_mocowa_zl_mies", "oplata_abonamentowa_zl_mies",
     "oplata_stala_sieciowa_zl_mies", "oplata_przejsciowa_zl_mies", "oplaty_stale_inne",
   ]);
+  // Nagłówek „Faktura” przed sposobem rozliczenia, poza polami chowanymi przy opustach; nagłówek
+  // „Cena energii” w nich, tuż przed rodzajem ceny.
+  assert.match(sekcja, /<\/figure>\s*<h3 data-tekst="faktura_grupa_faktura"><\/h3>\s*<fieldset class="pole" data-pole="system_rozliczenia"/);
+  assert.match(sekcja, /<p class="blad" hidden><\/p>\s*<\/div>\s*<h3 data-tekst="faktura_grupa_cena"><\/h3>\s*<fieldset class="pole" data-pole="rodzaj_ceny"/);
+  const pola_ = sekcja.indexOf('id="faktura-pola"');
+  assert.ok(sekcja.indexOf("faktura_grupa_faktura") < pola_ && sekcja.indexOf("faktura_grupa_cena") > pola_);
+  assert.equal((HTML.match(/<h3 data-tekst="faktura_grupa_/g) ?? []).length, 2);
   assert.doesNotMatch(HTML, /operator_dystrybucyjny|pierwsze_oddanie/, "bez pytań o operatora i pierwsze oddanie");
 });
 
@@ -191,13 +254,6 @@ test("zakres przed dodaniem pliku: zakres_pusty", () => {
   assert.match(MAIN, /t\("zakres_pusty"\)/);
 });
 
-// Ciało funkcji o danej nazwie z main.js (do następnej funkcji na poziomie modułu).
-function funkcja(nazwa) {
-  const m = new RegExp(`\\n(?:async )?function ${nazwa}\\([^)]*\\) \\{\\n([\\s\\S]*?)\\n\\}\\n`).exec(MAIN);
-  assert.ok(m, nazwa);
-  return m[1];
-}
-
 test("podgląd zwarty: wstęp, zgoda, lista plików z ZIP-a jako zwinięte <details>, osobno miesiące", () => {
   const podglad = funkcja("pokazPodglad");
   assert.doesNotMatch(podglad, /zdanieZNumerem/, "numer zgłoszenia tylko przy zgodzie i po zapisie");
@@ -272,18 +328,17 @@ test("wiadomość w kroku 2: href dopiero po zapisie, zmiana pola znów ją wył
     /m\.removeAttribute\("aria-describedby"\)/, /m\.setAttribute\("aria-describedby", "mailto-najpierw-zapisz"\)/,
     /pokaz\(\$\("#mailto-najpierw-zapisz"\), !mailto\)/,
   ]) assert.match(wiad, r);
-  const przel = funkcja("przelicz");
-  const bezZapisu = /if \(!poZapisie\) \{([\s\S]*?)\n  \}/.exec(przel)?.[1] ?? "";
-  assert.match(bezZapisu, /ustawWiadomosc\(null\)/);
-  assert.match(bezZapisu, /pokaz\(\$\("#po-zapisie"\), false\)/);
+  const schowaj = funkcja("schowajPotwierdzenieZapisu");
+  assert.match(schowaj, /ustawWiadomosc\(null\)/);
+  assert.match(schowaj, /pokaz\(\$\("#po-zapisie"\), false\)/);
+  assert.match(funkcja("przelicz"), /if \(!poZapisie\) schowajPotwierdzenieZapisu\(\);/);
   assert.match(funkcja("zapisz"), /ustawWiadomosc\(mailto\)/);
-  assert.match(funkcja("pokazBladLogiki"), /ustawWiadomosc\(null\)/);
+  assert.match(funkcja("pokazBladLogiki"), /schowajPotwierdzenieZapisu\(\)/);
   // Wygląd nieaktywnego przycisku także dla odnośnika z aria-disabled.
-  const CSS = readFileSync(fileURLToPath(new URL("../app/style.css", import.meta.url)), "utf8");
-  assert.match(CSS, /\.przycisk:disabled, \.przycisk\[aria-disabled="true"\] \{/);
+  assert.match(CSS, /\.przycisk:disabled, \.przycisk\[aria-disabled="true"\]/);
 });
 
-test("po zapisie: adres w po_zapisie to odnośnik z tym samym mailto: co „Otwórz wiadomość”", () => {
+test("po zapisie: adres w po_zapisie to odnośnik z tym samym mailto: co „Napisz nową wiadomość”", () => {
   const zapis = funkcja("zapisz");
   assert.match(zapis, /const mailto = odnosnikMailto\(/);
   assert.match(zapis, /el\("a", \{ href: mailto, tekst: ADRES \}\)/);
@@ -297,9 +352,21 @@ test("potwierdzenie zapisu: zapis_gotowe po każdym zapisie, zapis_ponownie po z
   assert.match(zapis, /rowneBajty\(poprzedniZapis, zip\)/);
   assert.match(zapis, /pokaz\(\$\("#zapis-ponownie"\), zapisanoRozne\)/);
   // Zmiana pola chowa potwierdzenie razem z komunikatem po zapisie.
+  const schowaj = funkcja("schowajPotwierdzenieZapisu");
+  assert.match(schowaj, /pokaz\(\$\("#zapis-gotowe"\), false\)/);
+  assert.match(schowaj, /pokaz\(\$\("#zapis-ponownie"\), false\)/);
+});
+
+test("nieaktualne potwierdzenie zapisu: zmiana pola chowa je od razu, zapis niemożliwy też", () => {
+  // Kliknięcie zapisu w ciągu 250 ms po wpisaniu błędnej wartości nie może zostawić potwierdzenia
+  // i aktywnej wiadomości do starego pliku.
+  assert.match(funkcja("przeliczPozniej"), /schowajPotwierdzenieZapisu\(\);\n\s*odlozone = setTimeout\(przelicz, 250\);/);
   const przel = funkcja("przelicz");
-  assert.match(przel, /pokaz\(\$\("#zapis-gotowe"\), false\)/);
-  assert.match(przel, /pokaz\(\$\("#zapis-ponownie"\), false\)/);
+  const poZlozeniu = przel.indexOf("pokazZapis();");
+  const zawsze = przel.indexOf("if (!wynik?.moznaZapisac) schowajPotwierdzenieZapisu();");
+  assert.ok(poZlozeniu > 0 && zawsze > poZlozeniu, "po złożeniu zgłoszenia, także przy zapisie");
+  assert.doesNotMatch(przel.slice(zawsze - 40, zawsze), /poZapisie/, "bez warunku poZapisie");
+  assert.equal((MAIN.match(/\bschowajPotwierdzenieZapisu\(\)/g) ?? []).length, 5, "definicja i cztery wywołania");
 });
 
 test("wybór drogi: udostępnianie tylko przy obsłudze plików i ekranie dotykowym, do odmowy albo wyboru zapisu", () => {
@@ -349,9 +416,34 @@ test("udostępnianie: odmowa inna niż AbortError przełącza do końca wizyty n
 });
 
 test("bez osobnego przycisku kopiowania adresu", () => {
-  const CSS = readFileSync(fileURLToPath(new URL("../app/style.css", import.meta.url)), "utf8");
   for (const [nazwa, tresc] of [["main.js", MAIN], ["index.html", HTML], ["style.css", CSS]]) {
     assert.doesNotMatch(tresc, /kopiuj/i, nazwa);
     assert.doesNotMatch(tresc, /przyciski-zapisu|id="udostepnij"|#udostepnij\b(?!-)/, `${nazwa}: stary układ kroku 7`);
   }
+});
+
+test("zdanie pod pytaniem o grupę taryfową zależne od rodzaju ceny, bez rodzaju bez zdania", () => {
+  assert.match(blokPola("taryfa"), /<div class="opcje"><\/div>\s*<p class="podpowiedz" data-tekst="taryfa_przy_stalej" data-warunek="rodzaj_ceny=stala" hidden><\/p>\s*<p class="podpowiedz" data-tekst="taryfa_przy_dynamicznej" data-warunek="rodzaj_ceny=dynamiczna" hidden><\/p>\s*<p class="blad" hidden><\/p>/);
+});
+
+test("sprzedawca z listy wpisany jako „inny”: uwaga pod polem, bez blokady", () => {
+  assert.match(blokPola("sprzedawca_nazwa"), /<p class="podpowiedz" data-tekst="tekst_wolny_podpowiedz"><\/p>\s*<p class="uwaga" id="sprzedawca-na-liscie" data-tekst="sprzedawca_na_liscie" hidden><\/p>\s*<p class="blad" hidden><\/p>/);
+  assert.match(funkcja("pokazPola"), /pokaz\(\$\("#sprzedawca-na-liscie"\), wybrane\("sprzedawca"\) === "inny" && sprzedawcaZListy\(wartoscPola\("sprzedawca_nazwa"\)\)\);/);
+});
+
+test("zmiana pola: Pstryk ustawia cenę dynamiczną, „inny okres” wpisuje daty z miesiąca, cena po wyjściu z pola uzupełniona", () => {
+  const zmiana = funkcja("zmianaPola");
+  assert.match(zmiana, /if \(pole\.name === "sprzedawca" && pole\.value === "pstryk"\) \$\('input\[name="rodzaj_ceny"\]\[value="dynamiczna"\]'\)\.checked = true;/);
+  assert.match(zmiana, /\["taryfa", "cena_tryb", "rodzaj_ceny", "sprzedawca"\]\.includes\(pole\.name\)\) zbudujPolaCen\(\);/, "pola ceny po zmianie rodzaju");
+  assert.ok(zmiana.indexOf('"pstryk"') < zmiana.indexOf("zbudujPolaCen()"), "rodzaj ceny ustawiony przed przebudową pól");
+  assert.doesNotMatch(zmiana, /checked = false|\.value = ""/, "zmiana sprzedawcy niczego nie kasuje");
+  assert.match(zmiana, /if \(pole\.id === "p-okres-inny" && pole\.checked\) wpiszDatyZMiesiaca\(\);/);
+  assert.match(zmiana, /if \(pole\.matches\("#p-cena, \[data-strefa\]"\)\) uzupelnijCene\(pole\);/);
+  assert.match(MAIN, /main\.addEventListener\("change", zmianaPola\);/);
+  // Daty tylko przy wybranym miesiącu i obu pustych polach; wpisanych dat nie nadpisuje.
+  const daty = funkcja("wpiszDatyZMiesiaca");
+  assert.match(daty, /okresMiesiaca\(wartoscMiesiaca\(\$\('\[data-miesiac="okres_miesiac"\]'\)\)\)/);
+  assert.match(daty, /if \(!okres \|\| od\.value \|\| doDnia\.value\) return;/);
+  // Postać z modułu, kropka zamieniona na przecinek; błędna wartość zostaje.
+  assert.match(funkcja("uzupelnijCene"), /const c = czytajCene\(pole\.value\);\n\s*if \(c\.ok\) pole\.value = c\.wartosc\.replace\("\.", ","\);/);
 });

@@ -228,6 +228,14 @@ test("obcięcie godzin z początku i z końca", () => {
   assert.equal(pelny[3][1], "2025-10-26 03:00", "drugi wiersz 03:00 został obcięty");
 });
 
+test("obcięcie większe niż liczba godzin daje plik bez wierszy danych", () => {
+  // Doba 2025-02-03 ma 24 godziny.
+  for (const opcje of [{ obetnijKoniec: 30 }, { obetnijPoczatek: 30 }, { obetnijPoczatek: 12, obetnijKoniec: 12 }, { obetnijKoniec: 24 }]) {
+    assert.deepEqual(wiersze(generuj({ od: "2025-02-03", do: "2025-02-03", ziarno: 1, ...opcje })), [], JSON.stringify(opcje));
+  }
+  assert.equal(seria(wiersze(generuj({ od: "2025-02-03", do: "2025-02-03", ziarno: 1, obetnijKoniec: 23 })), SERIA_POBOR).length, 1);
+});
+
 test("psucie: luka usuwa godziny z obu serii", () => {
   const w = wiersze(generuj({ od: "2025-02-03", do: "2025-02-04", ziarno: 1, luka: { znacznik: "2025-02-03 10:00", godzin: 3 } }));
   for (const nazwa of [SERIA_ODDANIE, SERIA_POBOR]) {

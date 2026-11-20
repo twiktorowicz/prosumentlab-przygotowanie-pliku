@@ -13,7 +13,7 @@ import { tekst } from "../app/lib/odmiana.js";
 import { TEKSTY } from "../app/teksty.js";
 import { czytajZip } from "./pomoc/czytnik-zip.mjs";
 import { przykladN20 } from "./pomoc/przyklad-n20.mjs";
-import { generuj, PPE_FIKCYJNE } from "../narzedzia/generator.mjs";
+import { generuj, PPE_FIKCYJNE, PLATNICY_FIKCYJNI } from "../narzedzia/generator.mjs";
 
 const SCIEZKA_N20 = fileURLToPath(new URL("wzorce/n20.zip", import.meta.url));
 const WZORZEC_N1 = readFileSync(fileURLToPath(new URL("wzorce/n1_wyjscie.csv", import.meta.url)));
@@ -291,8 +291,9 @@ test("podgląd: pierwsze 5 wierszy danych dokładnie jak w pliku wyjściowym, su
 // ZIP z całości (przygotujZgloszenie). Zapisany skrót to zrzut wyniku obecnego kodu: pilnuje, żeby
 // żadna zmiana nie przesunęła ani jednego bajtu bez świadomego przeliczenia skrótu.
 // Przeliczony po usunięciu pytania o pierwsze oddanie energii (instalacja.json bez tego klucza)
-// i po zmianie wersji narzędzia na 0.1.3 (pole narzedzie w zgloszenie.json; reszta ZIP-a bez zmian).
-const SKROT_SCENARIUSZA = "3489927eccdb22a12bf259dd1b1c7b580b23ba200be59bf8c1fcc9ce40029b6e";
+// i po zmianie wersji narzędzia na 0.1.4 (pole narzedzie w zgloszenie.json; reszta ZIP-a bez zmian,
+// sprawdzone na kodzie 0.1.3 z samą zmienioną wersją).
+const SKROT_SCENARIUSZA = "104694e7708748f71d6166dc9aaad9474cd153c81f5874ab3b2eca3e92e2473d";
 function scenariuszPelny() {
   return {
     pliki: [
@@ -446,10 +447,69 @@ test("ten sam plik dwa razy: drugi odrzucony z blad_duplikat, poza ZIP-em i anal
   const zBezNumerow = przygotujZgloszenie({ pliki: [plik, generuj(N1).bezNumerow], formularz: {}, numer: NUMER, utworzono: DATA });
   assert.equal(zBezNumerow.pliki[1].kod, "blad_duplikat");
   assert.equal(jsonPliku(zBezNumerow, "zgloszenie.json").ppe_porownane, true, "duplikat nie bierze udziału w porównaniu punktów");
-  // Rozstrzyga kolejność na liście, nie pierwsza godzina.
+  // Plik z numerami jest duplikatem tylko pliku z tymi samymi numerami: po pliku bez numerów
+  // oba są przyjęte (rzadki przypadek bez sprzeczności), a punktów poboru nie da się porównać.
   const odwrotnie = przygotujZgloszenie({ pliki: [generuj(N1).bezNumerow, plik], formularz: {}, numer: NUMER, utworzono: DATA });
-  assert.equal(odwrotnie.pliki[0].stan, "przyjety");
-  assert.equal(odwrotnie.pliki[1].kod, "blad_duplikat");
+  assert.deepEqual(odwrotnie.pliki.map((p) => p.stan), ["przyjety", "przyjety"]);
+  assert.equal(jsonPliku(odwrotnie, "zgloszenie.json").ppe_porownane, false);
+  assert.equal(odwrotnie.uwagaBezNumerow, true);
+  assert.equal(odwrotnie.moznaZapisac, true);
+  // Dwa pliki bez numerów z tym samym wynikiem: duplikat.
+  const bezNumerow = generuj(N1).bezNumerow;
+  assert.equal(przygotujZgloszenie({ pliki: [bezNumerow, bezNumerow], formularz: {}, numer: NUMER, utworzono: DATA }).pliki[1].kod, "blad_duplikat");
+});
+
+test("ten sam wynik, inne numery: plik nie znika jako duplikat, różne punkty poboru blokują zapis", () => {
+  // To samo ziarno i zakres: wartości, strefy i znaczniki identyczne, różnią się tylko numery.
+  const z = (opcje) => generuj({ ...N1, ...opcje }).surowy;
+  const pierwszy = z({ ppe: PPE_FIKCYJNE[0], platnik: PLATNICY_FIKCYJNI[0] });
+  for (const [opis, drugi] of [
+    ["inny PPE i płatnik", z({ ppe: PPE_FIKCYJNE[1], platnik: PLATNICY_FIKCYJNI[1] })],
+    ["tylko inny PPE", z({ ppe: PPE_FIKCYJNE[1], platnik: PLATNICY_FIKCYJNI[0] })],
+    ["tylko inny płatnik", z({ ppe: PPE_FIKCYJNE[0], platnik: PLATNICY_FIKCYJNI[1] })],
+  ]) {
+    const w = przygotujZgloszenie({ pliki: [pierwszy, drugi], formularz: {}, numer: NUMER, utworzono: DATA });
+    assert.deepEqual(w.pliki.map((p) => p.stan), ["przyjety", "przyjety"], opis);
+    assert.equal(w.pliki.some((p) => p.kod === "blad_duplikat"), false, opis);
+    assert.deepEqual(w.blokady, [{ kod: "blad_rozne_ppe" }], opis);
+    assert.equal(w.moznaZapisac, false, opis);
+    assert.equal(w.zip, null, opis);
+    assert.equal(jsonPliku(w, "zgloszenie.json").ppe_porownane, true, `${opis}: oba pliki w porównaniu`);
+  }
+});
+
+test("plik surowy, ten sam bez numerów, ten sam z innym PPE: drugi to duplikat, trzeci blokuje zapis", () => {
+  const w = przygotujZgloszenie({
+    pliki: [generuj(N1).surowy, generuj(N1).bezNumerow, generuj({ ...N1, ppe: PPE_FIKCYJNE[1], platnik: PLATNICY_FIKCYJNI[1] }).surowy],
+    formularz: {}, numer: NUMER, utworzono: DATA,
+  });
+  assert.equal(w.pliki[0].stan, "przyjety");
+  assert.deepEqual(w.pliki[1], { indeks: 1, stan: "odrzucony", kod: "blad_duplikat" });
+  assert.equal(w.pliki[2].stan, "przyjety");
+  assert.deepEqual(w.blokady, [{ kod: "blad_rozne_ppe" }]);
+  assert.equal(w.moznaZapisac, false);
+});
+
+test("nieistniejąca godzina 03:00 ostatniej niedzieli marca na początku i na końcu pliku nie wyznacza pierwszej ani ostatniej godziny", () => {
+  // Doba 2026-03-29 ma wiersze 01:00, 02:00, 04:00, …; wiersz 03:00 (godzina 2:00–3:00) nie istnieje.
+  const naPoczatku = generuj({
+    od: "2026-03-29", do: "2026-03-30", ziarno: 3, obetnijPoczatek: 1,
+    podmien: ["oddanie", "pobor"].map((seria) => ({ znacznik: "2026-03-29 02:00", seria, pole: "znacznik", tekst: "2026-03-29 03:00" })),
+  }).surowy;
+  const naKoncu = generuj({
+    od: "2026-03-01", do: "2026-03-29", ziarno: 3, obetnijKoniec: 20,
+    podmien: ["oddanie", "pobor"].map((seria) => ({ znacznik: "2026-03-29 04:00", seria, pole: "znacznik", tekst: "2026-03-29 03:00" })),
+  }).surowy;
+  const w = przygotujZgloszenie({ pliki: [naPoczatku, naKoncu], formularz: {}, numer: NUMER, utworzono: DATA });
+  assert.deepEqual(w.pliki.map((p) => p.stan), ["przyjety", "przyjety"]);
+  const pliki = jsonPliku(w, "zgloszenie.json").pliki;
+  // Kolejność w ZIP-ie według pierwszej istniejącej godziny: plik od 1 marca pierwszy.
+  assert.deepEqual(pliki.map((p) => [p.pierwszy_znacznik, p.ostatni_znacznik]), [
+    ["2026-03-01 01:00", "2026-03-29 02:00"],
+    ["2026-03-29 04:00", "2026-03-31 00:00"],
+  ]);
+  assert.equal(w.pliki[0].pierwszyZnacznik, "2026-03-29 04:00");
+  assert.equal(w.pliki[1].ostatniZnacznik, "2026-03-29 02:00");
 });
 
 test("wyjątek przy odczycie jednego pliku: ten plik dostaje blad_nieznany, pozostałe działają", () => {

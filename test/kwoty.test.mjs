@@ -59,22 +59,26 @@ test("kwoty: inne błędy formatu", () => {
 
 test("N17: ceny", () => {
   assert.equal(wartosc(czytajCene("0,51234")), "0.51234");
-  assert.equal(wartosc(czytajCene("0,5")), "błąd");
+  assert.equal(wartosc(czytajCene("0,5")), "0.50");
   assert.equal(wartosc(czytajCene("0,1234567")), "błąd");
 });
 
-test("ceny: najwyżej 2 cyfry przed przecinkiem", () => {
-  assert.equal(wartosc(czytajCene("99,50")), "99.50");
-  assert.equal(wartosc(czytajCene("100,50")), "błąd");
-  assert.equal(wartosc(czytajCene(`${"9".repeat(8)},00`)), "błąd");
-  assert.equal(wartosc(czytajCene("007,50")), "7.50", "zera wiodące się nie liczą");
+test("ceny: od 0 do 6 miejsc po przecinku, zapis z co najmniej dwoma miejscami", () => {
+  const przypadki = [
+    ["1", "1.00"], ["0,6", "0.60"], ["0", "0.00"], ["0,50", "0.50"], ["0,51234", "0.51234"],
+    ["1.123456", "1.123456"], ["9,99", "9.99"], ["007,50", "7.50"], [" 0,62 ", "0.62"],
+  ];
+  for (const [wejscie, oczekiwane] of przypadki) assert.equal(wartosc(czytajCene(wejscie)), oczekiwane, wejscie);
+  for (const zle of ["0,1234567", "-0,50", "1,", ",5", "", "0,5a", "+1"]) {
+    assert.deepEqual(czytajCene(zle), { ok: false }, JSON.stringify(zle));
+  }
 });
 
-test("ceny: bez dopisywania zer, od 2 do 6 miejsc", () => {
-  assert.equal(wartosc(czytajCene("0,50")), "0.50");
-  assert.equal(wartosc(czytajCene("1.123456")), "1.123456");
-  assert.equal(wartosc(czytajCene("1")), "błąd");
-  assert.equal(wartosc(czytajCene("-0,50")), "błąd");
+test("ceny: od 10 zł/kWh w górę to cena w groszach", () => {
+  for (const grosze of ["10", "51", "99,50", "100,50", "62,345", "1 234", `${"9".repeat(8)},00`, "0010,00"]) {
+    assert.deepEqual(czytajCene(grosze), { ok: false, kod: "faktura_cena_grosze" }, grosze);
+  }
+  assert.equal(wartosc(czytajCene("0009,999999")), "9.999999", "zera wiodące się nie liczą");
 });
 
 test("liczby z sekcji o instalacji: do 2 miejsc, najwyżej 3 cyfry przed przecinkiem, większe od zera", () => {
@@ -114,6 +118,13 @@ test("pola na dowolny tekst: separatory między cyframi, krótkie ciągi, przyci
   assert.equal(czytajTekstWolny("a".repeat(60)).ok, true);
   assert.equal(czytajTekstWolny("ą".repeat(60)).ok, true, "limit liczony w znakach");
   assert.deepEqual(czytajTekstWolny("  Opłata handlowa "), { ok: true, wartosc: "Opłata handlowa" });
+});
+
+test("pola na dowolny tekst: tekst dłuższy niż 120 jednostek UTF-16 odrzucony przed składaniem", () => {
+  // 60 liter zapisanych jako litera i znak łączący to 120 jednostek; po złożeniu 60 znaków.
+  assert.equal(czytajTekstWolny("ą".repeat(60)).ok, true);
+  assert.equal(czytajTekstWolny(`${"ą".repeat(60)} `).ok, false, "121 jednostek");
+  assert.equal(czytajTekstWolny("a".repeat(100000)).ok, false);
 });
 
 test("pola na dowolny tekst: bez znaków sterujących, także nowej linii i tabulatora", () => {

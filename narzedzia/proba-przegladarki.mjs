@@ -13,6 +13,8 @@
 // zapytania poza własne pliki, nie pisze w konsoli błędów i nie zostawia niczego w przeglądarce.
 // Krok wysyłki w dwóch wariantach: zwykły ekran z kursorem (droga z zapisem) i telefon z emulacją
 // ekranu dotykowego, pointer: coarse (droga z udostępnianiem na atrapach, odmowa przełącza na zapis).
+// Zmiany z wersji 0.1.4 (kolejność pytań, ceny, Pstryk, „inny okres”, sprzedawca z listy, różne PPE,
+// zmiana pola tuż przed zapisem) sprawdza osobna część w obu wariantach.
 //
 // Wszystko, co skrypt tworzy, leży w jednym katalogu tymczasowym (pliki wejściowe, profil
 // przeglądarki, pobrany ZIP, zrzuty). Katalog jest usuwany, a przeglądarka i serwer zamykane
@@ -30,7 +32,7 @@ import { join } from "node:path";
 import { parseArgs } from "node:util";
 
 import { utworzSerwer } from "./serwer.mjs";
-import { generuj, PPE_FIKCYJNE } from "./generator.mjs";
+import { generuj, PPE_FIKCYJNE, PLATNICY_FIKCYJNI } from "./generator.mjs";
 import { czytajZip } from "../test/pomoc/czytnik-zip.mjs";
 
 const { values } = parseArgs({
@@ -118,6 +120,8 @@ async function proba() {
   const plikKopia = plik("kopia_stycznia.csv", readFileSync(plikStyczen));
   const plikInnyPunkt = plik("inny_punkt.csv", generuj({ od: "2026-02-01", do: "2026-02-28", ziarno: 5, ppe: PPE_FIKCYJNE[1] }).surowy);
   const plikBezNumerow = plik("bez_numerow.csv", generuj({ od: "2026-02-01", do: "2026-02-28", ziarno: 5 }).bezNumerow);
+  // Ten sam styczeń (to samo ziarno, te same wartości), ale drugi fikcyjny PPE i płatnik.
+  const plikStyczenInnyPpe = plik("styczen_inny_ppe.csv", generuj({ od: "2026-01-01", do: "2026-01-31", ziarno: 5, ppe: PPE_FIKCYJNE[1], platnik: PLATNICY_FIKCYJNI[1] }).surowy);
   const plikMarzec = plik("marzec_0300.csv", generuj({
     od: "2025-03-30", do: "2025-03-30", ziarno: 5, obetnijKoniec: 22,
     podmien: ["oddanie", "pobor"].map((seria) => ({ znacznik: "2025-03-30 01:00", seria, pole: "znacznik", tekst: "2025-03-30 03:00" })),
@@ -263,10 +267,10 @@ async function proba() {
   })()`);
   const numerStart = (await tekstEl("#numer")).match(/[0-9A-Z]{4}-[0-9A-Z]{4}/)[0];
   sprawdz("krok 7 „Wysyłka pliku”: na zwykłym ekranie tylko droga z zapisem, krok 1 i krok 2 z nagłówkami",
-    stale.tytul === "Wysyłka pliku" && stale.drogi && JSON.stringify(stale.kroki) === JSON.stringify(["Krok 1. Zapisz plik na tym urządzeniu.", "Krok 2. Otwórz wiadomość i dołącz zapisany plik."]), JSON.stringify(stale));
+    stale.tytul === "Wysyłka pliku" && stale.drogi && JSON.stringify(stale.kroki) === JSON.stringify(["Krok 1. Zapisz plik na tym urządzeniu.", "Krok 2. Napisz wiadomość i dołącz zapisany plik."]), JSON.stringify(stale));
   sprawdz("krok 1: zapis_gdzie stale pod przyciskiem zapisu, potwierdzenie zapisu schowane", stale.krok1);
-  sprawdz("krok 2 przed zapisem: „Otwórz wiadomość” bez href, aria-disabled, opis mailto_najpierw_zapisz; nad nim mailto_bez_zalacznika",
-    !stale.wiadomosc.href && stale.wiadomosc.aria === "true" && stale.wiadomosc.opis === "mailto-najpierw-zapisz" && stale.wiadomosc.napis === "Otwórz wiadomość" &&
+  sprawdz("krok 2 przed zapisem: „Napisz nową wiadomość” bez href, aria-disabled, opis mailto_najpierw_zapisz; nad nim mailto_bez_zalacznika",
+    !stale.wiadomosc.href && stale.wiadomosc.aria === "true" && stale.wiadomosc.opis === "mailto-najpierw-zapisz" && stale.wiadomosc.napis === "Napisz nową wiadomość" &&
     stale.wiadomosc.najpierw === "Najpierw zapisz plik w kroku 1." && stale.wiadomosc.kursor === "not-allowed" && stale.wiadomosc.poZapisie &&
     stale.wiadomosc.bezZalacznika === `Wiadomość otworzy się bez załącznika. Zanim ją wyślesz, dołącz plik prosumentlab_${numerStart}.zip z folderu Pobrane.`, JSON.stringify(stale.wiadomosc));
   sprawdz("zgoda_bez w nowym brzmieniu stale pod polem zgody",
@@ -486,7 +490,7 @@ async function proba() {
     const zawartosc = czytajZip(zip);
     sprawdz("zawartość ZIP-a", JSON.stringify(zawartosc.map((p) => p.nazwa)) === JSON.stringify(["zgloszenie.json", "faktury.json", "instalacja.json", "pomiary_1.csv", "pomiary_2.csv"]));
     const z = JSON.parse(new TextDecoder().decode(zawartosc[0].bajty));
-    sprawdz("zgloszenie.json: numer, zgoda, klasyfikacja, wersja 0.1.3", z.numer === numer && z.zgoda_przypadek_testowy === true && z.zakres.klasyfikacja === "raport" && z.narzedzie === "0.1.3");
+    sprawdz("zgloszenie.json: numer, zgoda, klasyfikacja, wersja 0.1.4", z.numer === numer && z.zgoda_przypadek_testowy === true && z.zakres.klasyfikacja === "raport" && z.narzedzie === "0.1.4");
     const tekstZip = zip.toString("latin1");
     sprawdz("w ZIP-ie nie ma numerów PPE ani płatnika ani nazw plików", !tekstZip.includes("590000000000000010") && !tekstZip.includes("10000001") && !tekstZip.includes("eLicznik"));
     const fak = JSON.parse(new TextDecoder().decode(zawartosc[1].bajty));
@@ -509,19 +513,19 @@ async function proba() {
         rozwiniete[n].open && rozwiniete[n].widoczny && rozwiniete[n].tekst === new TextDecoder("utf-8", { fatal: true }).decode(zawartosc[i].bajty));
     }
   }
-  sprawdz("komunikat po zapisie widoczny w kroku 2", !(await js("document.querySelector('#po-zapisie').hidden")) && (await js("document.querySelector('#po-zapisie').previousElementSibling.textContent")) === "Krok 2. Otwórz wiadomość i dołącz zapisany plik.");
+  sprawdz("komunikat po zapisie widoczny w kroku 2", !(await js("document.querySelector('#po-zapisie').hidden")) && (await js("document.querySelector('#po-zapisie').previousElementSibling.textContent")) === "Krok 2. Napisz wiadomość i dołącz zapisany plik.");
   const mailto = await js("document.querySelector('#mailto').href");
   sprawdz("odnośnik mailto", mailto.startsWith("mailto:raporty@prosumentlab.pl?subject=Dane%20do%20darmowego%20raportu%2C%20zg%C5%82oszenie%20") &&
     mailto.endsWith(`&body=${encodeURIComponent(`Pamiętaj o załączniku: plik prosumentlab_${numer}.zip. Bez niego nie przygotujemy raportu.`)}`));
   wm = await wiadomosc();
-  sprawdz("po zapisie „Otwórz wiadomość” aktywne: href, bez aria-disabled i aria-describedby, bez mailto_najpierw_zapisz",
+  sprawdz("po zapisie „Napisz nową wiadomość” aktywne: href, bez aria-disabled i aria-describedby, bez mailto_najpierw_zapisz",
     wm.href === mailto && wm.aria === null && wm.opis === null && !wm.najpierw && wm.kursor === "pointer", JSON.stringify(wm));
-  sprawdz("po zapisie: mailto_bez_zalacznika tuż nad „Otwórz wiadomość”", await js(`(() => { const u = document.querySelector('#mailto').previousElementSibling;
+  sprawdz("po zapisie: mailto_bez_zalacznika tuż nad „Napisz nową wiadomość”", await js(`(() => { const u = document.querySelector('#mailto').previousElementSibling;
     return u.id === 'mailto-bez-zalacznika' && u.className === 'uwaga' && u.textContent === 'Wiadomość otworzy się bez załącznika. Zanim ją wyślesz, dołącz plik prosumentlab_${numer}.zip z folderu Pobrane.'; })()`));
   sprawdz("po zapisie: po_zapisie bez zmian", (await tekstEl("#po-zapisie")) === `Plik prosumentlab_${numer}.zip jest zapisany na Twoim urządzeniu. Teraz wyślij go na adres raporty@prosumentlab.pl. Nie załączaj pliku pobranego prosto z eLicznika ani faktury.`);
   const adresWTekscie = await js(`(() => { const a = [...document.querySelectorAll('#po-zapisie a')];
     return a.map(x => ({ tekst: x.textContent, href: x.href, target: x.target, rowny: x.href === document.querySelector('#mailto').href })); })()`);
-  sprawdz("po zapisie: adres w po_zapisie to odnośnik z tym samym mailto: co „Otwórz wiadomość”",
+  sprawdz("po zapisie: adres w po_zapisie to odnośnik z tym samym mailto: co „Napisz nową wiadomość”",
     adresWTekscie.length === 1 && adresWTekscie[0].tekst === "raporty@prosumentlab.pl" && adresWTekscie[0].rowny && adresWTekscie[0].target === "", JSON.stringify(adresWTekscie));
   const ZAPISANO = `Zapisano plik prosumentlab_${numer}.zip.`;
   const potwierdzenie = () => js(`(() => { const g = document.querySelector('#zapis-gotowe'), p = document.querySelector('#zapis-ponownie');
@@ -623,11 +627,13 @@ async function proba() {
   await wybierzMiesiac("01", "2026");
   await czekaj(300);
 
-  // Faktura za inny okres: pole wyboru odsłania dwie daty, odznaczenie wraca do miesiąca.
+  // Faktura za inny okres: pole wyboru odsłania dwie daty z wybranego miesiąca, odznaczenie wraca
+  // do miesiąca.
   await klik("#p-okres-inny");
-  sprawdz("„inny okres”: dwie puste daty zamiast list, okres w faktury.json znika",
+  sprawdz("„inny okres” po styczniu 2026: daty 2026-01-01 i 2026-01-31 zamiast list, okres w faktury.json ten sam",
     (await widoczny("#p-okres_od")) && (await widoczny("#p-okres_do")) && !(await widoczny('[data-pole="okres_miesiac"]')) &&
-    (await js("document.querySelector('#p-okres_od').value + document.querySelector('#p-okres_do').value")) === "" && !(await fakturyWPodgladzie()).includes('"okres_od"'));
+    (await js("document.querySelector('#p-okres_od').value + '/' + document.querySelector('#p-okres_do').value")) === "2026-01-01/2026-01-31" &&
+    (await fakturyWPodgladzie()).includes('"okres_od": "2026-01-01",\n    "okres_do": "2026-01-31",'));
   await wpisz("#p-okres_do", "2099-12-31");
   await czekaj(300);
   sprawdz("okres z przyszłości: błąd przy polu i blokada zapisu",
@@ -714,6 +720,129 @@ async function proba() {
   await ustawPliki([plikInnyPunkt]);
   sprawdz("sama blokada z plików: przy przycisku ogólny powód", (await tekstEl("#zapis-powod")) === "Narzędzie nie utworzy pliku ZIP, dopóki nie zniknie problem opisany wyżej.");
 
+  // 6b2. Zmiany z wersji 0.1.4, na świeżo otwartej stronie z plikiem stycznia. Wywoływane w obu
+  // wariantach: zwykły ekran z kursorem (tu) i telefon z ekranem dotykowym (w 6c).
+  const proba014 = async (wariant, px) => {
+    const w = (opis) => `${wariant}: ${opis}`;
+    await otworz();
+    await ustawPliki([plikStyczen]);
+    const kolejnosc = await js(`[...document.querySelectorAll('#krok-faktura h3, #krok-faktura [data-pole]')].map(e => e.tagName === 'H3' ? 'H3 ' + e.textContent : e.dataset.pole)`);
+    sprawdz(w("kolejność pytań: „Faktura” (system, sprzedawca, miesiąc, korekta), „Cena energii” (rodzaj ceny, taryfa, cena, opłaty)"), JSON.stringify(kolejnosc) === JSON.stringify([
+      "H3 Faktura", "system_rozliczenia", "sprzedawca", "sprzedawca_nazwa", "okres_miesiac", "okres_od", "okres_do", "rodzaj_faktury",
+      "H3 Cena energii", "rodzaj_ceny", "taryfa", "taryfa_nazwa", "cena_energii_netto_zl_kwh", "oplata_mocowa_zl_mies", "oplata_abonamentowa_zl_mies",
+      "oplata_stala_sieciowa_zl_mies", "oplata_przejsciowa_zl_mies", "oplaty_stale_inne",
+    ]), JSON.stringify(kolejnosc));
+    const naglowki = async () => [await widoczny('[data-tekst="faktura_grupa_faktura"]'), await widoczny('[data-tekst="faktura_grupa_cena"]')];
+    sprawdz(w("oba nagłówki grup widoczne"), JSON.stringify(await naglowki()) === "[true,true]");
+    await klik('input[name="system_rozliczenia"][value="opusty"]');
+    sprawdz(w("opusty: „Faktura” zostaje, „Cena energii” znika razem z polami"), JSON.stringify(await naglowki()) === "[true,false]");
+    await klik('input[name="system_rozliczenia"][value="net_billing_rce"]');
+
+    // Zdanie pod grupą taryfową.
+    const zdanieTaryfy = () => js(`[...document.querySelectorAll('[data-pole="taryfa"] .podpowiedz')].filter(p => !p.hidden && p.getClientRects().length > 0).map(p => p.textContent)`);
+    const STALA = "Przy cenie stałej strefy grupy taryfowej dotyczą opłat za dystrybucję, a często też ceny energii.";
+    const DYNAMICZNA = "Przy cenie dynamicznej grupa taryfowa dotyczy tylko opłat za dystrybucję.";
+    sprawdz(w("bez rodzaju ceny bez zdania przy grupie taryfowej"), (await zdanieTaryfy()).length === 0);
+    await klik('input[name="rodzaj_ceny"][value="stala"]');
+    sprawdz(w("cena stała: zdanie taryfa_przy_stalej"), JSON.stringify(await zdanieTaryfy()) === JSON.stringify([STALA]), JSON.stringify(await zdanieTaryfy()));
+    await klik('input[name="rodzaj_ceny"][value="dynamiczna"]');
+    sprawdz(w("cena dynamiczna: zdanie taryfa_przy_dynamicznej"), JSON.stringify(await zdanieTaryfy()) === JSON.stringify([DYNAMICZNA]), JSON.stringify(await zdanieTaryfy()));
+    await klik('input[name="rodzaj_ceny"][value="stala"]');
+    await klik('input[name="taryfa"][value="g12"]');
+
+    // Pstryk ustawia cenę dynamiczną, także po wybranej stałej; zmiana sprzedawcy niczego nie kasuje.
+    const cenaStan = () => js(`({ rodzaj: document.querySelector('input[name="rodzaj_ceny"]:checked')?.value ?? '', pola: document.querySelectorAll('#cena-pola input').length,
+      tryb: !document.querySelector('#cena-tryb').hidden })`);
+    sprawdz(w("przed Pstrykiem: cena stała, G12 z wyborem stref"), JSON.stringify(await cenaStan()) === JSON.stringify({ rodzaj: "stala", pola: 1, tryb: true }), JSON.stringify(await cenaStan()));
+    await klik('input[name="sprzedawca"][value="pstryk"]');
+    sprawdz(w("Pstryk: zaznaczona cena dynamiczna, jedno pole ceny bez wyboru stref, zdanie dla ceny dynamicznej"),
+      JSON.stringify(await cenaStan()) === JSON.stringify({ rodzaj: "dynamiczna", pola: 1, tryb: false }) && JSON.stringify(await zdanieTaryfy()) === JSON.stringify([DYNAMICZNA]), JSON.stringify(await cenaStan()));
+    await klik('input[name="sprzedawca"][value="tauron_sprzedaz"]');
+    sprawdz(w("zmiana sprzedawcy z Pstryka: cena dynamiczna zostaje"), (await cenaStan()).rodzaj === "dynamiczna");
+    await klik('input[name="rodzaj_ceny"][value="stala"]');
+    sprawdz(w("cenę dynamiczną da się zmienić na stałą"), (await cenaStan()).rodzaj === "stala" && (await cenaStan()).tryb);
+
+    // Sprzedawca z listy wpisany jako „inny”.
+    await klik('input[name="sprzedawca"][value="inny"]');
+    const naLiscie = () => js(`(() => { const u = document.querySelector('#sprzedawca-na-liscie'); return !u.hidden && u.getClientRects().length > 0 && u.className === 'uwaga' && u.textContent; })()`);
+    await wpisz("#p-sprzedawca_nazwa", "Tauron Sprzedaż", "input");
+    await czekaj(500);
+    sprawdz(w("„inny” + „Tauron Sprzedaż”: uwaga sprzedawca_na_liscie pod polem, zapis możliwy"),
+      (await naLiscie()) === "Ten sprzedawca jest na liście powyżej. Możesz go tam wybrać albo zostawić swój wpis." && !(await js("document.querySelector('#zapisz').disabled")) &&
+      (await tekstEl("#podglad")).includes('"sprzedawca_nazwa": "Tauron Sprzedaż"'), String(await naLiscie()));
+    await wpisz("#p-sprzedawca_nazwa", "Moja spółdzielnia", "input");
+    await czekaj(500);
+    sprawdz(w("„inny” + „Moja spółdzielnia”: bez uwagi"), (await naLiscie()) === false);
+    await klik('input[name="sprzedawca"][value="tauron_sprzedaz"]');
+    sprawdz(w("inny sprzedawca z listy: uwaga znika"), (await naLiscie()) === false);
+
+    // „Inny okres” wpisuje daty z wybranego miesiąca; wpisanych dat nie nadpisuje.
+    await wybierzMiesiac("01", "2026");
+    await czekaj(300);
+    await klik("#p-okres-inny");
+    const daty = () => js("document.querySelector('#p-okres_od').value + '/' + document.querySelector('#p-okres_do').value");
+    sprawdz(w("„inny okres” po styczniu 2026: daty 2026-01-01 i 2026-01-31"), (await daty()) === "2026-01-01/2026-01-31", await daty());
+    await wpisz("#p-okres_od", "2026-01-05");
+    await klik("#p-okres-inny");
+    await wybierzMiesiac("03", "2025");
+    await czekaj(300);
+    await klik("#p-okres-inny");
+    sprawdz(w("ponowne zaznaczenie po zmianie miesiąca: wpisane daty zostają"), (await daty()) === "2026-01-05/2026-01-31", await daty());
+    await klik("#p-okres-inny");
+    await wybierzMiesiac("01", "2026");
+    await czekaj(300);
+
+    // Cena wpisana jak przez klienta i wyjście z pola: „1” -> „1,00”, „51” -> błąd groszy.
+    await klik('input[name="cena_tryb"][value="jedna"]');
+    const wpiszCene = async (tekst) => {
+      await js("(() => { const e = document.querySelector('#p-cena'); e.focus(); e.select(); })()");
+      await strona("Input.insertText", { text: tekst });
+      await js("document.querySelector('#p-moc_pv_kwp').focus()");
+      await czekaj(400);
+    };
+    await wpiszCene("1");
+    sprawdz(w("cena „1” po wyjściu z pola: „1,00”, w faktury.json \"1.00\""),
+      (await js("document.querySelector('#p-cena').value")) === "1,00" && (await tekstEl("#podglad")).includes('"cena_energii_netto_zl_kwh": "1.00"'), await js("document.querySelector('#p-cena').value"));
+    await wpiszCene("51");
+    const bladCeny = await tekstEl('[data-pole="cena_energii_netto_zl_kwh"] > .blad');
+    sprawdz(w("cena „51”: błąd faktura_cena_grosze przy polu, wartość bez zmian, zapis zablokowany"),
+      bladCeny === "Cena wygląda na podaną w groszach. Wpisz ją w złotych, na przykład 0,62." && (await js("document.querySelector('#p-cena').value")) === "51" &&
+      await js("document.querySelector('#zapisz').disabled") && (await tekstEl("#zapis-powod")).includes("cena energii"), bladCeny);
+    await wpiszCene("0,62");
+    sprawdz(w("cena „0,62”: bez błędu, zapis możliwy"), (await tekstEl('[data-pole="cena_energii_netto_zl_kwh"] > .blad')) === "" && !(await js("document.querySelector('#zapisz').disabled")));
+
+    // Dwa pliki o tych samych wartościach z różnym PPE: blokada, nie duplikat.
+    await ustawPliki([plikStyczenInnyPpe]);
+    const plakietki = await js("[...document.querySelectorAll('.plakietka')].map(e => e.textContent)");
+    sprawdz(w("ten sam styczeń z innym PPE: oba pliki przyjęte, blad_rozne_ppe, zapis zablokowany, bez komunikatu o duplikacie"),
+      JSON.stringify(plakietki) === JSON.stringify(["Przyjęty", "Przyjęty"]) && (await tekstEl("#blokady")).includes("Te pliki pochodzą z różnych punktów poboru.") &&
+      !(await tekstEl("#lista-plikow")).includes("Taki sam plik") && await js("document.querySelector('#zapisz').disabled"), `${plakietki.join(", ")} | ${await tekstEl("#blokady")}`);
+    await js("document.querySelectorAll('.plik')[1].querySelector('button').click()");
+    await czekaj(800);
+    sprawdz(w("po usunięciu pliku z innym PPE zapis znów możliwy"), !(await js("document.querySelector('#zapisz').disabled")));
+
+    // Zmiana pola tuż przed zapisem (w ciągu 250 ms): bez nieaktualnego potwierdzenia.
+    if (await widoczny("#droga-udostepnianie")) await klik("#droga-zapis-pokaz");
+    const przed = zapisy();
+    await js("document.querySelector('#zapisz').click()");
+    for (let i = 0; i < 40 && zapisy() <= przed; i++) await czekaj(250);
+    const stanZapisu = () => js(`(() => { const widac = (s) => { const e = document.querySelector(s); return !e.hidden && e.getClientRects().length > 0; };
+      return { gotowe: widac('#zapis-gotowe'), poZapisie: widac('#po-zapisie'), href: document.querySelector('#mailto').hasAttribute('href') }; })()`);
+    sprawdz(w("zapis: potwierdzenie i aktywna wiadomość"), zapisy() === przed + 1 && JSON.stringify(await stanZapisu()) === JSON.stringify({ gotowe: true, poZapisie: true, href: true }), JSON.stringify(await stanZapisu()));
+    const tuzPo = await js(`(() => { const e = document.querySelector('#p-cena'); e.value = '51'; e.dispatchEvent(new Event('input', { bubbles: true }));
+      const t0 = performance.now(); document.querySelector('#zapisz').click();
+      const widac = (s) => { const x = document.querySelector(s); return !x.hidden && x.getClientRects().length > 0; };
+      return { ms: performance.now() - t0, gotowe: widac('#zapis-gotowe'), poZapisie: widac('#po-zapisie'), href: document.querySelector('#mailto').hasAttribute('href'),
+        zablokowany: document.querySelector('#zapisz').disabled }; })()`);
+    await czekaj(1000);
+    sprawdz(w("zła cena i kliknięcie zapisu przed przeliczeniem: bez potwierdzenia i komunikatu po zapisie, wiadomość bez href, bez nowego pliku"),
+      !tuzPo.gotowe && !tuzPo.poZapisie && !tuzPo.href && tuzPo.zablokowany && zapisy() === przed + 1 && JSON.stringify(await stanZapisu()) === JSON.stringify({ gotowe: false, poZapisie: false, href: false }), JSON.stringify(tuzPo));
+    await wpiszCene("0,62");
+    sprawdz(w(`${px} px: bez poziomego przewijania`), (await js("document.documentElement.scrollWidth")) <= px);
+    await zrzut(`6-wersja-0-1-4-${wariant}`, px);
+  };
+  await proba014("zwykły ekran", 1280);
+
   // 6c. Wariant 2, telefon: 390 px i ekran dotykowy z emulacji DevTools (pointer: coarse). Chromium
   // nie udostępnia plików ZIP, więc canShare, share i schowek to atrapy wstawiane przed skryptami
   // strony. Wywołania schowka i share trafiają na jedną listę, w kolejności. window.__odmowa: nazwa
@@ -747,7 +876,7 @@ async function proba() {
   sprawdz("telefon przed plikiem: tylko droga z udostępnianiem, przycisk nieaktywny, powód pod tytułem kroku",
     dt.udostepnianie && !dt.zapis && !dt.aktywny && dt.napis === "Przygotuj wiadomość z plikiem" && dt.powod === "Najpierw wybierz plik godzinowy.", JSON.stringify(dt));
   sprawdz("telefon: pod przyciskiem udostepnij_podpowiedz, niżej przycisk tekstowy droga_zapis_pokaz",
-    dt.podpowiedz === "Otworzy się lista aplikacji. Wybierz pocztę, dotknij pola „Do” i wybierz „Wklej”: adres raporty@prosumentlab.pl skopiujemy do schowka. Plik będzie już w załączniku. Sprawdź wiadomość i ją wyślij." &&
+    dt.podpowiedz === "Wybierz pocztę. W polu „Do” wybierz „Wklej”: adres raporty@prosumentlab.pl jest już w schowku. Plik jest w załączniku, a temat możesz zostawić pusty." &&
     dt.pokaz === "Wolę zapisać plik i dołączyć go sam", JSON.stringify(dt));
   await ustawPliki([plikStyczen]);
   const numerTel = (await tekstEl("#numer")).match(/[0-9A-Z]{4}-[0-9A-Z]{4}/)[0];
@@ -795,7 +924,7 @@ async function proba() {
   sprawdz("nowa wizyta na telefonie: znów droga z udostępnianiem", dt.udostepnianie && !dt.zapis && dt.aktywny, JSON.stringify(dt));
   await js("window.__odmowa = 'NotAllowedError'; document.querySelector('#udostepnij-przycisk').click()");
   await czekaj(500);
-  const NIEDOSTEPNE = "Ta przeglądarka nie wyśle pliku ZIP. Zapisz plik w kroku 1, a potem w kroku 2 otwórz wiadomość i dołącz plik.";
+  const NIEDOSTEPNE = "Ta przeglądarka nie wyśle pliku ZIP. Zapisz plik w kroku 1, a potem w kroku 2 napisz wiadomość i dołącz plik.";
   dt = await drogaTel();
   sprawdz("odmowa NotAllowedError: droga z zapisem z udostepnij_niedostepne nad krokiem 1, fokus na przycisku zapisu",
     (await js("window.__wywolania.length")) === 2 && !dt.udostepnianie && dt.zapis && dt.niedostepne === NIEDOSTEPNE && dt.fokus === "zapisz" &&
@@ -808,10 +937,11 @@ async function proba() {
   await js("document.querySelector('#zapisz').click()");
   for (let i = 0; i < 40 && zapisy() <= przedZapisemTel; i++) await czekaj(250);
   const wmTel = await js("(() => { const m = document.querySelector('#mailto'); return { href: m.getAttribute('href') ?? '', aria: m.getAttribute('aria-disabled') }; })()");
-  sprawdz("telefon po odmowie: zapis działa, „Otwórz wiadomość” aktywne",
+  sprawdz("telefon po odmowie: zapis działa, „Napisz nową wiadomość” aktywne",
     zapisy() === przedZapisemTel + 1 && wmTel.href.startsWith("mailto:raporty@prosumentlab.pl?subject=") && wmTel.aria === null, JSON.stringify(wmTel));
   sprawdz("telefon 390 px, droga z zapisem: bez poziomego przewijania", (await js("document.documentElement.scrollWidth")) <= 390);
   await zrzut("5-telefon-odmowa-zapis", 390);
+  await proba014("telefon", 390);
   await strona("Page.removeScriptToEvaluateOnNewDocument", { identifier: atrapy });
   await strona("Emulation.setTouchEmulationEnabled", { enabled: false });
   await szerokosc(1280);

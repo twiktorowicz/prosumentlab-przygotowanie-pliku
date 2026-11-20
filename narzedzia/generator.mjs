@@ -306,7 +306,8 @@ export function generuj(opcje = {}) {
       });
     }
   }
-  godziny = godziny.slice(obetnijPoczatek, godziny.length - obetnijKoniec);
+  // Obcięcie większe niż liczba godzin daje pustą listę (ujemny koniec liczyłby się od końca).
+  godziny = godziny.slice(obetnijPoczatek, Math.max(0, godziny.length - obetnijKoniec));
 
   if (opcje.luka) {
     const i = godziny.findIndex((g) => g.znacznik === opcje.luka.znacznik);

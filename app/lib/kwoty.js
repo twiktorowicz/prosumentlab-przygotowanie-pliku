@@ -41,12 +41,15 @@ export function czytajKwote(tekst) {
   return czytajDziesietna(tekst, { miejsc: 2, calkowitych: 4, zeraNaKoncu: true });
 }
 
-// Cena za kWh: najwyżej 2 cyfry przed przecinkiem, od 2 do 6 miejsc po przecinku, zapis bez
-// dopisywania zer.
+// Cena za kWh: od 0 do 6 miejsc po przecinku, zapis z co najmniej dwoma miejscami („1” -> "1.00",
+// „0,6” -> "0.60", „0,51234” -> "0.51234"). Cena od 10 zł/kWh w górę (część całkowita bez zer
+// wiodących ma więcej niż jedną cyfrę) to prawie na pewno cena w groszach: osobny kod błędu.
 export function czytajCene(tekst) {
   const c = rozbierz(tekst);
-  if (!c || c.calkowite.length > 2 || c.ulamek === undefined || c.ulamek.length < 2 || c.ulamek.length > 6) return blad;
-  return { ok: true, wartosc: `${c.calkowite}.${c.ulamek}` };
+  const ulamek = c?.ulamek ?? "";
+  if (!c || ulamek.length > 6) return blad;
+  if (c.calkowite.length > 1) return { ok: false, kod: "faktura_cena_grosze" };
+  return { ok: true, wartosc: `${c.calkowite}.${ulamek.padEnd(2, "0")}` };
 }
 
 // Liczba dziesiętna z najwyżej `miejsc` miejscami po przecinku, zapis uzupełniony do `miejsc`.
@@ -72,10 +75,13 @@ export function czytajDziesietna(tekst, { miejsc, calkowitych = 15, dodatnia = f
 // 2000–2099 liczą się jako lata („Taryfa G12 2026”, „G12w 2025/2026”) i są pomijane. Poza nimi
 // całe pole ma najwyżej 4 cyfry, bez względu na to, co je rozdziela: telefon, kod pocztowy albo
 // numer klienta zapisany z przecinkami czy nawiasami też przekroczy limit.
+// Tekst dłuższy niż 120 jednostek UTF-16 (60 liter zapisanych jako litera i znak łączący) jest
+// odrzucany od razu, przed składaniem i liczeniem znaków.
 const MAKS_LAT = 2;
 const MAKS_CYFR = 4;
+const MAKS_JEDNOSTEK = 120;
 export function czytajTekstWolny(tekst) {
-  if (typeof tekst !== "string") return blad;
+  if (typeof tekst !== "string" || tekst.length > MAKS_JEDNOSTEK) return blad;
   const t = tekst.normalize("NFC").replace(/^ +| +$/g, "");
   if ([...t].length > 60 || !/^[\p{L}0-9 .,\-/()+&'%]*$/u.test(t)) return blad;
   let lata = 0;

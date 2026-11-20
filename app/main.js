@@ -9,8 +9,9 @@ import { tekst, znacznikPolski, dataPolska, miesiacZRokiem, kwhDoWyswietlenia } 
 import { przygotujPliki, zlozZgloszenie, utworzZipZgloszenia, odnosnikMailto, nazwaZip, WERSJA, ADRES, MAKS_PLIKOW } from "./lib/zgloszenie.js";
 import { losowyNumer } from "./lib/numer.js";
 import { LIMIT_BAJTOW } from "./lib/dekodowanie.js";
-import { liczbaZCyfr } from "./lib/kwoty.js";
+import { liczbaZCyfr, czytajCene } from "./lib/kwoty.js";
 import { ROK_MIN } from "./lib/kalendarz.js";
+import { okresMiesiaca, sprzedawcaZListy } from "./lib/formularz.js";
 
 const t = (klucz, wstawki) => tekst(TEKSTY, klucz, wstawki);
 const $ = (wybor, w = document) => w.querySelector(wybor);
@@ -513,6 +514,8 @@ function pokazPola() {
   pokaz($("#faktura-poza-zakresem"), wynik.uwagi.some((u) => u.kod === "FAKTURA_R_POZA_ZAKRESEM"));
   pokaz($("#faktura-okres-dlugi"), wynik.uwagi.some((u) => u.kod === "FAKTURA_OKRES_DLUGI"));
   pokaz($("#faktura-cena-nietypowa"), wynik.uwagi.some((u) => u.kod === "FAKTURA_CENA_NIETYPOWA"));
+  // Sprzedawca z listy wpisany w polu „inny”: tylko podpowiedź, bez blokady i bez wpisu do plików.
+  pokaz($("#sprzedawca-na-liscie"), wybrane("sprzedawca") === "inny" && sprzedawcaZListy(wartoscPola("sprzedawca_nazwa")));
   // Pojemność magazynu nie jest obowiązkowa: przy „tak” i pustym polu tylko uwaga, bez blokady.
   pokaz($("#pojemnosc-brak"), wybrane("magazyn") === "tak" && !wartoscPola("magazyn_pojemnosc_kwh").trim());
   // Uwaga o brakujących polach dopiero wtedy, gdy narzędzie przyjęło co najmniej jeden plik.
@@ -632,8 +635,8 @@ function przejdzDoZapisu() {
   $("#zapisz").focus();
 }
 
-// Krok 2: „Otwórz wiadomość” to odnośnik do wiadomości, aktywny dopiero po zapisie. Bez adresu (przed
-// zapisem i po każdej zmianie danych) odnośnik nie ma href, ma aria-disabled i opis
+// Krok 2: „Napisz nową wiadomość” to odnośnik do wiadomości, aktywny dopiero po zapisie. Bez
+// adresu (przed zapisem i po każdej zmianie danych) odnośnik nie ma href, ma aria-disabled i opis
 // mailto_najpierw_zapisz, widoczny wtedy pod nim.
 function ustawWiadomosc(mailto) {
   const m = $("#mailto");
@@ -649,19 +652,23 @@ function ustawWiadomosc(mailto) {
   pokaz($("#mailto-najpierw-zapisz"), !mailto);
 }
 
-// `poZapisie`: przeliczenie wywołane samym zapisem; każde inne chowa potwierdzenie zapisu
-// i komunikat po zapisie, a wiadomość znów czeka na zapis, bo zapisany ZIP przestał odpowiadać
-// danym na stronie.
+// Potwierdzenie zapisu, komunikat po zapisie i aktywna wiadomość dotyczą zapisanego ZIP-a; po
+// zmianie danych przestają mu odpowiadać, więc znikają, a wiadomość znów czeka na zapis.
+function schowajPotwierdzenieZapisu() {
+  pokaz($("#zapis-gotowe"), false);
+  pokaz($("#zapis-ponownie"), false);
+  pokaz($("#po-zapisie"), false);
+  ustawWiadomosc(null);
+}
+
+// `poZapisie`: przeliczenie wywołane samym zapisem; każde inne chowa potwierdzenie zapisu.
+// Zapis niemożliwy chowa je zawsze, także przy zapisie: kliknięcie zapisu tuż po wpisaniu błędnej
+// wartości nie może zostawić potwierdzenia i wiadomości do starego pliku.
 function przelicz({ poZapisie = false } = {}) {
   clearTimeout(odlozone);
   czekaPrzeliczenie = false;
   warunki();
-  if (!poZapisie) {
-    pokaz($("#zapis-gotowe"), false);
-    pokaz($("#zapis-ponownie"), false);
-    pokaz($("#po-zapisie"), false);
-    ustawWiadomosc(null);
-  }
+  if (!poZapisie) schowajPotwierdzenieZapisu();
   try {
     wynik = zlozZgloszenie({
       przygotowane,
@@ -680,6 +687,7 @@ function przelicz({ poZapisie = false } = {}) {
     console.error(blad);
     pokazBladLogiki();
   }
+  if (!wynik?.moznaZapisac) schowajPotwierdzenieZapisu();
   ustawBlokadeOdczytu();
 }
 
@@ -690,16 +698,51 @@ function pokazBladLogiki() {
   $("#blokady").replaceChildren(komunikat("blad", t("blad_nieznany")));
   $("#zapisz").disabled = true;
   $("#udostepnij-przycisk").disabled = true;
-  ustawWiadomosc(null);
+  schowajPotwierdzenieZapisu();
   const powod = $("#zapis-powod");
   powod.textContent = t("zapis_blokada");
   pokaz(powod, true);
 }
 
+// Zmiana pola przelicza zgłoszenie po 250 ms, ale potwierdzenie zapisu znika od razu: zapisany
+// ZIP już nie odpowiada danym na stronie.
 function przeliczPozniej() {
   clearTimeout(odlozone);
   czekaPrzeliczenie = true;
+  schowajPotwierdzenieZapisu();
   odlozone = setTimeout(przelicz, 250);
+}
+
+// „Inny okres” po wybranym miesiącu: puste pola dat dostają pierwszy i ostatni dzień tego
+// miesiąca. Wpisanych dat nie zmienia; bez pełnego wyboru miesiąca i roku nic nie robi.
+function wpiszDatyZMiesiaca() {
+  const od = $("#p-okres_od");
+  const doDnia = $("#p-okres_do");
+  const okres = okresMiesiaca(wartoscMiesiaca($('[data-miesiac="okres_miesiac"]')));
+  if (!okres || od.value || doDnia.value) return;
+  od.value = okres.od;
+  doDnia.value = okres.do;
+}
+
+// Cena po wyjściu z pola: poprawna wartość w postaci z co najmniej dwoma miejscami i przecinkiem
+// („1” -> „1,00”); błędna zostaje tak, jak ją wpisano, przy niej stoi komunikat.
+function uzupelnijCene(pole) {
+  const c = czytajCene(pole.value);
+  if (c.ok) pole.value = c.wartosc.replace(".", ",");
+}
+
+// Zmiana pola (zdarzenie change, u pól tekstowych po wyjściu z pola): reakcje zależne od pola,
+// potem przeliczenie od razu.
+function zmianaPola(z) {
+  const pole = z.target;
+  if (pole.id === "wybor-plikow") return;
+  // Pstryk sprzedaje dziś tylko w cenie dynamicznej. Klient może ją zmienić, a zmiana sprzedawcy
+  // niczego nie kasuje.
+  if (pole.name === "sprzedawca" && pole.value === "pstryk") $('input[name="rodzaj_ceny"][value="dynamiczna"]').checked = true;
+  if (pole.id === "p-okres-inny" && pole.checked) wpiszDatyZMiesiaca();
+  if (pole.matches("#p-cena, [data-strefa]")) uzupelnijCene(pole);
+  if (["taryfa", "cena_tryb", "rodzaj_ceny", "sprzedawca"].includes(pole.name)) zbudujPolaCen();
+  przelicz();
 }
 
 function zapisz() {
@@ -721,7 +764,7 @@ function zapisz() {
   pokaz($("#zapis-gotowe"), true);
   pokaz($("#zapis-ponownie"), zapisanoRozne);
 
-  // Adres w tekście po zapisie i „Otwórz wiadomość” prowadzą do tej samej wiadomości.
+  // Adres w tekście po zapisie i „Napisz nową wiadomość” prowadzą do tej samej wiadomości.
   const mailto = odnosnikMailto(t("mailto_temat", { numer: NUMER }), t("mailto_tresc", { plik: wynik.nazwaZip }));
   const [przed, po] = t("po_zapisie", { plik: wynik.nazwaZip }).split(ADRES);
   $("#po-zapisie").replaceChildren(...(po === undefined ? [przed] : [przed, el("a", { href: mailto, tekst: ADRES }), po]));
@@ -791,10 +834,7 @@ function start() {
   });
   const main = $("main");
   main.addEventListener("input", przeliczPozniej);
-  main.addEventListener("change", (z) => {
-    if (["taryfa", "cena_tryb", "rodzaj_ceny"].includes(z.target.name)) zbudujPolaCen();
-    if (z.target.id !== "wybor-plikow") przelicz();
-  });
+  main.addEventListener("change", zmianaPola);
   $("#dodaj-strefe").addEventListener("click", () => {
     strefInnej = Math.min(4, strefInnej + 1);
     zbudujPolaCen();

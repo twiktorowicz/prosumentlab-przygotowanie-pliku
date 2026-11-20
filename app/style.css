@@ -147,6 +147,9 @@ h1, h2, h3 { line-height: 1.2; margin: 0 0 0.6em; }
 h1 { font-size: 50px; line-height: 1.1; font-weight: 700; }
 h2 { font-size: 22px; font-weight: 600; }
 h3 { font-size: 17px; font-weight: 600; margin-top: 1.4em; }
+/* Nagłówki grup w danych z faktury („Faktura”, „Cena energii”): wyraźniejsze od pytań pod nimi,
+   z linią oddzielającą grupę. */
+h3[data-tekst^="faktura_grupa_"] { font-size: 19px; margin-top: 1.6em; padding-top: 0.8em; border-top: 1px solid var(--linia); }
 p { margin: 0 0 0.8em; }
 a { color: var(--zielen); text-underline-offset: 2px; }
 a:hover { color: var(--zielen-najechanie); }
@@ -231,9 +234,10 @@ a:hover { color: var(--zielen-najechanie); }
 .przycisk:hover { background: var(--zielen-najechanie); border-color: var(--zielen-najechanie); color: var(--biel); }
 .przycisk-drugi { background: var(--biel); color: var(--zielen); }
 .przycisk-drugi:hover { background: var(--tlo-potwierdzenia); color: var(--zielen-najechanie); }
-/* Nieaktywny przycisk (disabled) i odnośnik-przycisk bez adresu (aria-disabled), także przy
-   najechaniu; reguła stoi po regułach najechania, żeby je zastąpić. */
-.przycisk:disabled, .przycisk[aria-disabled="true"] { background: var(--linia); border-color: var(--linia); color: var(--pomocniczy); cursor: not-allowed; }
+/* Nieaktywny przycisk (disabled), odnośnik-przycisk bez adresu (aria-disabled) i etykieta-przycisk
+   „Dodaj plik” przy zablokowanym polu wyboru (w trakcie odczytu), także przy najechaniu; reguła
+   stoi po regułach najechania, żeby je zastąpić. */
+.przycisk:disabled, .przycisk[aria-disabled="true"], .ukryte-pole:disabled + .przycisk { background: var(--linia); border-color: var(--linia); color: var(--pomocniczy); cursor: not-allowed; }
 .przycisk-tekstowy {
   min-height: 44px;
   padding: 0 8px;

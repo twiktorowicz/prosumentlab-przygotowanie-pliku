@@ -62,8 +62,11 @@ async function plikDla(adres, katalog) {
   }
 }
 
-// `katalog`: katalog strony ze znakiem / na końcu (domyślnie app/; testy podają tymczasowy).
+// `katalog`: katalog strony (domyślnie app/; testy podają tymczasowy). Separator na końcu jest
+// dopisywany, gdy go brak, żeby porównanie początku ścieżki nie przepuściło katalogu obok
+// o tym samym początku nazwy (app2 obok app).
 export function utworzSerwer(katalog = APP) {
+  if (!katalog.endsWith(sep)) katalog += sep;
   return createServer(async (zadanie, odpowiedz) => {
     const naglowki = {
       "Content-Security-Policy": POLITYKA,
@@ -88,7 +91,8 @@ export function utworzSerwer(katalog = APP) {
       odpowiedz.writeHead(500, { ...naglowki, "Content-Type": "text/plain; charset=utf-8" }).end("500\n");
       return;
     }
-    odpowiedz.writeHead(200, { ...naglowki, "Content-Type": TYPY[extname(plik)] ?? "text/plain; charset=utf-8" });
+    // Długość treści także przy HEAD: odpowiedź bez ciała mówi, ile miałoby GET.
+    odpowiedz.writeHead(200, { ...naglowki, "Content-Type": TYPY[extname(plik)] ?? "text/plain; charset=utf-8", "Content-Length": tresc.length });
     odpowiedz.end(zadanie.method === "HEAD" ? undefined : tresc);
   });
 }

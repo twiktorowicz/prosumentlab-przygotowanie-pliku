@@ -7,7 +7,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
 import { dekoduj, LIMIT_BAJTOW } from "../app/lib/dekodowanie.js";
-import { czytajTauron, LIMIT_WIERSZY } from "../app/lib/tauron.js";
+import { czytajTauron, LIMIT_WIERSZY, NAGLOWEK_BEZ_NUMEROW } from "../app/lib/tauron.js";
 import { sprawdzBezpiecznik } from "../app/lib/bezpiecznik.js";
 import { generuj, PPE_FIKCYJNE, PLATNICY_FIKCYJNI } from "../narzedzia/generator.mjs";
 
@@ -490,4 +490,28 @@ test("50 000 wierszy godziny 03:00 doby zmiany czasu na zimowy: odczyt do końca
     assert.equal(wyst[0], 1, `${s}: pierwszy wiersz w pliku to pierwsze wystąpienie`);
     assert.ok(wyst.slice(1).every((x) => x === 2), `${s}: pozostałe to drugie wystąpienie`);
   }
+});
+
+test("kolumna strefy: etykieta dłuższa niż 80 jednostek UTF-16 to blad_strefa, 40 liter spoza BMP przechodzi", () => {
+  const plik = (strefa) => `${NAGLOWEK_BEZ_NUMEROW}\nenergia czynna oddana netto;2025-02-03 01:00;${strefa};0,100;100,00\n` +
+    "energia czynna pobrana netto;2025-02-03 01:00;Reszta dnia;0,000;100,00\n";
+  // Litera matematyczna U+1D400 to jedna litera i dwie jednostki UTF-16.
+  assert.equal(czytajTauron(plik("\u{1D400}".repeat(40))).ok, true, "40 liter, 80 jednostek");
+  assert.deepEqual(czytajTauron(plik(`a${"\u{1D400}".repeat(40)}`)), { ok: false, kod: "blad_strefa", wiersz: 2 }, "81 jednostek");
+  assert.deepEqual(czytajTauron(plik("a".repeat(81))), { ok: false, kod: "blad_strefa", wiersz: 2 });
+});
+
+test("pierwsza i ostatnia godzina pliku pomijają nieistniejącą godzinę 03:00 doby zmiany czasu na letni", () => {
+  // 2026-03-29: po 02:00 jest 04:00. Wiersz 03:00 na początku albo na końcu pliku nie wyznacza
+  // pierwszej ani ostatniej godziny, tak jak nie liczy się w zakresie.
+  const zamien = (opcje, z) => generuj({ ...opcje, ziarno: 1, podmien: ["oddanie", "pobor"].map((seria) => ({ znacznik: z, seria, pole: "znacznik", tekst: "2026-03-29 03:00" })) }).surowy;
+  const poczatek = czytaj(zamien({ od: "2026-03-29", do: "2026-03-29", obetnijPoczatek: 1 }, "2026-03-29 02:00"));
+  assert.equal(poczatek.ok, true);
+  assert.equal(poczatek.pierwszyZnacznik, "2026-03-29 04:00");
+  assert.equal(poczatek.ostatniZnacznik, "2026-03-30 00:00");
+  const koniec = czytaj(zamien({ od: "2026-03-28", do: "2026-03-29", obetnijKoniec: 20 }, "2026-03-29 04:00"));
+  assert.equal(koniec.ok, true);
+  assert.equal(koniec.pierwszyZnacznik, "2026-03-28 01:00");
+  assert.equal(koniec.ostatniZnacznik, "2026-03-29 02:00");
+  assert.ok(koniec.ostatniPorzadek < poczatek.pierwszyPorzadek, "porządek z godzin istniejących");
 });

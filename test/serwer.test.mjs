@@ -6,7 +6,7 @@ import assert from "node:assert/strict";
 import { request } from "node:http";
 import { readFileSync, mkdtempSync, writeFileSync, symlinkSync, chmodSync, rmSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { utworzSerwer, POLITYKA, komunikatStartu } from "../narzedzia/serwer.mjs";
@@ -79,11 +79,14 @@ test("poza katalogiem app/ nic nie wychodzi", async () => {
   }
 });
 
-test("tylko GET i HEAD", async () => {
+test("tylko GET i HEAD; HEAD i GET z długością treści", async () => {
   assert.equal((await zapytaj("/", "POST")).status, 405);
   const head = await zapytaj("/", "HEAD");
   assert.equal(head.status, 200);
   assert.equal(head.tresc.length, 0);
+  const rozmiar = readFileSync(fileURLToPath(new URL("../app/index.html", import.meta.url))).length;
+  assert.equal(head.naglowki["content-length"], String(rozmiar), "HEAD");
+  assert.equal((await zapytaj("/", "GET")).naglowki["content-length"], String(rozmiar), "GET");
 });
 
 test("polityka w znaczniku meta strony jest ta sama, bez frame-ancestors", () => {
@@ -113,8 +116,21 @@ test("wiersz poleceń: --host z innym adresem wypisuje ostrzeżenie, domyślnie 
         wynik(wyjscie);
       }
     });
-    p.on("error", blad);
-    setTimeout(() => { p.kill(); blad(new Error(`brak komunikatu startu: ${wyjscie}`)); }, 5000);
+    let bledy = "";
+    p.stderr.on("data", (d) => {
+      bledy += d;
+    });
+    const czas = setTimeout(() => { p.kill(); blad(new Error(`brak komunikatu startu: ${wyjscie}`)); }, 5000);
+    // Podproces, który skończył się przed komunikatem startu (np. zajęty port), kończy test od
+    // razu, bez czekania na limit czasu.
+    p.on("exit", (kod) => {
+      clearTimeout(czas);
+      if (!wyjscie.includes("Ctrl+C")) blad(new Error(`serwer zakończył się kodem ${kod}: ${bledy}`));
+    });
+    p.on("error", (b) => {
+      clearTimeout(czas);
+      blad(b);
+    });
   });
   const domyslny = await uruchom([]);
   assert.match(domyslny, /http:\/\/127\.0\.0\.1:\d+\//);
@@ -149,7 +165,7 @@ test("dowiązanie prowadzące poza katalog strony: 404", async () => {
     writeFileSync(join(baza, "tajne.txt"), "Zasady pracy\n");
     symlinkSync(join(baza, "tajne.txt"), join(baza, "app", "dowiazanie.txt"));
     symlinkSync(baza, join(baza, "app", "katalog"));
-    const s = await serwerNa(join(baza, "app") + "/");
+    const s = await serwerNa(join(baza, "app") + sep);
     try {
       const p = s.address().port;
       assert.equal((await zapytaj("/index.html", "GET", p)).status, 200);
@@ -173,7 +189,7 @@ test("plik, którego nie da się odczytać: błąd odpowiedzi, serwer działa da
     writeFileSync(join(baza, "index.html"), "strona\n");
     writeFileSync(join(baza, "zamkniety.js"), "x\n");
     chmodSync(join(baza, "zamkniety.js"), 0o000);
-    const s = await serwerNa(baza + "/");
+    const s = await serwerNa(baza + sep);
     try {
       const p = s.address().port;
       const o = await zapytaj("/zamkniety.js", "GET", p);
@@ -194,5 +210,46 @@ test("wiersz poleceń: --port spoza 0–65535 albo nie liczba kończy się komun
     const w = spawnSync(process.execPath, [fileURLToPath(new URL("../narzedzia/serwer.mjs", import.meta.url)), "--port", zly], { encoding: "utf8", timeout: 5000 });
     assert.equal(w.status, 2, `--port ${JSON.stringify(zly)}`);
     assert.match(w.stderr, /--port/, `--port ${JSON.stringify(zly)}`);
+  }
+});
+
+test("katalog strony bez końcowego separatora: ten sam wynik, katalog obok o wspólnym początku nazwy niedostępny", async () => {
+  const baza = mkdtempSync(join(tmpdir(), "serwer-"));
+  try {
+    mkdirSync(join(baza, "app"));
+    mkdirSync(join(baza, "app2"));
+    writeFileSync(join(baza, "app", "index.html"), "strona\n");
+    writeFileSync(join(baza, "app2", "tajne.txt"), "Zasady pracy\n");
+    for (const katalog of [join(baza, "app"), join(baza, "app") + sep]) {
+      const s = await serwerNa(katalog);
+      try {
+        const p = s.address().port;
+        assert.equal((await zapytaj("/", "GET", p)).tresc.toString(), "strona\n", katalog);
+        assert.equal((await zapytaj("/index.html", "GET", p)).status, 200, katalog);
+        for (const sciezka of ["/../app2/tajne.txt", "/..%2fapp2/tajne.txt", "/%2e%2e/app2/tajne.txt"]) {
+          const o = await zapytaj(sciezka, "GET", p);
+          assert.equal(o.status, 404, `${katalog} ${sciezka}`);
+          assert.equal(o.tresc.includes("Zasady pracy"), false, sciezka);
+        }
+      } finally {
+        await new Promise((gotowe) => s.close(gotowe));
+      }
+    }
+  } finally {
+    rmSync(baza, { recursive: true, force: true });
+  }
+});
+
+test("wiersz poleceń: błąd startu podprocesu kończy test od razu", async () => {
+  // Zajęty port: podproces kończy się kodem 2, zanim wypisze komunikat startu.
+  const zajety = await serwerNa(join(fileURLToPath(new URL("../app/", import.meta.url))));
+  try {
+    const t0 = Date.now();
+    const w = spawnSync(process.execPath, [fileURLToPath(new URL("../narzedzia/serwer.mjs", import.meta.url)), "--port", String(zajety.address().port)], { encoding: "utf8", timeout: 5000 });
+    assert.equal(w.status, 2);
+    assert.match(w.stderr, /serwer:/);
+    assert.ok(Date.now() - t0 < 4000);
+  } finally {
+    await new Promise((gotowe) => zajety.close(gotowe));
   }
 });

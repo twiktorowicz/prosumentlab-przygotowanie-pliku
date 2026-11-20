@@ -119,20 +119,17 @@ test("wysyłka i zapis w wersji 0.1.2: teksty zatwierdzone przez właściciela, 
 });
 
 test("wysyłka krok po kroku, miesiąc faktury i zgoda w wersji 0.1.3: teksty zatwierdzone przez właściciela, słowo w słowo", () => {
+  // Teksty z 0.1.3, których 0.1.4 nie zmienia; zmienione są w teście wersji 0.1.4.
   const ZATWIERDZONE = {
     krok_zapis: "Wysyłka pliku",
     udostepnij_przycisk: "Przygotuj wiadomość z plikiem",
-    udostepnij_podpowiedz: "Otworzy się lista aplikacji. Wybierz pocztę, dotknij pola „Do” i wybierz „Wklej”: adres raporty@prosumentlab.pl skopiujemy do schowka. Plik będzie już w załączniku. Sprawdź wiadomość i ją wyślij.",
     udostepnij_tekst: "Dane do darmowego raportu, zgłoszenie {numer}. Adres: raporty@prosumentlab.pl",
     droga_zapis_pokaz: "Wolę zapisać plik i dołączyć go sam",
     droga_zapis_krok1: "Krok 1. Zapisz plik na tym urządzeniu.",
-    droga_zapis_krok2: "Krok 2. Otwórz wiadomość i dołącz zapisany plik.",
-    mailto_przycisk: "Otwórz wiadomość",
     mailto_najpierw_zapisz: "Najpierw zapisz plik w kroku 1.",
     faktura_miesiac: "Miesiąc, za który jest faktura",
     faktura_inny_okres: "Faktura obejmuje inny okres niż jeden miesiąc",
     faktura_miesiac_biezacy: "Faktury za ten miesiąc jeszcze nie ma. Wybierz miesiąc, który już się skończył.",
-    udostepnij_niedostepne: "Ta przeglądarka nie wyśle pliku ZIP. Zapisz plik w kroku 1, a potem w kroku 2 otwórz wiadomość i dołącz plik.",
     instalacja_pojemnosc_brak: "Jeśli znasz pojemność magazynu, wpisz ją. Bez niej opiszemy wyniki mniej dokładnie.",
     zgoda_bez: "Darmowy raport przygotujemy także bez tej zgody: pomagasz nam samym plikiem i danymi z faktury, z którymi porównamy obliczenia. Bez zgody plik i liczby z faktury usuniemy najpóźniej 3 dni po wysłaniu raportu.",
   };
@@ -142,6 +139,26 @@ test("wysyłka krok po kroku, miesiąc faktury i zgoda w wersji 0.1.3: teksty za
   assert.equal(TEKSTY.udostepnij_tytul, "Zgłoszenie {numer} do ProsumentLab");
   assert.equal(TEKSTY.mailto_bez_zalacznika, "Wiadomość otworzy się bez załącznika. Zanim ją wyślesz, dołącz plik {plik} z folderu Pobrane.");
   assert.equal(TEKSTY.faktura_okres_przyszly, "Koniec okresu jest późniejszy niż dzisiejsza data. Faktura dotyczy okresu, który już się skończył, więc sprawdź datę.");
+});
+
+test("kolejność pytań o cenę i poprawki w wersji 0.1.4: teksty zatwierdzone przez właściciela, słowo w słowo", () => {
+  const ZATWIERDZONE = {
+    mailto_przycisk: "Napisz nową wiadomość",
+    droga_zapis_krok2: "Krok 2. Napisz wiadomość i dołącz zapisany plik.",
+    udostepnij_niedostepne: "Ta przeglądarka nie wyśle pliku ZIP. Zapisz plik w kroku 1, a potem w kroku 2 napisz wiadomość i dołącz plik.",
+    udostepnij_podpowiedz: "Wybierz pocztę. W polu „Do” wybierz „Wklej”: adres raporty@prosumentlab.pl jest już w schowku. Plik jest w załączniku, a temat możesz zostawić pusty.",
+    sprzedawca_na_liscie: "Ten sprzedawca jest na liście powyżej. Możesz go tam wybrać albo zostawić swój wpis.",
+    faktura_cena_grosze: "Cena wygląda na podaną w groszach. Wpisz ją w złotych, na przykład 0,62.",
+    faktura_grupa_faktura: "Faktura",
+    faktura_grupa_cena: "Cena energii",
+    taryfa_przy_dynamicznej: "Przy cenie dynamicznej grupa taryfowa dotyczy tylko opłat za dystrybucję.",
+    taryfa_przy_stalej: "Przy cenie stałej strefy grupy taryfowej dotyczą opłat za dystrybucję, a często też ceny energii.",
+  };
+  for (const [klucz, tekst] of Object.entries(ZATWIERDZONE)) assert.equal(TEKSTY[klucz], tekst, klucz);
+  // Bez zmian w 0.1.4 (19.28).
+  assert.equal(TEKSTY.pomoc_rodzaj_ceny, "Chodzi o cenę energii kupowanej z sieci, nie o wycenę energii oddanej. Cena stała to stawka za 1 kWh z cennika, taka sama przez cały okres, czasem inna w każdej strefie. Cena dynamiczna zmienia się co godzinę razem z cenami na rynku energii.");
+  assert.equal(TEKSTY.pomoc_taryfa, "Grupa taryfowa to oznaczenie w rodzaju G11, G12 albo G13. Jest na fakturze przy danych punktu poboru (punkt 4 na rysunku).");
+  assert.equal(TEKSTY.faktura_cena_format, "Wpisz cenę tak, jak jest na fakturze, na przykład 0,51234.");
 });
 
 test("kopiowanie adresu osobnym przyciskiem znika: bez tekstów kopiuj_adres", () => {

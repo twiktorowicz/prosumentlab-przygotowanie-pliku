@@ -8,7 +8,8 @@
 //   punkty poboru w plikach, sprzeczne wartości tej samej godziny;
 // - żadne pole formularza nie ma błędu.
 // Plik, którego narzędzie nie umie odczytać, nie blokuje: po prostu nie trafia do zgłoszenia.
-// Ten sam plik drugi raz (identyczny wynik po usunięciu kolumn) też nie trafia.
+// Duplikat też nie trafia (czytajPliki): ten sam wynik po usunięciu kolumn co plik wcześniej
+// przyjęty i te same numery albo żadnych numerów.
 // Zakres, faktura spoza zakresu, brak pól obowiązkowych i pliki bez numerów tylko informują.
 //
 // Treść CSV jest kodowana raz, przy odczycie plików (przygotujPliki), razem z sumą CRC. Złożenie
@@ -26,7 +27,7 @@ import { utworzZip } from "./zip.js";
 import { crc32 } from "./crc32.js";
 import { sprawdzBezpiecznik } from "./bezpiecznik.js";
 
-export const WERSJA = "0.1.3";
+export const WERSJA = "0.1.4";
 export const ADRES = "raporty@prosumentlab.pl";
 export const MAKS_PLIKOW = 10;
 // Tryb narzędzia i operator sieci, od którego pochodzi plik w tym trybie (eLicznik to portal
@@ -65,8 +66,16 @@ const doba = (tekst) => {
   return { rok, miesiac, dzien };
 };
 
+const teSameNumery = (a, b) => a.length === b.length && a.every((w, i) => w === b[i]);
+
+// Duplikat: ten sam wynik co plik wcześniej przyjęty i albo te same usunięte numery (płatnik,
+// PPE), albo plik sam nie ma żadnych numerów. Plik z numerami jest duplikatem tylko pliku z tymi
+// samymi numerami, więc plik o tych samych wartościach z innym PPE albo płatnikiem wchodzi do
+// porównania punktów poboru i blokuje zapis (blad_rozne_ppe), zamiast zniknąć z listy. Kopia
+// bez numerów pliku surowego nie wnosi danych ani nie może dać sprzeczności, więc dalej jest
+// duplikatem.
 function czytajPliki(bajtyPlikow) {
-  const wyniki = new Set();
+  const wyniki = new Map(); // wynik -> lista usuniętych numerów każdego przyjętego pliku
   return bajtyPlikow.map((bajty, indeks) => {
     if (indeks >= MAKS_PLIKOW) return { indeks, stan: "odrzucony", kod: "blad_za_duzo_plikow" };
     // Wyjątek przy odczycie jednego pliku nie może zatrzymać pozostałych ani strony: taki plik
@@ -85,9 +94,12 @@ function czytajPliki(bajtyPlikow) {
       if (w.wiersz !== undefined) wynik.wiersz = w.wiersz;
       return wynik;
     }
-    // Ten sam wynik co plik wcześniej na liście: duplikat, poza ZIP-em i analizą zakresu.
-    if (wyniki.has(w.wynik)) return { indeks, stan: "odrzucony", kod: "blad_duplikat" };
-    wyniki.add(w.wynik);
+    // Duplikat jest poza ZIP-em i analizą zakresu.
+    const wczesniejsze = wyniki.get(w.wynik) ?? [];
+    if (wczesniejsze.some((numery) => w.usunieteWartosci.length === 0 || teSameNumery(numery, w.usunieteWartosci))) {
+      return { indeks, stan: "odrzucony", kod: "blad_duplikat" };
+    }
+    wyniki.set(w.wynik, [...wczesniejsze, w.usunieteWartosci]);
     const bajtyCsv = utf8(w.wynik);
     return {
       indeks,

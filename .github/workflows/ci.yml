@@ -10,6 +10,7 @@ permissions:
 jobs:
   testy:
     runs-on: ubuntu-24.04
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -24,6 +25,7 @@ jobs:
 
   gitleaks:
     runs-on: ubuntu-24.04
+    timeout-minutes: 10
     env:
       GITLEAKS_WERSJA: "8.30.1"
       GITLEAKS_SHA256: "551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb"

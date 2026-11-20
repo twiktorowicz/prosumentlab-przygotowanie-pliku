@@ -2,7 +2,7 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { czytajFormularz as czytajFormularzZOpcjami, OBOWIAZKOWE_R, bladBudowyFormularza } from "../app/lib/formularz.js";
+import { czytajFormularz as czytajFormularzZOpcjami, OBOWIAZKOWE_R, bladBudowyFormularza, okresMiesiaca, sprzedawcaZListy } from "../app/lib/formularz.js";
 
 // Strona i wiersz poleceń podają operatora z trybu (Tauron) i dzień z zegara urządzenia.
 const OPCJE = { operator: "tauron_dystrybucja", dzisiaj: "2026-11-20" };
@@ -51,8 +51,8 @@ test("pusty formularz: puste obiekty, lista brakujących pól obowiązkowych, be
   assert.deepEqual(w.bledy, []);
   assert.deepEqual(w.brakujace, OBOWIAZKOWE_R);
   assert.deepEqual(OBOWIAZKOWE_R, [
-    "system_rozliczenia", "sprzedawca", "taryfa", "okres_od", "okres_do", "rodzaj_ceny", "cena_energii_netto_zl_kwh",
-  ]);
+    "system_rozliczenia", "sprzedawca", "okres_od", "okres_do", "rodzaj_ceny", "taryfa", "cena_energii_netto_zl_kwh",
+  ], "w kolejności pytań na ekranie");
   assert.deepEqual(w.uwagi, []);
   assert.equal(w.zgoda, false);
 });
@@ -65,7 +65,7 @@ test("pola puste i same spacje nie trafiają do danych", () => {
 });
 
 test("pole w złym formacie: błąd przy polu, pole nie trafia do danych i nie jest liczone jako brakujące", () => {
-  const w = czytajFormularz({ faktura: { ...FAKTURA, oplata_mocowa_zl_mies: "12,345", cena_energii_netto_zl_kwh: "0,5" } });
+  const w = czytajFormularz({ faktura: { ...FAKTURA, oplata_mocowa_zl_mies: "12,345", cena_energii_netto_zl_kwh: "0,1234567" } });
   assert.deepEqual(w.bledy, [
     { pole: "cena_energii_netto_zl_kwh", kod: "faktura_cena_format" },
     { pole: "oplata_mocowa_zl_mies", kod: "faktura_kwota_format" },
@@ -89,7 +89,7 @@ test("cena w strefach: liczba wartości równa liczbie stref taryfy", () => {
   assert.deepEqual(za_malo.bledy, [{ pole: "cena_energii_netto_zl_kwh", kod: "faktura_strefy_liczba" }]);
   const luka = czytajFormularz({ faktura: { ...FAKTURA, cena_energii_netto_zl_kwh: ["0,60", "", "0,40"] } });
   assert.deepEqual(luka.bledy, [{ pole: "cena_energii_netto_zl_kwh", kod: "faktura_strefy_liczba" }]);
-  const zla = czytajFormularz({ faktura: { ...FAKTURA, cena_energii_netto_zl_kwh: ["0,60", "0,7", "0,40"] } });
+  const zla = czytajFormularz({ faktura: { ...FAKTURA, cena_energii_netto_zl_kwh: ["0,60", "0,7x", "0,40"] } });
   assert.deepEqual(zla.bledy, [{ pole: "cena_energii_netto_zl_kwh[1]", kod: "faktura_cena_format" }]);
   const puste = czytajFormularz({ faktura: { ...FAKTURA, cena_energii_netto_zl_kwh: ["", "", ""] } });
   assert.deepEqual(puste.bledy, []);
@@ -114,12 +114,29 @@ test("taryfa „inna”: puste pola stref na końcu się nie liczą, puste w śr
   assert.deepEqual(g13.bledy, [{ pole: "cena_energii_netto_zl_kwh", kod: "faktura_strefy_liczba" }]);
 });
 
-test("kwota najwyżej 4 cyfry, cena najwyżej 2 cyfry przed przecinkiem", () => {
+test("kwota najwyżej 4 cyfry; cena od 10 zł/kWh to cena w groszach", () => {
   const w = czytajFormularz({ faktura: { ...FAKTURA, oplata_mocowa_zl_mies: "10000", cena_energii_netto_zl_kwh: "100,50" } });
   assert.deepEqual(w.bledy, [
-    { pole: "cena_energii_netto_zl_kwh", kod: "faktura_cena_format" },
+    { pole: "cena_energii_netto_zl_kwh", kod: "faktura_cena_grosze" },
     { pole: "oplata_mocowa_zl_mies", kod: "faktura_kwota_format" },
   ]);
+});
+
+test("cena bez dopisywania groszy: zapis z co najmniej dwoma miejscami, od 10 zł błąd faktura_cena_grosze", () => {
+  const cena = (c, faktura = {}) => czytajFormularz({ faktura: { ...FAKTURA, ...faktura, cena_energii_netto_zl_kwh: c } });
+  assert.equal(cena("1").raport.cena_energii_netto_zl_kwh, "1.00");
+  assert.equal(cena("0,6").raport.cena_energii_netto_zl_kwh, "0.60");
+  assert.equal(cena("0,51234").raport.cena_energii_netto_zl_kwh, "0.51234");
+  assert.deepEqual(cena(["0,6", "1", "0,4"]).raport.cena_energii_netto_zl_kwh, ["0.60", "1.00", "0.40"]);
+  assert.equal(cena("0,6", { rodzaj_ceny: "dynamiczna" }).raport.cena_energii_netto_zl_kwh, "0.60");
+  const grosze = cena("51");
+  assert.deepEqual(grosze.bledy, [{ pole: "cena_energii_netto_zl_kwh", kod: "faktura_cena_grosze" }]);
+  assert.equal("cena_energii_netto_zl_kwh" in grosze.raport, false);
+  assert.deepEqual(grosze.brakujace, [], "pole z błędem nie jest brakujące");
+  assert.deepEqual(grosze.uwagi, [], "błąd zamiast uwagi o nietypowej cenie");
+  assert.deepEqual(cena(["0,60", "51", "0,40"]).bledy, [{ pole: "cena_energii_netto_zl_kwh[1]", kod: "faktura_cena_grosze" }]);
+  assert.deepEqual(cena("51", { rodzaj_ceny: "dynamiczna" }).bledy, [{ pole: "cena_energii_netto_zl_kwh", kod: "faktura_cena_grosze" }]);
+  assert.deepEqual(cena("9,99").bledy, []);
 });
 
 test("jeden zakres lat 2010–2099: okres faktury i miesiące w odpowiedziach o instalacji", () => {
@@ -293,7 +310,7 @@ test("okres z przyszłości: koniec po dniu z zegara urządzenia to błąd pola"
 test("uwaga o nietypowej cenie: każda cena poniżej 0,20 albo powyżej 1,50 zł/kWh, bez błędu", () => {
   const uwagi = (cena, faktura = {}) => czytajFormularz({ faktura: { ...FAKTURA, ...faktura, cena_energii_netto_zl_kwh: cena } }).uwagi;
   const NIETYPOWA = [{ kod: "FAKTURA_CENA_NIETYPOWA" }];
-  for (const cena of ["0,19999", "1,50001", "0,05", "12,34"]) assert.deepEqual(uwagi(cena), NIETYPOWA, cena);
+  for (const cena of ["0,19999", "1,50001", "0,05", "9,99", "0", "2"]) assert.deepEqual(uwagi(cena), NIETYPOWA, cena);
   for (const cena of ["0,20", "0,200000", "1,50", "0,51234", "1,49999"]) assert.deepEqual(uwagi(cena), [], cena);
   assert.deepEqual(uwagi(["0,60", "0,70", "0,15"]), NIETYPOWA, "jedna ze stref");
   assert.deepEqual(uwagi(["0,60", "0,70", "0,40"]), []);
@@ -301,7 +318,7 @@ test("uwaga o nietypowej cenie: każda cena poniżej 0,20 albo powyżej 1,50 zł
   const w = czytajFormularz({ faktura: { ...FAKTURA, rodzaj_ceny: "dynamiczna", cena_energii_netto_zl_kwh: "1,60" } });
   assert.deepEqual(w.bledy, []);
   assert.equal(w.raport.cena_energii_netto_zl_kwh, "1.60");
-  assert.deepEqual(uwagi("0,1"), [], "cena w złym formacie: błąd pola, bez uwagi");
+  assert.deepEqual(uwagi("0,1234567"), [], "cena w złym formacie: błąd pola, bez uwagi");
 });
 
 test("uwaga o długim okresie: więcej niż 62 dni, licząc oba końce", () => {
@@ -383,4 +400,30 @@ test("miesiąc faktury przy systemie opustów jest pomijany razem z błędem", (
 test("plik formularza: okres_miesiac jako tekst", () => {
   assert.equal(bladBudowyFormularza({ faktura: { okres_miesiac: "2025-04" } }), null);
   assert.equal(bladBudowyFormularza({ faktura: { okres_miesiac: 202504 } }), "faktura.okres_miesiac");
+});
+
+test("okresMiesiaca: pierwszy i ostatni dzień miesiąca, ten sam co w faktury.json", () => {
+  assert.deepEqual(okresMiesiaca("2024-02"), { od: "2024-02-01", do: "2024-02-29" });
+  assert.deepEqual(okresMiesiaca("2025-02"), { od: "2025-02-01", do: "2025-02-28" });
+  assert.deepEqual(okresMiesiaca("2025-12"), { od: "2025-12-01", do: "2025-12-31" });
+  assert.deepEqual(okresMiesiaca("2025-04"), { od: "2025-04-01", do: "2025-04-30" });
+  for (const zly of ["", "2025-13", "2025-4", "2009-12", "2025-", null]) assert.equal(okresMiesiaca(zly), null, String(zly));
+  const w = zMiesiacem("2024-02", { dzisiaj: "2026-11-20" });
+  assert.deepEqual([w.raport.okres_od, w.raport.okres_do], ["2024-02-01", "2024-02-29"]);
+});
+
+test("sprzedawca z listy wpisany jako „inny”: nazwa jako osobne słowo albo fraza", () => {
+  for (const tak of ["Tauron Sprzedaż", "TAURON", "tauron sprzedaż gze", "E.ON Polska", "e-on", "EON", "E ON", "PGE Obrót", "pge",
+    "Pstryk", "Enea S.A.", "Energa-Obrót", "Energa", "Sprzedawca (Tauron)"]) {
+    assert.equal(sprzedawcaZListy(tak), true, tak);
+  }
+  for (const nie of ["", "   ", "Energetyka Lokalna", "Peonia", "Taurus", "Eneasz", "Pstrykacz", "Moja spółdzielnia", "Leon", "GEO N", "Tauron2"]) {
+    assert.equal(sprzedawcaZListy(nie), false, nie);
+  }
+  assert.equal(sprzedawcaZListy(42), false);
+  // Tylko podpowiedź na stronie: nazwa trafia do faktury bez zmian, bez błędu i bez uwagi.
+  const w = czytajFormularz({ faktura: { ...FAKTURA, sprzedawca: "inny", sprzedawca_nazwa: "Tauron Sprzedaż" } });
+  assert.equal(w.raport.sprzedawca_nazwa, "Tauron Sprzedaż");
+  assert.deepEqual(w.bledy, []);
+  assert.deepEqual(w.uwagi, []);
 });

@@ -14,7 +14,7 @@
 // Numery płatnika i PPE są trzymane tylko w zmiennej, do porównania plików w tym samym
 // zgłoszeniu. Nie są nigdzie pokazywane, zapisywane ani przekształcane, także w skrót.
 
-import { rozbierzZnacznik, godzinaZZnacznika, porzadek, dobaZmianyNaZimowy, numerDnia } from "./kalendarz.js";
+import { rozbierzZnacznik, godzinaZZnacznika, porzadek, dobaZmianyNaZimowy, numerDnia, istniejeGodzina } from "./kalendarz.js";
 import { liczbaZCyfr } from "./kwoty.js";
 import { sprawdzBezpiecznik } from "./bezpiecznik.js";
 
@@ -39,10 +39,12 @@ const CZYNNE = new Set(["oddanie", "pobor"]);
 // spacje (bez spacji na końcu); najwyżej 2 cyfry; od 2 do 40 znaków; najwyżej 8 różnych etykiet
 // w pliku. Etykiety G13 z eLicznika to nazwy stref („Reszta dnia”); etykiet innych taryf nie
 // znamy, więc reguła dopuszcza też „Strefa 1” albo „T1”. Numer, adres ani formuła arkusza
-// („=SUMA”) nie przejdą.
+// („=SUMA”) nie przejdą. Etykieta dłuższa niż 80 jednostek UTF-16 (40 znaków spoza BMP) jest
+// odrzucana przed rozbiciem na znaki, a etykieta już sprawdzona nie jest sprawdzana ponownie.
 const STREFA = /^\p{L}(?:[\p{L}0-9-]| (?! |$))*$/u;
 const MAKS_CYFR_STREFY = 2;
 const MAKS_ETYKIET = 8;
+const MAKS_JEDNOSTEK_STREFY = 80;
 // Wartość w kWh w jednej godzinie: najwyżej trzy cyfry przed przecinkiem (do 999,999 kWh).
 const WARTOSC = /^(\d{1,3})(?:,(\d{1,3}))?$/;
 // Kompletność w procentach, od 0 do 100.
@@ -175,6 +177,8 @@ export function czytajTauron(tekst) {
   // komunikatem; reszta tekstu spoza dozwolonej postaci odrzuca plik.
   const etykiety = new Set();
   for (const w of wiersze) {
+    if (etykiety.has(w.strefa)) continue;
+    if (w.strefa.length > MAKS_JEDNOSTEK_STREFY) return blad("blad_strefa", w.linia);
     const dlugosc = [...w.strefa].length;
     const cyfr = w.strefa.replace(/[^0-9]/g, "").length;
     if (!STREFA.test(w.strefa) || dlugosc < 2 || dlugosc > 40 || cyfr > MAKS_CYFR_STREFY) return blad("blad_strefa", w.linia);
@@ -190,10 +194,14 @@ export function czytajTauron(tekst) {
   if (niepelne.size > 0) uwagi.push({ kod: "UWAGA_KOMPLETNOSC", n: niepelne.size });
   if (bierna) uwagi.push({ kod: "UWAGA_BIERNA" });
 
-  // Pierwsza i ostatnia godzina pliku tylko z serii energii czynnej, tak jak zakres.
-  let pierwszy = czynne[0];
-  let ostatni = czynne[0];
-  for (const w of czynne) {
+  // Pierwsza i ostatnia godzina pliku tylko z serii energii czynnej i tylko z godzin istniejących
+  // (bez 03:00 doby zmiany czasu na letni), tak jak zakres. Plik bez żadnej istniejącej godziny:
+  // ze wszystkich wierszy czynnych.
+  const istniejace = czynne.filter((w) => istniejeGodzina(w.doba, w.godzina, w.wystapienie));
+  const skrajne = istniejace.length > 0 ? istniejace : czynne;
+  let pierwszy = skrajne[0];
+  let ostatni = skrajne[0];
+  for (const w of skrajne) {
     if (w.porzadek < pierwszy.porzadek) pierwszy = w;
     if (w.porzadek > ostatni.porzadek) ostatni = w;
   }

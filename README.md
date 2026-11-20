@@ -111,15 +111,23 @@ domowej. Używaj wyłącznie plików z generatora.
 6. Przejdź cały przepływ:
    - przed dodaniem pliku sekcja zakresu mówi, że zakres pojawi się po dodaniu pliku;
    - dodaj `rok_2025.csv`: plakietka „Przyjęty”, zakres „12 pełnych miesięcy”;
-   - w danych z faktury wybierz najpierw sposób rozliczenia energii oddanej; wybór „system
-     opustów” chowa pozostałe pola, a powrót do net-billingu pokazuje je z wpisanymi wartościami;
-   - wypełnij pozostałe pola faktury dowolnymi zmyślonymi liczbami (na przykład 12,34): sprzedawca,
-     grupa taryfowa, miesiąc faktury, pole wyboru „To jest faktura korygująca” (zaznacz i odznacz),
-     rodzaj ceny i cenę; przy cenie dynamicznej jest jedno pole ceny, bez stref; rozwiń „Co to
-     znaczy?” przy kilku polach i „Opłaty stałe (nieobowiązkowe)”;
+   - dane z faktury są w dwóch grupach: „Faktura” (sposób rozliczenia energii oddanej, sprzedawca,
+     miesiąc faktury, korekta) i „Cena energii” (rodzaj ceny, grupa taryfowa, cena, opłaty stałe);
+     wybór „system opustów” chowa pozostałe pola, a powrót do net-billingu pokazuje je z wpisanymi
+     wartościami;
+   - wypełnij pozostałe pola faktury dowolnymi zmyślonymi liczbami (na przykład 0,62): sprzedawca,
+     miesiąc faktury, pole wyboru „To jest faktura korygująca” (zaznacz i odznacz), rodzaj ceny,
+     grupa taryfowa i cenę; przy cenie dynamicznej jest jedno pole ceny, bez stref; pod grupą
+     taryfową jest zdanie zależne od rodzaju ceny; rozwiń „Co to znaczy?” przy kilku polach
+     i „Opłaty stałe (nieobowiązkowe)”;
+   - wybór sprzedawcy „Pstryk” zaznacza cenę dynamiczną; da się ją zmienić. Sprzedawca „inny”
+     z nazwą „Tauron Sprzedaż” daje pod polem uwagę, że ten sprzedawca jest na liście;
+   - cena „1” po wyjściu z pola zmienia się na „1,00”; cena „51” daje komunikat o cenie w groszach
+     i blokuje zapis;
    - miesiąc faktury to dwie puste listy (miesiąc, rok, lata od bieżącego do 2022); miesiąc bieżący
      daje komunikat, że faktury za ten miesiąc jeszcze nie ma. Pole „Faktura obejmuje inny okres niż
-     jeden miesiąc” pokazuje dwa pola dat, a odznaczenie wraca do wybranego miesiąca;
+     jeden miesiąc” pokazuje dwa pola dat z pierwszym i ostatnim dniem wybranego miesiąca (wpisanych
+     wcześniej dat nie zmienia), a odznaczenie wraca do wybranego miesiąca;
    - zaznacz odpowiedzi o instalacji, w tym miesiąc i rok magazynu, i zgodę; przy magazynie „tak”
      bez pojemności pod polem jest uwaga, a zapis dalej działa;
    - sprawdź podgląd: pliki z ZIP-a i tabela miesięcy są zwinięte, rozwiń kilka z nich;
@@ -131,15 +139,15 @@ domowej. Używaj wyłącznie plików z generatora.
      i po odmowie udostępniania jest droga z zapisem: krok 1 zapis, krok 2 wiadomość. W Chrome na
      Androidzie przeglądarka odmawia (Chromium nie udostępnia plików ZIP): po pierwszym dotknięciu
      strona przechodzi do drogi z zapisem z komunikatem;
-   - w drodze z zapisem „Otwórz wiadomość” jest nieaktywne, dopóki plik nie jest zapisany. Dotknij
-     „Zapisz plik ZIP”; plik ma nazwę
+   - w drodze z zapisem „Napisz nową wiadomość” jest nieaktywne, dopóki plik nie jest zapisany.
+     Dotknij „Zapisz plik ZIP”; plik ma nazwę
      `prosumentlab_<numer>.zip` z numerem ze strony (iOS: aplikacja Pliki, Pobrane;
      Android: Pobrane). Chrome może przy zapisie ostrzegać
      o pobieraniu pliku bez HTTPS; wtedy wybierz „Zachowaj”;
-   - po zapisie pod przyciskiem jest „Zapisano plik …”, a „Otwórz wiadomość” jest aktywne; po
-     zmianie pola wiadomość znów czeka na zapis, a po ponownym zapisie dochodzi komunikat, że to
-     nowsza wersja pliku;
-   - dotknij „Otwórz wiadomość”: aplikacja poczty otwiera się z adresem raporty@prosumentlab.pl,
+   - po zapisie pod przyciskiem jest „Zapisano plik …”, a „Napisz nową wiadomość” jest aktywne; po
+     zmianie pola potwierdzenie znika od razu, wiadomość znów czeka na zapis, a po ponownym zapisie
+     dochodzi komunikat, że to nowsza wersja pliku;
+   - dotknij „Napisz nową wiadomość”: aplikacja poczty otwiera się z adresem raporty@prosumentlab.pl,
      tematem z numerem zgłoszenia i treścią z przypomnieniem o załączniku; plik nie jest
      dołączony. **Nie wysyłaj tej wiadomości**, zamknij ją bez wysyłania;
    - dodaj `dwa_punkty.csv`: plik dostaje komunikat o kilku punktach poboru, zapis jest
