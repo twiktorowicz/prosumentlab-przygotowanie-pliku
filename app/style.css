@@ -161,6 +161,9 @@ a:hover { color: var(--zielen-najechanie); }
 .mono { font-family: var(--mono); }
 
 .naglowek { background: var(--biel); border-bottom: 1px solid var(--linia); padding: 48px 0 32px; }
+/* Napis ProsumentLab nad tytułem: odnośnik do strony głównej, otwierany w nowej karcie. */
+.marka { display: inline-block; margin-bottom: 12px; font-size: 17px; font-weight: 700; text-decoration: none; }
+.marka:hover { text-decoration: underline; }
 .stopka { padding: 32px 0 48px; }
 
 .uklad {

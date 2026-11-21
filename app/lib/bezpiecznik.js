@@ -21,8 +21,28 @@ const REGULY = [
   /\d{12,}/,
   /(?<![\p{L}\p{N}_])PPE(?![\p{L}\p{N}_])/iu,
   /590(?:[ -]?\d){15}/,
-  /[^\s@;]+@[^\s@;]+\.[^\s@;]+/,
 ];
+
+// Reguła 5. Adres e-mail to „@” ze znakiem adresu tuż przed nim i ciągiem znaków adresu tuż za
+// nim, w którym jest kropka z co najmniej jednym znakiem przed nią i za nią. Znak adresu to każda
+// jednostka UTF-16 poza odstępem, „@” i średnikiem. To ten sam warunek co wzorzec
+// /[^\s@;]+@[^\s@;]+\.[^\s@;]+/, ale wzorzec szukany od każdej pozycji cofał się po całym polu bez
+// „@” i czas rósł z kwadratem długości pola. Tu sprawdzenie zaczyna się tylko od „@”, a ciąg za
+// każdym „@” kończy się najpóźniej na następnym „@”, więc każdy znak jest czytany najwyżej dwa razy.
+const ZNAK_ADRESU = /[^\s@;]/;
+function adresEmail(tekst) {
+  for (let at = tekst.indexOf("@"); at >= 0; at = tekst.indexOf("@", at + 1)) {
+    if (at === 0 || !ZNAK_ADRESU.test(tekst[at - 1])) continue;
+    let kropka = -1;
+    let koniec = at + 1;
+    while (koniec < tekst.length && ZNAK_ADRESU.test(tekst[koniec])) {
+      if (kropka < 0 && koniec > at + 1 && tekst[koniec] === ".") kropka = koniec;
+      koniec++;
+    }
+    if (kropka >= 0 && kropka < koniec - 1) return true;
+  }
+  return false;
+}
 
 // `linie`: [{tekst, linia}], gdzie `linia` to numer linii w pliku wejściowym.
 // `poleZnacznika`: numer pola (od 0, separator średnik) pomijanego w regule 6.
@@ -47,7 +67,7 @@ export function sprawdzBezpiecznik(linie, usunieteWartosci, { poleZnacznika = -1
       return cyfry.length >= 12 || listaCyfr.some((w) => cyfry.includes(w));
     });
   for (const { tekst, linia } of linie) {
-    if (lista.some((w) => tekst.includes(w)) || REGULY.some((r) => r.test(tekst)) || (zRegula6 && regula6(tekst))) return { linia };
+    if (lista.some((w) => tekst.includes(w)) || REGULY.some((r) => r.test(tekst)) || adresEmail(tekst) || (zRegula6 && regula6(tekst))) return { linia };
   }
   return null;
 }

@@ -91,6 +91,7 @@ test("N22: opcje list wyboru mają tekst dla każdej wartości z formularza", as
     assert.deepEqual(Object.keys(TEKSTY[klucz]), wartosci, klucz);
   }
   assert.equal(TEKSTY.strefy_g12.length, 2);
+  assert.equal(TEKSTY.strefy_g12w.length, 2);
   assert.equal(TEKSTY.strefy_g13.length, 3);
   assert.equal(TEKSTY.miesiace_mianownik.length, 12);
   assert.equal(TEKSTY.miesiace_dopelniacz.length, 12);
@@ -159,6 +160,26 @@ test("kolejność pytań o cenę i poprawki w wersji 0.1.4: teksty zatwierdzone 
   assert.equal(TEKSTY.pomoc_rodzaj_ceny, "Chodzi o cenę energii kupowanej z sieci, nie o wycenę energii oddanej. Cena stała to stawka za 1 kWh z cennika, taka sama przez cały okres, czasem inna w każdej strefie. Cena dynamiczna zmienia się co godzinę razem z cenami na rynku energii.");
   assert.equal(TEKSTY.pomoc_taryfa, "Grupa taryfowa to oznaczenie w rodzaju G11, G12 albo G13. Jest na fakturze przy danych punktu poboru (punkt 4 na rysunku).");
   assert.equal(TEKSTY.faktura_cena_format, "Wpisz cenę tak, jak jest na fakturze, na przykład 0,51234.");
+});
+
+test("pola stref i drobne poprawki w wersji 0.1.5: teksty zatwierdzone przez właściciela, słowo w słowo", () => {
+  const ZATWIERDZONE = {
+    cena_strefy_jedna: "Jeśli faktura podaje jedną cenę dla wszystkich stref, wpisz ją w każde pole.",
+    pomoc_cena_stala: "Cena netto za 1 kWh z części faktury o sprzedaży energii (punkt 6 na rysunku).",
+    wstep_operator: "Na razie narzędzie przyjmuje pliki z eLicznika Taurona. Nad plikami od innych operatorów pracujemy.",
+    naglowek_marka: "ProsumentLab",
+    pomoc_cena_dynamiczna: "Przy cenie dynamicznej faktura podaje średnią cenę za 1 kWh w okresie rozliczeniowym. Wpisz ją netto. Na fakturze Taurona znajdziesz ją w tabeli „Szczegóły kalkulacji ceny energii ważonej zużyciem”, w kolumnie „Cena netto”. Jeśli jej nie znajdziesz, zostaw pole puste.",
+  };
+  for (const [klucz, tekst] of Object.entries(ZATWIERDZONE)) assert.equal(TEKSTY[klucz], tekst, klucz);
+  // Nazwy stref z taryfy TAURON Dystrybucja: G12w ma własne, G12 i G13 bez zmian.
+  assert.deepEqual(TEKSTY.strefy_g12w, ["strefa szczytowa", "strefa pozaszczytowa"]);
+  assert.deepEqual(TEKSTY.strefy_g12, ["strefa dzienna", "strefa nocna"]);
+  assert.deepEqual(TEKSTY.strefy_g13, ["szczyt przedpołudniowy", "szczyt popołudniowy", "pozostałe godziny doby"]);
+  // Bez zmian w 0.1.5 (19.29): wybór jednej ceny zostaje przy taryfie „inna”.
+  assert.equal(TEKSTY.faktura_cena_jedna, "jedna cena dla wszystkich stref");
+  assert.equal(TEKSTY.faktura_cena_strefy, "osobna cena w każdej strefie");
+  assert.equal(TEKSTY.faktura_cena_kilka, "Jeśli na fakturze jest kilka cen, wpisz ostatnią.");
+  assert.equal(TEKSTY.faktura_cena_nietypowa, "Ta cena wygląda nietypowo. Sprawdź, czy to cena netto za 1 kWh.");
 });
 
 test("kopiowanie adresu osobnym przyciskiem znika: bez tekstów kopiuj_adres", () => {

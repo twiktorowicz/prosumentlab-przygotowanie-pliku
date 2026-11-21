@@ -88,6 +88,13 @@ test("odnośniki otwierają się w nowej karcie, żeby nie skasować danych z pa
   assert.doesNotMatch(HTML, /<a\b(?![^>]*target="_blank")[^>]*href="(?:https?:|\/)/, "odnośniki w index.html");
 });
 
+test("nagłówek: napis ProsumentLab nad tytułem jako odnośnik do / w nowej karcie, akapit o operatorze pod opisem", () => {
+  const naglowek = /<header class="naglowek">([\s\S]*?)<\/header>/.exec(HTML)[1];
+  assert.match(naglowek, /<div class="tresc">\s*<a class="marka" href="\/" target="_blank" rel="noopener noreferrer" data-tekst="naglowek_marka"><\/a>\s*<h1 data-tekst="wstep_tytul"><\/h1>/);
+  assert.match(naglowek, /<p class="wstep" data-tekst="wstep_opis"><\/p>\s*<p class="wstep" data-tekst="wstep_operator"><\/p>\s*<\/div>/);
+  assert.equal((HTML.match(/href="\/"/g) ?? []).length, 1, "jeden odnośnik do strony głównej");
+});
+
 test("pola daty okresu faktury w zakresie lat narzędzia", () => {
   const pola = [...HTML.matchAll(/<input type="date"[^>]*>/g)].map((m) => m[0]);
   assert.equal(pola.length, 2);
@@ -110,6 +117,25 @@ test("podpowiedź o kolejności stref tylko przy taryfie „inna”", () => {
   assert.ok(linia);
   assert.match(linia, /taryfa === "inna"/);
   assert.doesNotMatch(linia, /g12/);
+});
+
+test("G12, G12w i G13 przy cenie stałej: pola stref od razu, bez wyboru, pod nimi cena_strefy_jedna; wybór tylko przy „inna”", () => {
+  const blok = blokPola("cena_energii_netto_zl_kwh");
+  assert.match(blok, /<div class="pola-stref" id="cena-pola"><\/div>\s*<p class="podpowiedz" id="cena-strefy-jedna" data-tekst="cena_strefy_jedna" hidden><\/p>/);
+  const wybor = funkcja("wyborStref");
+  assert.match(wybor, /const znane = stala && \(STREFY\[taryfa\] \?\? 0\) > 1;/, "znana liczba stref większa niż 1");
+  assert.match(wybor, /const wyborTrybu = stala && taryfa === "inna";/, "wybór jednej ceny tylko przy „inna”");
+  assert.match(wybor, /strefy: znane \|\| \(wyborTrybu && wybrane\("cena_tryb"\) === "strefy"\)/);
+  const budowa = funkcja("zbudujPolaCen");
+  assert.match(budowa, /pokaz\(\$\("#cena-tryb"\), wyborTrybu\);/);
+  assert.match(budowa, /pokaz\(\$\("#cena-strefy-jedna"\), znane\);/);
+});
+
+test("nazwy stref: G12w ma własne (strefy_g12w), G12 i G13 bez zmian", () => {
+  const nazwy = funkcja("nazwyStref");
+  assert.match(nazwy, /if \(taryfa === "g12"\) return TEKSTY\.strefy_g12;/);
+  assert.match(nazwy, /if \(taryfa === "g12w"\) return TEKSTY\.strefy_g12w;/);
+  assert.match(nazwy, /if \(taryfa === "g13"\) return TEKSTY\.strefy_g13;/);
 });
 
 test("uwaga o miesiącu zmiany spoza zakresu ma styl uwagi, nie błędu", () => {

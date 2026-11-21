@@ -14,7 +14,9 @@
 // Krok wysyłki w dwóch wariantach: zwykły ekran z kursorem (droga z zapisem) i telefon z emulacją
 // ekranu dotykowego, pointer: coarse (droga z udostępnianiem na atrapach, odmowa przełącza na zapis).
 // Zmiany z wersji 0.1.4 (kolejność pytań, ceny, Pstryk, „inny okres”, sprzedawca z listy, różne PPE,
-// zmiana pola tuż przed zapisem) sprawdza osobna część w obu wariantach.
+// zmiana pola tuż przed zapisem) sprawdza osobna część w obu wariantach. Tak samo zmiany z wersji
+// 0.1.5 (napis ProsumentLab w nagłówku, akapit o operatorze, pola stref bez wyboru przy G12, G12w
+// i G13, nazwy stref G12w, granica nietypowej ceny 2,00 zł/kWh, nowe pomoce do ceny).
 //
 // Wszystko, co skrypt tworzy, leży w jednym katalogu tymczasowym (pliki wejściowe, profil
 // przeglądarki, pobrany ZIP, zrzuty). Katalog jest usuwany, a przeglądarka i serwer zamykane
@@ -390,7 +392,6 @@ async function proba() {
     const wpisz = (s, v) => { const e = document.querySelector(s); e.value = v; e.dispatchEvent(new Event("input", { bubbles: true })); };
     klik('input[name="sprzedawca"][value="tauron_sprzedaz"]');
     klik('input[name="taryfa"][value="g13"]');
-    klik('input[name="cena_tryb"][value="strefy"]');
     const okres = document.querySelector('[data-miesiac="okres_miesiac"]');
     okres.querySelector('[data-czesc="miesiac"]').value = '01'; okres.querySelector('[data-czesc="rok"]').value = '2026';
     okres.querySelector('select').dispatchEvent(new Event("change", { bubbles: true }));
@@ -490,7 +491,7 @@ async function proba() {
     const zawartosc = czytajZip(zip);
     sprawdz("zawartość ZIP-a", JSON.stringify(zawartosc.map((p) => p.nazwa)) === JSON.stringify(["zgloszenie.json", "faktury.json", "instalacja.json", "pomiary_1.csv", "pomiary_2.csv"]));
     const z = JSON.parse(new TextDecoder().decode(zawartosc[0].bajty));
-    sprawdz("zgloszenie.json: numer, zgoda, klasyfikacja, wersja 0.1.4", z.numer === numer && z.zgoda_przypadek_testowy === true && z.zakres.klasyfikacja === "raport" && z.narzedzie === "0.1.4");
+    sprawdz("zgloszenie.json: numer, zgoda, klasyfikacja, wersja 0.1.5", z.numer === numer && z.zgoda_przypadek_testowy === true && z.zakres.klasyfikacja === "raport" && z.narzedzie === "0.1.5");
     const tekstZip = zip.toString("latin1");
     sprawdz("w ZIP-ie nie ma numerów PPE ani płatnika ani nazw plików", !tekstZip.includes("590000000000000010") && !tekstZip.includes("10000001") && !tekstZip.includes("eLicznik"));
     const fak = JSON.parse(new TextDecoder().decode(zawartosc[1].bajty));
@@ -599,10 +600,14 @@ async function proba() {
   }))()`);
   sprawdz("cena dynamiczna: jedno pole, bez wyboru stref, własna etykieta",
     dyn.tryb && dyn.pola === 1 && dyn.etykieta === "Średnia cena energii z faktury, netto, zł/kWh" && dyn.aria === dyn.etykieta, JSON.stringify(dyn));
-  await wpisz("#p-cena", "1,60", "input");
+  await wpisz("#p-cena", "1,80", "input");
   await czekaj(500);
-  sprawdz("cena dynamiczna 1,60: uwaga o nietypowej cenie, zapis możliwy",
-    (await widoczny("#faktura-cena-nietypowa")) && !(await js("document.querySelector('#zapisz').disabled")) && (await tekstEl("#podglad")).includes('"cena_energii_netto_zl_kwh": "1.60"'));
+  sprawdz("cena dynamiczna 1,80: bez uwagi o nietypowej cenie, zapis możliwy",
+    !(await widoczny("#faktura-cena-nietypowa")) && !(await js("document.querySelector('#zapisz').disabled")) && (await tekstEl("#podglad")).includes('"cena_energii_netto_zl_kwh": "1.80"'));
+  await wpisz("#p-cena", "2,10", "input");
+  await czekaj(500);
+  sprawdz("cena dynamiczna 2,10: uwaga o nietypowej cenie, zapis możliwy",
+    (await widoczny("#faktura-cena-nietypowa")) && !(await js("document.querySelector('#zapisz').disabled")) && (await tekstEl("#podglad")).includes('"cena_energii_netto_zl_kwh": "2.10"'));
   await klik('input[name="rodzaj_ceny"][value="stala"]');
   sprawdz("powrót do ceny stałej: ceny w strefach wracają", JSON.stringify(await js("[...document.querySelectorAll('#cena-pola input')].map(e => e.value)")) === JSON.stringify(["0,60000", "0,70000", "0,40000"]) && !(await widoczny("#faktura-cena-nietypowa")));
 
@@ -695,12 +700,12 @@ async function proba() {
   const uwagaZmiany = await js(`(() => { const z = document.querySelector('[data-zmiana="0"]'); const u = z.querySelector('.uwaga'), b = z.querySelector('.blad');
     return { uwaga: !u.hidden && u.textContent, blad: !b.hidden, klasa: u.className }; })()`);
   sprawdz("miesiąc zmiany spoza zakresu: styl uwagi, bez błędu, zapis możliwy", typeof uwagaZmiany.uwaga === "string" && uwagaZmiany.uwaga.startsWith("Ten miesiąc nie mieści się") && !uwagaZmiany.blad && !(await js("document.querySelector('#zapisz').disabled")), JSON.stringify(uwagaZmiany));
-  await js(`(() => { document.querySelector('input[name="taryfa"][value="g12"]').click(); document.querySelector('input[name="cena_tryb"][value="strefy"]').click(); })()`);
+  await js(`document.querySelector('input[name="taryfa"][value="g12"]').click()`);
   await czekaj(300);
   sprawdz("G12: bez podpowiedzi o kolejności stref", await js("document.querySelector('#strefy-kolejnosc').hidden"));
-  await js(`document.querySelector('input[name="taryfa"][value="inna"]').click()`);
+  await js(`(() => { document.querySelector('input[name="taryfa"][value="inna"]').click(); document.querySelector('input[name="cena_tryb"][value="strefy"]').click(); })()`);
   await czekaj(300);
-  sprawdz("taryfa inna: podpowiedź o kolejności stref", !(await js("document.querySelector('#strefy-kolejnosc').hidden")));
+  sprawdz("taryfa inna, osobna cena w każdej strefie: podpowiedź o kolejności stref", !(await js("document.querySelector('#strefy-kolejnosc').hidden")));
   sprawdz("podpowiedź przy polu nazwy taryfy widoczna", (await js("[...document.querySelectorAll('[data-pole=\"taryfa_nazwa\"] .podpowiedz')].map(p => !p.hidden && p.textContent).join('')")).startsWith("Wpisz tylko nazwę z faktury"));
   await wpisz("#p-taryfa_nazwa", "Taryfa PPE", "input");
   await czekaj(600);
@@ -753,14 +758,14 @@ async function proba() {
     // Pstryk ustawia cenę dynamiczną, także po wybranej stałej; zmiana sprzedawcy niczego nie kasuje.
     const cenaStan = () => js(`({ rodzaj: document.querySelector('input[name="rodzaj_ceny"]:checked')?.value ?? '', pola: document.querySelectorAll('#cena-pola input').length,
       tryb: !document.querySelector('#cena-tryb').hidden })`);
-    sprawdz(w("przed Pstrykiem: cena stała, G12 z wyborem stref"), JSON.stringify(await cenaStan()) === JSON.stringify({ rodzaj: "stala", pola: 1, tryb: true }), JSON.stringify(await cenaStan()));
+    sprawdz(w("przed Pstrykiem: cena stała, G12 z dwoma polami stref, bez wyboru"), JSON.stringify(await cenaStan()) === JSON.stringify({ rodzaj: "stala", pola: 2, tryb: false }), JSON.stringify(await cenaStan()));
     await klik('input[name="sprzedawca"][value="pstryk"]');
     sprawdz(w("Pstryk: zaznaczona cena dynamiczna, jedno pole ceny bez wyboru stref, zdanie dla ceny dynamicznej"),
       JSON.stringify(await cenaStan()) === JSON.stringify({ rodzaj: "dynamiczna", pola: 1, tryb: false }) && JSON.stringify(await zdanieTaryfy()) === JSON.stringify([DYNAMICZNA]), JSON.stringify(await cenaStan()));
     await klik('input[name="sprzedawca"][value="tauron_sprzedaz"]');
     sprawdz(w("zmiana sprzedawcy z Pstryka: cena dynamiczna zostaje"), (await cenaStan()).rodzaj === "dynamiczna");
     await klik('input[name="rodzaj_ceny"][value="stala"]');
-    sprawdz(w("cenę dynamiczną da się zmienić na stałą"), (await cenaStan()).rodzaj === "stala" && (await cenaStan()).tryb);
+    sprawdz(w("cenę dynamiczną da się zmienić na stałą"), (await cenaStan()).rodzaj === "stala" && (await cenaStan()).pola === 2);
 
     // Sprzedawca z listy wpisany jako „inny”.
     await klik('input[name="sprzedawca"][value="inny"]');
@@ -792,8 +797,9 @@ async function proba() {
     await wybierzMiesiac("01", "2026");
     await czekaj(300);
 
-    // Cena wpisana jak przez klienta i wyjście z pola: „1” -> „1,00”, „51” -> błąd groszy.
-    await klik('input[name="cena_tryb"][value="jedna"]');
+    // Cena wpisana jak przez klienta i wyjście z pola: „1” -> „1,00”, „51” -> błąd groszy. Jedno
+    // pole ceny przy G11 (G12 ma od wersji 0.1.5 od razu pola stref).
+    await klik('input[name="taryfa"][value="g11"]');
     const wpiszCene = async (tekst) => {
       await js("(() => { const e = document.querySelector('#p-cena'); e.focus(); e.select(); })()");
       await strona("Input.insertText", { text: tekst });
@@ -842,6 +848,85 @@ async function proba() {
     await zrzut(`6-wersja-0-1-4-${wariant}`, px);
   };
   await proba014("zwykły ekran", 1280);
+
+  // 6b3. Zmiany z wersji 0.1.5, na świeżo otwartej stronie z plikiem stycznia. Wywoływane w obu
+  // wariantach: zwykły ekran z kursorem (tu) i telefon z ekranem dotykowym (w 6c).
+  const proba015 = async (wariant, px) => {
+    const w = (opis) => `${wariant}: ${opis}`;
+    await otworz();
+    await ustawPliki([plikStyczen]);
+
+    // Nagłówek: napis-odnośnik nad tytułem (bez klikania, żeby nie otwierać karty), akapit o operatorze.
+    const naglowek = await js(`(() => { const t = document.querySelector('header.naglowek .tresc'); const a = t.querySelector('a'); const h1 = t.querySelector('h1');
+      const akapity = [...t.querySelectorAll('p')].filter((p) => !p.hidden && p.getClientRects().length > 0);
+      return { tekst: a?.textContent, href: a?.getAttribute('href'), target: a?.getAttribute('target'), rel: a?.getAttribute('rel'),
+        widoczny: Boolean(a) && a.getClientRects().length > 0, nadTytulem: Boolean(a && h1) && Boolean(a.compareDocumentPosition(h1) & Node.DOCUMENT_POSITION_FOLLOWING),
+        akapity: akapity.map((p) => p.dataset.tekst), operator: akapity[1]?.textContent }; })()`);
+    sprawdz(w("nagłówek: „ProsumentLab” nad tytułem, odnośnik do / w nowej karcie, rel noopener noreferrer"),
+      naglowek.tekst === "ProsumentLab" && naglowek.href === "/" && naglowek.target === "_blank" && naglowek.rel === "noopener noreferrer" && naglowek.widoczny && naglowek.nadTytulem, JSON.stringify(naglowek));
+    sprawdz(w("akapit o operatorze widoczny pod opisem"),
+      JSON.stringify(naglowek.akapity) === JSON.stringify(["wstep_opis", "wstep_operator"]) &&
+      naglowek.operator === "Na razie narzędzie przyjmuje pliki z eLicznika Taurona. Nad plikami od innych operatorów pracujemy.", JSON.stringify(naglowek));
+
+    // Pola ceny przy cenie stałej: G12, G12w, G13 od razu pola stref z podpowiedzią, bez wyboru.
+    const stanCen = () => js(`(() => { const widac = (s) => { const e = document.querySelector(s); return Boolean(e) && !e.hidden && e.getClientRects().length > 0; };
+      return { wybor: widac('#cena-tryb'), podpowiedz: widac('#cena-strefy-jedna'),
+        etykiety: [...document.querySelectorAll('#cena-pola input')].map((e) => e.labels?.[0]?.textContent ?? e.getAttribute('aria-label')) }; })()`);
+    const pomoc = () => js(`[...document.querySelectorAll('[data-pole="cena_energii_netto_zl_kwh"] details p')].filter((p) => !p.hidden).map((p) => p.textContent)`);
+    const JEDNA = "Cena energii czynnej netto, zł/kWh";
+    await klik('input[name="system_rozliczenia"][value="net_billing_rce"]');
+    await klik('input[name="rodzaj_ceny"][value="stala"]');
+    for (const [taryfa, oczekiwany] of [
+      ["g12", { wybor: false, podpowiedz: true, etykiety: ["strefa dzienna", "strefa nocna"] }],
+      ["g12w", { wybor: false, podpowiedz: true, etykiety: ["strefa szczytowa", "strefa pozaszczytowa"] }],
+      ["g13", { wybor: false, podpowiedz: true, etykiety: ["szczyt przedpołudniowy", "szczyt popołudniowy", "pozostałe godziny doby"] }],
+      ["g11", { wybor: false, podpowiedz: false, etykiety: [JEDNA] }],
+      ["inna", { wybor: true, podpowiedz: false, etykiety: [JEDNA] }],
+    ]) {
+      await klik(`input[name="taryfa"][value="${taryfa}"]`);
+      const stan = await stanCen();
+      sprawdz(w(`cena stała, ${taryfa}: ${oczekiwany.wybor ? "wybór jednej ceny" : "bez wyboru"}, ${oczekiwany.podpowiedz ? "z podpowiedzią" : "bez podpowiedzi"}, pola ${oczekiwany.etykiety.join(" / ")}`),
+        JSON.stringify(stan) === JSON.stringify(oczekiwany), JSON.stringify(stan));
+    }
+    await klik('input[name="cena_tryb"][value="strefy"]');
+    sprawdz(w("„inna” + osobna cena w każdej strefie: pole „strefa 1”, bez podpowiedzi o jednej cenie"),
+      JSON.stringify(await stanCen()) === JSON.stringify({ wybor: true, podpowiedz: false, etykiety: ["strefa 1"] }), JSON.stringify(await stanCen()));
+    await klik('input[name="cena_tryb"][value="jedna"]');
+
+    await klik('input[name="taryfa"][value="g12"]');
+    sprawdz(w("G12: podpowiedź cena_strefy_jedna i pomoc do ceny stałej"),
+      (await tekstEl("#cena-strefy-jedna")) === "Jeśli faktura podaje jedną cenę dla wszystkich stref, wpisz ją w każde pole." &&
+      JSON.stringify(await pomoc()) === JSON.stringify(["Cena netto za 1 kWh z części faktury o sprzedaży energii (punkt 6 na rysunku)."]), JSON.stringify(await pomoc()));
+    const bladCeny = () => tekstEl('[data-pole="cena_energii_netto_zl_kwh"] > .blad');
+    await wpisz("#p-cena-0", "0,60", "input");
+    await czekaj(500);
+    sprawdz(w("G12, cena tylko w jednym polu: błąd faktura_strefy_liczba, zapis zablokowany"),
+      (await bladCeny()) === "Wpisz wartość w każdej strefie albo wyczyść te pola." && await js("document.querySelector('#zapisz').disabled"), await bladCeny());
+    await wpisz("#p-cena-1", "0,60", "input");
+    await czekaj(500);
+    sprawdz(w("G12, ta sama cena w obu polach: bez błędu, zapis możliwy, dwie ceny w faktury.json"),
+      (await bladCeny()) === "" && !(await js("document.querySelector('#zapisz').disabled")) && /"cena_energii_netto_zl_kwh": \[\s*"0\.60",\s*"0\.60"\s*\]/.test(await tekstEl("#podglad")), await bladCeny());
+
+    await klik('input[name="rodzaj_ceny"][value="dynamiczna"]');
+    sprawdz(w("G12 przy cenie dynamicznej: jedno pole, bez wyboru i podpowiedzi, pomoc z tabelą Taurona"),
+      JSON.stringify(await stanCen()) === JSON.stringify({ wybor: false, podpowiedz: false, etykiety: ["Średnia cena energii z faktury, netto, zł/kWh"] }) &&
+      JSON.stringify(await pomoc()) === JSON.stringify(["Przy cenie dynamicznej faktura podaje średnią cenę za 1 kWh w okresie rozliczeniowym. Wpisz ją netto. Na fakturze Taurona znajdziesz ją w tabeli „Szczegóły kalkulacji ceny energii ważonej zużyciem”, w kolumnie „Cena netto”. Jeśli jej nie znajdziesz, zostaw pole puste."]),
+      `${JSON.stringify(await stanCen())} ${JSON.stringify(await pomoc())}`);
+
+    // Granica nietypowej ceny: 2,00 zł/kWh.
+    await klik('input[name="rodzaj_ceny"][value="stala"]');
+    await klik('input[name="taryfa"][value="g11"]');
+    await wpisz("#p-cena", "1,80", "input");
+    await czekaj(500);
+    sprawdz(w("G11, cena 1,80: bez uwagi o nietypowej cenie"), !(await widoczny("#faktura-cena-nietypowa")) && (await tekstEl("#podglad")).includes('"cena_energii_netto_zl_kwh": "1.80"'));
+    await wpisz("#p-cena", "2,10", "input");
+    await czekaj(500);
+    sprawdz(w("G11, cena 2,10: uwaga o nietypowej cenie, zapis możliwy"),
+      (await widoczny("#faktura-cena-nietypowa")) && !(await js("document.querySelector('#zapisz').disabled")) && (await tekstEl("#podglad")).includes('"cena_energii_netto_zl_kwh": "2.10"'));
+    sprawdz(w(`${px} px: bez poziomego przewijania`), (await js("document.documentElement.scrollWidth")) <= px);
+    await zrzut(`7-wersja-0-1-5-${wariant}`, px);
+  };
+  await proba015("zwykły ekran", 1280);
 
   // 6c. Wariant 2, telefon: 390 px i ekran dotykowy z emulacji DevTools (pointer: coarse). Chromium
   // nie udostępnia plików ZIP, więc canShare, share i schowek to atrapy wstawiane przed skryptami
@@ -942,6 +1027,7 @@ async function proba() {
   sprawdz("telefon 390 px, droga z zapisem: bez poziomego przewijania", (await js("document.documentElement.scrollWidth")) <= 390);
   await zrzut("5-telefon-odmowa-zapis", 390);
   await proba014("telefon", 390);
+  await proba015("telefon", 390);
   await strona("Page.removeScriptToEvaluateOnNewDocument", { identifier: atrapy });
   await strona("Emulation.setTouchEmulationEnabled", { enabled: false });
   await szerokosc(1280);

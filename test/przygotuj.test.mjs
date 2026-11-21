@@ -173,6 +173,16 @@ test("formularz poprawnej budowy z każdym kluczem przechodzi", () => {
   assert.equal(faktury.raport.operator_dystrybucyjny, "tauron_dystrybucja");
 });
 
+test("G12 z jedną ceną jako tekstem (starszy plik formularza): kod 0, cena w faktury.json", () => {
+  const plik = zapisz("n1g12.csv", generuj(N1).surowy);
+  const formularz = { faktura: { taryfa: "g12", rodzaj_ceny: "stala", cena_energii_netto_zl_kwh: "0,60" } };
+  const wyjscie = join(katalog, "g12.zip");
+  const w = uruchom(["--numer", NUMER, "--data", DATA, "--formularz", zapisz("g12.json", JSON.stringify(formularz)), "--wyjscie", wyjscie, plik]);
+  assert.equal(w.kod, 0, w.stderr);
+  const faktury = JSON.parse(new TextDecoder().decode(czytajZip(readFileSync(wyjscie))[1].bajty));
+  assert.equal(faktury.raport.cena_energii_netto_zl_kwh, "0.60");
+});
+
 test("pomoc", () => {
   const w = uruchom(["--help"]);
   assert.equal(w.kod, 0);

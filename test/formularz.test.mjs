@@ -102,6 +102,14 @@ test("cena w strefach: liczba wartości równa liczbie stref taryfy", () => {
   assert.deepEqual(bezTaryfy.bledy, [{ pole: "cena_energii_netto_zl_kwh", kod: "faktura_strefy_liczba" }]);
 });
 
+test("G12, G12w i G13 z jedną ceną jako tekstem: przyjęte bez błędu (starsze pliki formularza)", () => {
+  for (const taryfa of ["g12", "g12w", "g13"]) {
+    const w = czytajFormularz({ faktura: { ...FAKTURA, taryfa, cena_energii_netto_zl_kwh: "0,60" } });
+    assert.deepEqual(w.bledy, [], taryfa);
+    assert.equal(w.raport.cena_energii_netto_zl_kwh, "0.60", taryfa);
+  }
+});
+
 test("taryfa „inna”: puste pola stref na końcu się nie liczą, puste w środku to błąd", () => {
   const inna = (cena) => czytajFormularz({ faktura: { ...FAKTURA, taryfa: "inna", taryfa_nazwa: "Taryfa X", cena_energii_netto_zl_kwh: cena } });
   const dwie = inna(["0,10", "0,20", "", " "]);
@@ -307,17 +315,17 @@ test("okres z przyszłości: koniec po dniu z zegara urządzenia to błąd pola"
   assert.deepEqual(czytajFormularz({ faktura: { ...FAKTURA, okres_od: "2026-11-01", okres_do: "2026-11-21" } }, { dzisiaj: undefined }).bledy, [], "bez daty");
 });
 
-test("uwaga o nietypowej cenie: każda cena poniżej 0,20 albo powyżej 1,50 zł/kWh, bez błędu", () => {
+test("uwaga o nietypowej cenie: każda cena poniżej 0,20 albo powyżej 2,00 zł/kWh, bez błędu", () => {
   const uwagi = (cena, faktura = {}) => czytajFormularz({ faktura: { ...FAKTURA, ...faktura, cena_energii_netto_zl_kwh: cena } }).uwagi;
   const NIETYPOWA = [{ kod: "FAKTURA_CENA_NIETYPOWA" }];
-  for (const cena of ["0,19999", "1,50001", "0,05", "9,99", "0", "2"]) assert.deepEqual(uwagi(cena), NIETYPOWA, cena);
-  for (const cena of ["0,20", "0,200000", "1,50", "0,51234", "1,49999"]) assert.deepEqual(uwagi(cena), [], cena);
+  for (const cena of ["0,19999", "2,00001", "2,10", "0,05", "9,99", "0"]) assert.deepEqual(uwagi(cena), NIETYPOWA, cena);
+  for (const cena of ["0,20", "0,200000", "1,50", "1,80", "2", "2,00", "0,51234", "1,99999"]) assert.deepEqual(uwagi(cena), [], cena);
   assert.deepEqual(uwagi(["0,60", "0,70", "0,15"]), NIETYPOWA, "jedna ze stref");
   assert.deepEqual(uwagi(["0,60", "0,70", "0,40"]), []);
-  assert.deepEqual(uwagi("1,60", { rodzaj_ceny: "dynamiczna" }), NIETYPOWA, "cena dynamiczna 1,6");
-  const w = czytajFormularz({ faktura: { ...FAKTURA, rodzaj_ceny: "dynamiczna", cena_energii_netto_zl_kwh: "1,60" } });
+  assert.deepEqual(uwagi("2,10", { rodzaj_ceny: "dynamiczna" }), NIETYPOWA, "cena dynamiczna 2,1");
+  const w = czytajFormularz({ faktura: { ...FAKTURA, rodzaj_ceny: "dynamiczna", cena_energii_netto_zl_kwh: "2,10" } });
   assert.deepEqual(w.bledy, []);
-  assert.equal(w.raport.cena_energii_netto_zl_kwh, "1.60");
+  assert.equal(w.raport.cena_energii_netto_zl_kwh, "2.10");
   assert.deepEqual(uwagi("0,1234567"), [], "cena w złym formacie: błąd pola, bez uwagi");
 });
 

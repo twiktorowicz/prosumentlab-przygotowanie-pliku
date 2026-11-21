@@ -51,7 +51,7 @@ const KOLEJNOSC_R = [
 // Typowa cena energii netto w zł/kWh, w milionowych częściach złotego (cena ma najwyżej
 // 6 miejsc po przecinku). Cena spoza przedziału daje tylko uwagę.
 const CENA_TYPOWA_OD = 200000;
-const CENA_TYPOWA_DO = 1500000;
+const CENA_TYPOWA_DO = 2000000;
 const OKRES_DLUGI_DNI = 62;
 
 // Cena z czytajCene ("0.51234") jako liczba milionowych części złotego, na samych cyfrach.

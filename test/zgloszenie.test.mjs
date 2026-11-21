@@ -227,7 +227,7 @@ test("system opustów: faktury.json tylko z operatorem i systemem, uwaga FAKTURA
 test("uwagi o nietypowej cenie i długim okresie trafiają do zgloszenie.json i nie blokują zapisu", () => {
   const w = przygotujZgloszenie({
     pliki: [generuj(N1).surowy],
-    formularz: { faktura: { ...FAKTURA, okres_od: "2025-04-01", okres_do: "2025-06-07", rodzaj_ceny: "dynamiczna", cena_energii_netto_zl_kwh: "1,60" } },
+    formularz: { faktura: { ...FAKTURA, okres_od: "2025-04-01", okres_do: "2025-06-07", rodzaj_ceny: "dynamiczna", cena_energii_netto_zl_kwh: "2,10" } },
     numer: NUMER,
     utworzono: DATA,
   });
@@ -291,9 +291,9 @@ test("podgląd: pierwsze 5 wierszy danych dokładnie jak w pliku wyjściowym, su
 // ZIP z całości (przygotujZgloszenie). Zapisany skrót to zrzut wyniku obecnego kodu: pilnuje, żeby
 // żadna zmiana nie przesunęła ani jednego bajtu bez świadomego przeliczenia skrótu.
 // Przeliczony po usunięciu pytania o pierwsze oddanie energii (instalacja.json bez tego klucza)
-// i po zmianie wersji narzędzia na 0.1.4 (pole narzedzie w zgloszenie.json; reszta ZIP-a bez zmian,
-// sprawdzone na kodzie 0.1.3 z samą zmienioną wersją).
-const SKROT_SCENARIUSZA = "104694e7708748f71d6166dc9aaad9474cd153c81f5874ab3b2eca3e92e2473d";
+// i po zmianie wersji narzędzia na 0.1.5 (pole narzedzie w zgloszenie.json; reszta ZIP-a bez zmian,
+// sprawdzone na kodzie 0.1.4 z samą zmienioną wersją).
+const SKROT_SCENARIUSZA = "a516d84f700a7214775da535ef3590ec501a78f5f25fa34635dee0ac73639024";
 function scenariuszPelny() {
   return {
     pliki: [

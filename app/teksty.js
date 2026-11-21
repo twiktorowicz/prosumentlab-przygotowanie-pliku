@@ -5,8 +5,10 @@
 // właściciel.
 export const TEKSTY = {
   "tytul_strony": "Narzędzie do przygotowania pliku",
+  "naglowek_marka": "ProsumentLab",
   "wstep_tytul": "Przygotuj plik do wysłania",
   "wstep_opis": "Narzędzie działa w Twojej przeglądarce i niczego nie wysyła. Usuwa z pliku godzinowego numer punktu poboru (PPE) i numer płatnika, a potem zapisuje na Twoim urządzeniu jeden plik ZIP. Ten plik wysyłasz nam w załączniku wiadomości.",
+  "wstep_operator": "Na razie narzędzie przyjmuje pliki z eLicznika Taurona. Nad plikami od innych operatorów pracujemy.",
   "noscript": "Narzędzie do przygotowania pliku działa tylko z włączonym JavaScriptem. Włącz go w ustawieniach przeglądarki.",
   "wersja": "To jest wersja {wersja}. Kod tej wersji jest publiczny na GitHubie. Narzędzie niczego nie wysyła, także do usług AI.",
 
@@ -118,11 +120,12 @@ export const TEKSTY = {
   "faktura_rodzaj_ceny": "Jaką cenę płacisz za energię pobraną z sieci?",
   "pomoc_rodzaj_ceny": "Chodzi o cenę energii kupowanej z sieci, nie o wycenę energii oddanej. Cena stała to stawka za 1 kWh z cennika, taka sama przez cały okres, czasem inna w każdej strefie. Cena dynamiczna zmienia się co godzinę razem z cenami na rynku energii.",
   "faktura_cena": "Cena energii czynnej netto, zł/kWh",
-  "pomoc_cena_stala": "Cena netto za 1 kWh z części faktury o sprzedaży energii (punkt 6 na rysunku). Jeśli faktura podaje osobną cenę w każdej strefie, wybierz „osobna cena w każdej strefie”.",
+  "pomoc_cena_stala": "Cena netto za 1 kWh z części faktury o sprzedaży energii (punkt 6 na rysunku).",
   "faktura_cena_dynamiczna": "Średnia cena energii z faktury, netto, zł/kWh",
-  "pomoc_cena_dynamiczna": "Przy cenie dynamicznej faktura podaje średnią cenę za 1 kWh w okresie rozliczeniowym. Wpisz ją netto. Jeśli jej nie znajdziesz, zostaw pole puste.",
+  "pomoc_cena_dynamiczna": "Przy cenie dynamicznej faktura podaje średnią cenę za 1 kWh w okresie rozliczeniowym. Wpisz ją netto. Na fakturze Taurona znajdziesz ją w tabeli „Szczegóły kalkulacji ceny energii ważonej zużyciem”, w kolumnie „Cena netto”. Jeśli jej nie znajdziesz, zostaw pole puste.",
   "faktura_cena_jedna": "jedna cena dla wszystkich stref",
   "faktura_cena_strefy": "osobna cena w każdej strefie",
+  "cena_strefy_jedna": "Jeśli faktura podaje jedną cenę dla wszystkich stref, wpisz ją w każde pole.",
   "faktura_oplaty": "Opłaty stałe (nieobowiązkowe)",
   "faktura_oplaty_wstep": "Jeśli je przepiszesz, szybciej sprawdzimy obliczenia. Jeśli nie, weźmiemy je z cennika sprzedawcy i taryfy operatora.",
   "faktura_mocowa": "Opłata mocowa netto za miesiąc, zł",
@@ -152,6 +155,7 @@ export const TEKSTY = {
   },
   "opcje_rodzaj_ceny": { "stala": "stała, ze stawką z cennika", "dynamiczna": "dynamiczna, zmienia się co godzinę" },
   "strefy_g12": ["strefa dzienna", "strefa nocna"],
+  "strefy_g12w": ["strefa szczytowa", "strefa pozaszczytowa"],
   "strefy_g13": ["szczyt przedpołudniowy", "szczyt popołudniowy", "pozostałe godziny doby"],
   "strefa_inna": "strefa {n}",
   "faktura_strefy_kolejnosc": "Wpisz wartości w tej samej kolejności co na fakturze.",

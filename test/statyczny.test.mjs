@@ -152,8 +152,9 @@ test("N21: reguły adresów łapią literały szablonowe i setAttribute", () => 
   assert.match("`https://x.example/${a}`", /\b(?:https?:\/\/|mailto:)[^\s"'`)<>]*/);
 });
 
-test("N21: odnośniki do stron serwisu tylko do /prywatnosc/ i /jak-pobrac-dane-z-elicznika/", () => {
-  const DOZWOLONE = new Set(["/prywatnosc/", "/jak-pobrac-dane-z-elicznika/"]);
+test("N21: odnośniki do stron serwisu tylko do /, /prywatnosc/ i /jak-pobrac-dane-z-elicznika/", () => {
+  // „/” to strona główna z napisu w nagłówku, otwierana w nowej karcie (wczytane pliki zostają).
+  const DOZWOLONE = new Set(["/", "/prywatnosc/", "/jak-pobrac-dane-z-elicznika/"]);
   const znalezione = new Set();
   const zle = [];
   for (const sciezka of pliki()) {
@@ -167,5 +168,5 @@ test("N21: odnośniki do stron serwisu tylko do /prywatnosc/ i /jak-pobrac-dane-
     }
   }
   assert.deepEqual(zle, []);
-  assert.deepEqual([...znalezione].sort(), ["/jak-pobrac-dane-z-elicznika/", "/prywatnosc/"]);
+  assert.deepEqual([...znalezione].sort(), ["/", "/jak-pobrac-dane-z-elicznika/", "/prywatnosc/"]);
 });

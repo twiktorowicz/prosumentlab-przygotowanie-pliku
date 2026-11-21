@@ -176,8 +176,10 @@ const STREFY = { g11: 1, g12: 2, g12w: 2, g13: 3 };
 let strefInnej = 1;
 const wartosciCen = { jedna: "", strefy: [] };
 
+// Nazwy stref z taryfy TAURON Dystrybucja: G12 dzienna i nocna, G12w szczytowa i pozaszczytowa.
 function nazwyStref(taryfa) {
-  if (taryfa === "g12" || taryfa === "g12w") return TEKSTY.strefy_g12;
+  if (taryfa === "g12") return TEKSTY.strefy_g12;
+  if (taryfa === "g12w") return TEKSTY.strefy_g12w;
   if (taryfa === "g13") return TEKSTY.strefy_g13;
   return Array.from({ length: strefInnej }, (_, i) => t("strefa_inna", { n: i + 1 }));
 }
@@ -191,17 +193,22 @@ function zapamietajCeny() {
 }
 
 // Ceny w strefach tylko przy cenie stałej i taryfie z kilkoma strefami; przy cenie dynamicznej
-// faktura podaje jedną średnią cenę.
+// faktura podaje jedną średnią cenę. G12, G12w i G13 mają od razu pola stref (jedną cenę klient
+// wpisuje w każde pole, mówi o tym podpowiedź pod polami). Przy taryfie „inna” liczby stref nie
+// znamy, więc klient wybiera jedną cenę albo osobne ceny.
 function wyborStref() {
   const taryfa = wybrane("taryfa");
-  const wieleStref = ((STREFY[taryfa] ?? 0) > 1 || taryfa === "inna") && wybrane("rodzaj_ceny") !== "dynamiczna";
-  return { taryfa, wieleStref, strefy: wieleStref && wybrane("cena_tryb") === "strefy" };
+  const stala = wybrane("rodzaj_ceny") !== "dynamiczna";
+  const znane = stala && (STREFY[taryfa] ?? 0) > 1;
+  const wyborTrybu = stala && taryfa === "inna";
+  return { taryfa, znane, wyborTrybu, strefy: znane || (wyborTrybu && wybrane("cena_tryb") === "strefy") };
 }
 
 function zbudujPolaCen() {
   zapamietajCeny();
-  const { taryfa, wieleStref, strefy } = wyborStref();
-  pokaz($("#cena-tryb"), wieleStref);
+  const { taryfa, znane, wyborTrybu, strefy } = wyborStref();
+  pokaz($("#cena-tryb"), wyborTrybu);
+  pokaz($("#cena-strefy-jedna"), znane);
   const kontener = $("#cena-pola");
   if (strefy) {
     kontener.replaceChildren(...nazwyStref(taryfa).map((nazwa, i) => {
@@ -217,8 +224,8 @@ function zbudujPolaCen() {
     kontener.replaceChildren(pole);
   }
   pokaz($("#dodaj-strefe"), strefy && taryfa === "inna" && strefInnej < 4);
-  // G12 i G12w mają nazwane pola („dzienna”, „nocna”), więc kolejność wynika z nazw; przy taryfie
-  // „inna” pola mają tylko numery i trzeba je wypełnić w kolejności z faktury.
+  // G12, G12w i G13 mają nazwane pola, więc kolejność wynika z nazw; przy taryfie „inna” pola mają
+  // tylko numery i trzeba je wypełnić w kolejności z faktury.
   pokaz($("#strefy-kolejnosc"), strefy && taryfa === "inna");
 }
 
