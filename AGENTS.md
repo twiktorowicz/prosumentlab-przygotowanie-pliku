@@ -30,8 +30,10 @@ tylko kod, który ją realizuje, i dane syntetyczne do testów.
    do przygotowania pliku”, nigdy „anonimizator” ani „anonimizacja”. Nowy albo zmieniony tekst
    zatwierdza właściciel przed commitem.
 8. **Po każdej zmianie w `app/`** trzeba odświeżyć sumy: `node narzedzia/sumy.mjs --zapisz`.
-9. **Commit tylko za zgodą właściciela. Push robi wyłącznie właściciel**, po uruchomieniu gitleaks
-   na całej historii i ręcznym przeglądzie plików.
+9. **Commit dopiero po przeglądzie zmian.** Agent, który wykonuje zlecenie, commita nie robi:
+   oddaje raport, a commit robi prowadzący sesję po przeczytaniu zmian i uruchomieniu testów.
+   **Push, tag i wydanie tylko po wyraźnej zgodzie właściciela na tę operację**, po uruchomieniu
+   gitleaks na całej historii i przeglądzie plików. Historii nie przepisujemy, tagów nie przesuwamy.
 
 ## Jak pracować
 
