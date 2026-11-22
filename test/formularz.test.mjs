@@ -263,6 +263,30 @@ test("instalacja: błędy liczb, miesięcy i zmian", () => {
   assert.deepEqual(w.instalacja, { magazyn: "tak", zmiany: [{ rodzaj: "pompa_ciepla", miesiac: "2025-02" }] });
 });
 
+test("instalacja: moc przed rozbudową tylko przy rozbudowie instalacji, format jak moc instalacji", () => {
+  const zmiany = (z) => czytajFormularz({ instalacja: { zmiany: z } });
+  const z = zmiany([{ rodzaj: "rozbudowa_pv", miesiac: "2025-05", moc_przed_kwp: "3,1" }]);
+  assert.deepEqual(z.bledy, []);
+  assert.deepEqual(Object.entries(z.instalacja.zmiany[0]), [["rodzaj", "rozbudowa_pv"], ["miesiac", "2025-05"], ["moc_przed_kwp", "3.10"]]);
+  // Bez mocy przed (puste pole albo brak klucza) wpis jak dotąd.
+  for (const moc of [undefined, "", "  "]) {
+    assert.deepEqual(zmiany([{ rodzaj: "rozbudowa_pv", miesiac: "2025-05", moc_przed_kwp: moc }]).instalacja.zmiany, [{ rodzaj: "rozbudowa_pv", miesiac: "2025-05" }], String(moc));
+  }
+  // Przy innej zmianie moc przed nie ma znaczenia i nie trafia do pliku (pole jest tylko przy rozbudowie).
+  const inna = zmiany([{ rodzaj: "pompa_ciepla", miesiac: "2025-05", moc_przed_kwp: "3,1" }]);
+  assert.deepEqual(inna.bledy, []);
+  assert.deepEqual(inna.instalacja.zmiany, [{ rodzaj: "pompa_ciepla", miesiac: "2025-05" }]);
+  // Zły format: błąd pola, wartość nie trafia do danych.
+  for (const zla of ["0", "-1", "abc", "1000", "3,123"]) {
+    const w = zmiany([{ rodzaj: "rozbudowa_pv", miesiac: "2025-05", moc_przed_kwp: zla }]);
+    assert.deepEqual(w.bledy, [{ pole: "moc_przed_kwp", kod: "instalacja_liczba_format" }], zla);
+    assert.deepEqual(w.instalacja.zmiany, [{ rodzaj: "rozbudowa_pv", miesiac: "2025-05" }], zla);
+  }
+  // Plik formularza: klucz moc_przed_kwp jest tekstem.
+  assert.equal(bladBudowyFormularza({ instalacja: { zmiany: [{ rodzaj: "rozbudowa_pv", miesiac: "2025-05", moc_przed_kwp: "3,1" }] } }), null);
+  assert.equal(bladBudowyFormularza({ instalacja: { zmiany: [{ rodzaj: "rozbudowa_pv", miesiac: "2025-05", moc_przed_kwp: 3.1 }] } }), "instalacja.zmiany[0].moc_przed_kwp");
+});
+
 test("zgoda tylko jako wartość logiczna true", () => {
   assert.equal(czytajFormularz({ zgoda: true }).zgoda, true);
   assert.equal(czytajFormularz({ zgoda: "true" }).zgoda, false);

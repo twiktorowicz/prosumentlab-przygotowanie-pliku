@@ -14,7 +14,8 @@
 //
 // Treść CSV jest kodowana raz, przy odczycie plików (przygotujPliki), razem z sumą CRC. Złożenie
 // zgłoszenia po zmianie pola buduje tylko pliki JSON; archiwum powstaje dopiero przy zapisie
-// (utworzZipZgloszenia).
+// (utworzZipZgloszenia). Archiwum jest kompresowane asynchronicznie (zip.js), więc
+// utworzZipZgloszenia i przygotujZgloszenie zwracają obietnicę.
 
 import { dekoduj } from "./dekodowanie.js";
 import { czytajTauron } from "./tauron.js";
@@ -143,15 +144,15 @@ export function przygotujPliki(bajtyPlikow) {
  * @param {string} p.utworzono dzień RRRR-MM-DD z zegara urządzenia, tylko informacja
  */
 // Tu ZIP powstaje od razu, bo wiersz poleceń zapisuje go zawsze; `zip` to null, gdy zapis jest
-// niemożliwy.
-export function przygotujZgloszenie({ pliki, formularz, numer, utworzono }) {
+// niemożliwy. Zwraca obietnicę (kompresja jest asynchroniczna).
+export async function przygotujZgloszenie({ pliki, formularz, numer, utworzono }) {
   const wynik = zlozZgloszenie({ przygotowane: przygotujPliki(pliki), formularz, numer, utworzono });
-  return { ...wynik, zip: wynik.moznaZapisac ? utworzZipZgloszenia(wynik) : null };
+  return { ...wynik, zip: wynik.moznaZapisac ? await utworzZipZgloszenia(wynik) : null };
 }
 
-// Archiwum ZIP ze złożonego zgłoszenia. Odmawia (wyjątek), gdy zapis jest niemożliwy: blokada,
-// brak plików albo błąd pola.
-export function utworzZipZgloszenia(wynik) {
+// Archiwum ZIP ze złożonego zgłoszenia (obietnica). Odmawia (odrzucona obietnica), gdy zapis jest
+// niemożliwy: blokada, brak plików albo błąd pola.
+export async function utworzZipZgloszenia(wynik) {
   if (!wynik.moznaZapisac) throw new Error(`zapis niemożliwy: ${wynik.powod}`);
   return utworzZip(wynik.zawartosc);
 }
@@ -216,8 +217,10 @@ export function zlozZgloszenie({ przygotowane, formularz, numer, utworzono }) {
   if (uwagi.length > 0) zgloszenie.uwagi = uwagi.map(({ kod, gdzie }) => ({ kod, gdzie }));
 
   const faktury = Object.keys(r).length > 0 ? { format: "prosumentlab/faktury", wersja_formatu: 1, raport: r } : null;
+  // Wersja 2 formatu instalacja.json: wpis zmiany „rozbudowa_pv” może mieć klucz moc_przed_kwp.
+  // Pozostałe klucze jak w wersji 1.
   const instalacja = Object.keys(form.instalacja).length > 0
-    ? { format: "prosumentlab/instalacja", wersja_formatu: 1, ...form.instalacja }
+    ? { format: "prosumentlab/instalacja", wersja_formatu: 2, ...form.instalacja }
     : null;
   const zawartosc = zawartoscZip({ zgloszenie, faktury, instalacja, pomiary: przyjete.map((p) => p.csv) });
 

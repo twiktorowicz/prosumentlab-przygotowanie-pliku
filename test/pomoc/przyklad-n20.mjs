@@ -1,6 +1,7 @@
 // Przykład do testu N20: pełna struktura faktury i zgłoszenia (z sekcją weryfikacji), wartości zmyślone,
 // plik pomiarów z generatora. Osobny moduł, żeby wzorzec test/wzorce/n20.zip dało się
-// odtworzyć poza testem.
+// odtworzyć poza testem. ZIP powstaje asynchronicznie (obietnica); wzorzec to wariant bez
+// kompresji, czyli wynik w środowisku bez CompressionStream("deflate-raw").
 
 import { zawartoscZip } from "../../app/lib/zgloszenie.js";
 import { utworzZip } from "../../app/lib/zip.js";
@@ -10,7 +11,7 @@ const N1 = { od: "2025-06-06", do: "2025-06-07", taryfa: "G13", ziarno: 1 };
 const NUMER = "K7M3-Q9TX";
 const DATA = "2026-11-19";
 
-export function przykladN20() {
+export async function przykladN20() {
   const pomiary = new TextDecoder().decode(generuj(N1).bezNumerow);
   const zgloszenie = {
     format: "prosumentlab/zgloszenie",

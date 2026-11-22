@@ -1,7 +1,12 @@
 // Niezależny czytnik ZIP do testów: sprawdza katalog centralny, nagłówki lokalne, CRC-32
 // i rozmiary. Liczy CRC własną, bitową implementacją, bez tablicy z app/lib/crc32.js.
+// Metoda 0 (bez kompresji) i 8 (deflate); dane metody 8 rozpakowuje zlib z Node, niezależny od
+// CompressionStream, którym pakuje narzędzie. `bajty` to zawsze dane po rozpakowaniu,
+// `spakowane` to bajty tak, jak leżą w pliku.
 
-function crcBitowo(bajty) {
+import { inflateRawSync } from "node:zlib";
+
+export function crcBitowo(bajty) {
   let crc = 0xffffffff;
   for (const b of bajty) {
     crc ^= b;
@@ -41,6 +46,9 @@ export function czytajZip(zip) {
       dlugoscNazwy: u16(o + 28),
       dodatkowe: u16(o + 30),
       komentarz: u16(o + 32),
+      numerDysku: u16(o + 34),
+      atrybutyWewnetrzne: u16(o + 36),
+      atrybutyZewnetrzne: u32(o + 38),
       lokalny: u32(o + 42),
     };
     wpis.nazwa = new TextDecoder("ascii").decode(zip.subarray(o + 46, o + 46 + wpis.dlugoscNazwy));
@@ -53,10 +61,22 @@ export function czytajZip(zip) {
       u16(l + 10) === wpis.czas && u16(l + 12) === wpis.data && u32(l + 14) === wpis.crc &&
       u32(l + 18) === wpis.skompresowany && u32(l + 22) === wpis.rozmiar && u16(l + 26) === wpis.dlugoscNazwy;
     if (!zgodne) throw new Error(`nagłówek lokalny różni się od katalogu: ${wpis.nazwa}`);
-    const dodatkoweLokalne = u16(l + 28);
-    const start = l + 30 + wpis.dlugoscNazwy + dodatkoweLokalne;
-    wpis.bajty = zip.slice(start, start + wpis.skompresowany);
-    if (wpis.metoda !== 0 || wpis.skompresowany !== wpis.rozmiar) throw new Error("oczekiwany zapis bez kompresji");
+    if (new TextDecoder("ascii").decode(zip.subarray(l + 30, l + 30 + wpis.dlugoscNazwy)) !== wpis.nazwa) {
+      throw new Error(`nazwa w nagłówku lokalnym różni się od katalogu: ${wpis.nazwa}`);
+    }
+    wpis.dodatkoweLokalne = u16(l + 28);
+    const start = l + 30 + wpis.dlugoscNazwy + wpis.dodatkoweLokalne;
+    // Zawsze kopia jako Uint8Array, także gdy wejście to Buffer z readFileSync.
+    wpis.spakowane = new Uint8Array(zip.subarray(start, start + wpis.skompresowany));
+    if (wpis.metoda === 0) {
+      if (wpis.skompresowany !== wpis.rozmiar) throw new Error(`metoda 0: różne rozmiary: ${wpis.nazwa}`);
+      wpis.bajty = wpis.spakowane;
+    } else if (wpis.metoda === 8) {
+      wpis.bajty = new Uint8Array(inflateRawSync(wpis.spakowane));
+      if (wpis.bajty.length !== wpis.rozmiar) throw new Error(`metoda 8: rozmiar po rozpakowaniu inny niż w nagłówku: ${wpis.nazwa}`);
+    } else {
+      throw new Error(`nieznana metoda ${wpis.metoda}: ${wpis.nazwa}`);
+    }
     if (crcBitowo(wpis.bajty) !== wpis.crc) throw new Error(`zła suma CRC: ${wpis.nazwa}`);
     wynik.push(wpis);
     oczekiwanyLokalny = start + wpis.skompresowany;

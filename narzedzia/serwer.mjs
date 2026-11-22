@@ -9,7 +9,14 @@
 //   treści (z frame-ancestors, którego znacznik meta nie obejmuje), Cross-Origin-Opener-Policy,
 //   X-Content-Type-Options i Referrer-Policy.
 //
-// Użycie: node narzedzia/serwer.mjs [--port 8000] [--host 127.0.0.1]
+// - Z opcją --zgloszenie udaje skrypt przyjmujący zgłoszenia: POST /zgloszenie/ dostaje odpowiedź
+//   w tej samej postaci co ze strony (JSON ze stanem, te same kody i nagłówki). Odpowiedź wybiera
+//   część adresu przed „@” w nagłówku X-Adres (ODPOWIEDZI_ATRAPY), więc próba w przeglądarce
+//   sprawdza każdą odpowiedź bez restartu serwera, wpisując inny adres. Atrapa nie zapisuje
+//   niczego na dysku, nie wypisuje treści żądania ani adresu i niczego nie wysyła; ciało żądania
+//   odczytuje tylko po to, żeby policzyć bajty. Bez opcji ścieżka /zgloszenie/ daje 404.
+//
+// Użycie: node narzedzia/serwer.mjs [--port 8000] [--host 127.0.0.1] [--zgloszenie]
 // --port 0 oznacza port wybrany przez system; wartość spoza 0–65535 albo nie liczba to błąd.
 
 import { createServer } from "node:http";
@@ -62,10 +69,73 @@ async function plikDla(adres, katalog) {
   }
 }
 
+// --- Atrapa przyjmowania zgłoszeń ------------------------------------------------------------
+
+export const SCIEZKA_ZGLOSZENIA = "/zgloszenie/";
+const LIMIT_ZGLOSZENIA = 5 * 1024 * 1024; // jak na stronie: ZIP najwyżej 5 MiB
+const NUMER = /^[0-9A-HJKMNP-TV-Z]{4}-[0-9A-HJKMNP-TV-Z]{4}$/;
+
+// Część adresu przed „@” -> odpowiedź. Każdy inny adres: 200 z potwierdzeniem.
+// `null` jako kod: brak odpowiedzi, połączenie wisi (jak przy zerwanej sieci albo zawieszonym
+// serwerze), aż klient je zamknie.
+export const ODPOWIEDZI_ATRAPY = {
+  "przyjete": { kod: 200, potwierdzenie: true },
+  "bez-potwierdzenia": { kod: 200, potwierdzenie: false },
+  "zly-adres": { kod: 400, stan: "zly_adres" },
+  "za-duze": { kod: 413, stan: "za_duze" },
+  "limit": { kod: 429, stan: "limit" },
+  "niedostepne": { kod: 503, stan: "niedostepne" },
+  "brak-odpowiedzi": { kod: null },
+};
+const RETRY_AFTER_S = "60";
+
+function odpowiedzJson(odpowiedz, naglowki, kod, tresc, dodatkowe = {}) {
+  odpowiedz.writeHead(kod, { ...naglowki, ...dodatkowe, "Content-Type": "application/json; charset=utf-8" });
+  odpowiedz.end(JSON.stringify(tresc));
+}
+
+// Kolejność sprawdzeń jak w skrypcie na stronie, w zakresie, który ma sens lokalnie: metoda (405),
+// typ treści (415), rozmiar (413), numer (400), potem odpowiedź wybrana adresem. Origin, limity
+// i budowy ZIP-a atrapa nie sprawdza.
+function atrapaZgloszenia(zadanie, odpowiedz, naglowki) {
+  if (zadanie.method !== "POST") {
+    zadanie.resume();
+    odpowiedz.writeHead(405, { ...naglowki, Allow: "POST" }).end();
+    return;
+  }
+  let bajty = 0;
+  zadanie.on("data", (czesc) => {
+    bajty += czesc.length;
+  });
+  zadanie.on("end", () => {
+    const typ = (zadanie.headers["content-type"] ?? "").trim().toLowerCase();
+    if (typ !== "application/zip") return odpowiedzJson(odpowiedz, naglowki, 415, { stan: "zly_typ" });
+    if (bajty > LIMIT_ZGLOSZENIA) return odpowiedzJson(odpowiedz, naglowki, 413, { stan: "za_duze" });
+    const numer = zadanie.headers["x-numer"] ?? "";
+    if (!NUMER.test(numer)) return odpowiedzJson(odpowiedz, naglowki, 400, { stan: "zly_numer" });
+    const adres = zadanie.headers["x-adres"] ?? "";
+    const lokalna = adres.includes("@") ? adres.slice(0, adres.lastIndexOf("@")) : "";
+    const wybor = Object.hasOwn(ODPOWIEDZI_ATRAPY, lokalna) ? ODPOWIEDZI_ATRAPY[lokalna] : ODPOWIEDZI_ATRAPY.przyjete;
+    if (wybor.kod === null) return; // brak odpowiedzi: połączenie zostaje otwarte
+    if (wybor.kod === 200) return odpowiedzJson(odpowiedz, naglowki, 200, { stan: "przyjete", numer, potwierdzenie: wybor.potwierdzenie });
+    return odpowiedzJson(odpowiedz, naglowki, wybor.kod, { stan: wybor.stan }, wybor.kod === 429 ? { "Retry-After": RETRY_AFTER_S } : {});
+  });
+}
+
+// --- Serwer ----------------------------------------------------------------------------------
+
+function sciezkaZadania(adres) {
+  try {
+    return new URL(adres, "http://127.0.0.1").pathname;
+  } catch {
+    return null;
+  }
+}
+
 // `katalog`: katalog strony (domyślnie app/; testy podają tymczasowy). Separator na końcu jest
 // dopisywany, gdy go brak, żeby porównanie początku ścieżki nie przepuściło katalogu obok
-// o tym samym początku nazwy (app2 obok app).
-export function utworzSerwer(katalog = APP) {
+// o tym samym początku nazwy (app2 obok app). `zgloszenie`: włącza atrapę POST /zgloszenie/.
+export function utworzSerwer(katalog = APP, { zgloszenie = false } = {}) {
   if (!katalog.endsWith(sep)) katalog += sep;
   return createServer(async (zadanie, odpowiedz) => {
     const naglowki = {
@@ -75,6 +145,15 @@ export function utworzSerwer(katalog = APP) {
       "Referrer-Policy": "no-referrer",
       "Cache-Control": "no-store",
     };
+    if (sciezkaZadania(zadanie.url) === SCIEZKA_ZGLOSZENIA) {
+      if (zgloszenie) {
+        atrapaZgloszenia(zadanie, odpowiedz, naglowki);
+        return;
+      }
+      zadanie.resume();
+      odpowiedz.writeHead(404, { ...naglowki, "Content-Type": "text/plain; charset=utf-8" }).end(zadanie.method === "HEAD" ? undefined : "404\n");
+      return;
+    }
     if (zadanie.method !== "GET" && zadanie.method !== "HEAD") {
       odpowiedz.writeHead(405, { ...naglowki, Allow: "GET, HEAD" }).end();
       return;
@@ -99,8 +178,12 @@ export function utworzSerwer(katalog = APP) {
 
 export const HOST_DOMYSLNY = "127.0.0.1";
 
-export function komunikatStartu(host, port) {
-  const adres = `Narzędzie działa pod adresem http://${host}:${port}/ (Ctrl+C kończy).\n`;
+export function komunikatStartu(host, port, { zgloszenie = false } = {}) {
+  const atrapa = zgloszenie
+    ? `Atrapa przyjmowania zgłoszeń: POST ${SCIEZKA_ZGLOSZENIA}. Odpowiedź wybiera część adresu e-mail przed „@”: ` +
+      `${Object.keys(ODPOWIEDZI_ATRAPY).filter((k) => k !== "przyjete").join(", ")}; każdy inny adres daje przyjęcie z potwierdzeniem.\n`
+    : "";
+  const adres = `${atrapa}Narzędzie działa pod adresem http://${host}:${port}/ (Ctrl+C kończy).\n`;
   if (host === HOST_DOMYSLNY) return adres;
   return (
     `UWAGA: serwer słucha na adresie ${host}, więc strona jest widoczna w sieci lokalnej.\n` +
@@ -114,7 +197,11 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
   let values;
   try {
     ({ values } = parseArgs({
-      options: { port: { type: "string", default: "8000" }, host: { type: "string", default: HOST_DOMYSLNY } },
+      options: {
+        port: { type: "string", default: "8000" },
+        host: { type: "string", default: HOST_DOMYSLNY },
+        zgloszenie: { type: "boolean", default: false },
+      },
     }));
   } catch (blad) {
     process.stderr.write(`serwer: ${blad.message}\n`);
@@ -125,12 +212,12 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
     process.exit(2);
   }
   const port = +values.port;
-  const serwer = utworzSerwer();
+  const serwer = utworzSerwer(APP, { zgloszenie: values.zgloszenie });
   serwer.on("error", (blad) => {
     process.stderr.write(`serwer: ${blad.message}\n`);
     process.exit(2);
   });
   serwer.listen(port, values.host, () => {
-    process.stdout.write(komunikatStartu(values.host, serwer.address().port));
+    process.stdout.write(komunikatStartu(values.host, serwer.address().port, { zgloszenie: values.zgloszenie }));
   });
 }

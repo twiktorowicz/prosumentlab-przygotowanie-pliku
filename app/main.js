@@ -752,13 +752,17 @@ function zmianaPola(z) {
   przelicz();
 }
 
-function zapisz() {
+// Archiwum powstaje dopiero tu; zmiana pola formularza go nie buduje. Kompresja jest asynchroniczna
+// (ułamek sekundy), więc zapis czeka na gotowy ZIP z danych z chwili kliknięcia. Gdy w tym czasie
+// dane się zmienią (nowe przeliczenie albo zmiana czekająca na przeliczenie), plik i tak jest
+// zapisany, ale potwierdzenie i wiadomość dotyczyłyby starszej wersji, więc się nie pokazują.
+async function zapisz() {
   przelicz({ poZapisie: true });
   if (!wynik?.moznaZapisac) return;
-  // Archiwum powstaje dopiero tu; zmiana pola formularza go nie buduje.
-  const zip = utworzZipZgloszenia(wynik);
+  const zapisywany = wynik;
+  const zip = await utworzZipZgloszenia(zapisywany);
   const adres = URL.createObjectURL(new Blob([zip], { type: "application/zip" }));
-  const a = el("a", { href: adres, download: wynik.nazwaZip });
+  const a = el("a", { href: adres, download: zapisywany.nazwaZip });
   document.body.append(a);
   a.click();
   a.remove();
@@ -767,6 +771,7 @@ function zapisz() {
 
   if (poprzedniZapis && !rowneBajty(poprzedniZapis, zip)) zapisanoRozne = true;
   poprzedniZapis = zip;
+  if (wynik !== zapisywany || czekaPrzeliczenie) return;
   $("#zapis-gotowe").textContent = t("zapis_gotowe", { plik: wynik.nazwaZip });
   pokaz($("#zapis-gotowe"), true);
   pokaz($("#zapis-ponownie"), zapisanoRozne);
@@ -798,8 +803,10 @@ function mozeUdostepnic(plik) {
 }
 
 // ZIP powstaje przy kliknięciu z danych na stronie, bez wcześniejszego zapisu. Okno udostępniania
-// wymaga gestu użytkownika, więc przed share() nie ma await. Odmowa inna niż zamknięcie okna
-// (Chromium nie udostępnia plików ZIP) przełącza do końca wizyty na drogę z zapisem z komunikatem.
+// wymaga gestu użytkownika. Jedyne await przed share() to kompresja ZIP-a (ułamek sekundy), która
+// mieści się w czasie, przez jaki przeglądarka pamięta gest (kilka sekund). Odmowa inna niż
+// zamknięcie okna (Chromium nie udostępnia plików ZIP) przełącza do końca wizyty na drogę
+// z zapisem z komunikatem.
 async function udostepnij() {
   if (czekaPrzeliczenie) przelicz();
   if (!wynik?.moznaZapisac || udostepnianieOdrzucone) return;
@@ -811,7 +818,8 @@ async function udostepnij() {
   } catch {
     // przeglądarka bez schowka
   }
-  const plik = new File([utworzZipZgloszenia(wynik)], wynik.nazwaZip, { type: "application/zip" });
+  const udostepniany = wynik;
+  const plik = new File([await utworzZipZgloszenia(udostepniany)], udostepniany.nazwaZip, { type: "application/zip" });
   try {
     await navigator.share({ files: [plik], title: t("udostepnij_tytul", { numer: NUMER }), text: t("udostepnij_tekst", { numer: NUMER }) });
   } catch (blad) {

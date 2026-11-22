@@ -1,7 +1,10 @@
 #!/usr/bin/env node
 // Wiersz poleceń narzędzia: pliki z licznika + dane formularza + numer + data -> plik ZIP.
 // Służy do testów (także testów zgodności poza tym repozytorium). Wywołuje tę samą funkcję co
-// strona (app/lib/zgloszenie.js), więc dla tych samych danych daje ten sam ZIP co do bajtu.
+// strona (app/lib/zgloszenie.js), więc dla tych samych danych daje ZIP zbudowany według tych
+// samych zasad: pliki kompresowane metodą 8 przez CompressionStream("deflate-raw") z Node. Bajty po
+// kompresji mogą się różnić od ZIP-a z przeglądarki (inna implementacja deflate), zawartość po
+// rozpakowaniu jest ta sama; w obrębie jednej wersji Node wynik jest powtarzalny co do bajtu.
 //
 // W odróżnieniu od strony każdy plik, którego narzędzie nie przyjęło, kończy pracę błędem:
 // w teście plik pominięty po cichu byłby gorszy niż zatrzymanie.
@@ -86,13 +89,13 @@ function argumenty(lista) {
   return { numer: values.numer, data: values.data, formularz, wyjscie: values.wyjscie, pliki };
 }
 
-function uruchom(lista) {
+async function uruchom(lista) {
   const a = argumenty(lista);
   if (a.pomoc) {
     process.stdout.write(POMOC);
     return 0;
   }
-  const w = przygotujZgloszenie({ pliki: a.pliki, formularz: a.formularz, numer: a.numer, utworzono: a.data });
+  const w = await przygotujZgloszenie({ pliki: a.pliki, formularz: a.formularz, numer: a.numer, utworzono: a.data });
 
   const bledy = [];
   for (const p of w.pliki) {
@@ -113,7 +116,7 @@ function uruchom(lista) {
 }
 
 try {
-  process.exitCode = uruchom(process.argv.slice(2));
+  process.exitCode = await uruchom(process.argv.slice(2));
 } catch (blad) {
   if (!(blad instanceof ZleWywolanie)) throw blad;
   process.stderr.write(`przygotuj: ${blad.message}\n`);

@@ -13,6 +13,7 @@ import { tekst } from "../app/lib/odmiana.js";
 import { TEKSTY } from "../app/teksty.js";
 import { czytajZip } from "./pomoc/czytnik-zip.mjs";
 import { przykladN20 } from "./pomoc/przyklad-n20.mjs";
+import { bezKompresji } from "./pomoc/bez-kompresji.mjs";
 import { generuj, PPE_FIKCYJNE, PLATNICY_FIKCYJNI } from "../narzedzia/generator.mjs";
 
 const SCIEZKA_N20 = fileURLToPath(new URL("wzorce/n20.zip", import.meta.url));
@@ -40,8 +41,11 @@ const FAKTURA = {
 };
 const INSTALACJA = { moc_pv_kwp: "7,2", magazyn: "nie" };
 
-test("N20: ZIP o strukturze z przykładów, numer i data podane: bajty równe wzorcowi", () => {
-  const zip = przykladN20();
+// Wzorzec N20 to ZIP bez kompresji (metoda 0): taki zapisuje przeglądarka bez
+// CompressionStream("deflate-raw"), a jego bajty nie zależą od wersji biblioteki kompresji.
+// ZIP skompresowany porównujemy z wzorcem po rozpakowaniu.
+test("N20: ZIP o strukturze z przykładów, numer i data podane: bajty bez kompresji równe wzorcowi", async () => {
+  const zip = await bezKompresji(() => przykladN20());
   assert.deepEqual(Buffer.from(zip), readFileSync(SCIEZKA_N20));
   const pliki = czytajZip(zip);
   assert.deepEqual(pliki.map((p) => p.nazwa), ["zgloszenie.json", "faktury.json", "pomiary_1.csv"]);
@@ -50,7 +54,18 @@ test("N20: ZIP o strukturze z przykładów, numer i data podane: bajty równe wz
   assert.equal(JSON.parse(tekstPliku(pliki[1])).raport.cena_energii_netto_zl_kwh, "0.51234");
 });
 
-test("N20: zewnętrzny program unzip potwierdza poprawność, jeśli jest w systemie", (t) => {
+test("N20 z kompresją: metoda 8, po rozpakowaniu te same pliki co we wzorcu", async () => {
+  const wzorzec = czytajZip(readFileSync(SCIEZKA_N20));
+  const pliki = czytajZip(await przykladN20());
+  assert.deepEqual(pliki.map((p) => p.nazwa), wzorzec.map((p) => p.nazwa));
+  pliki.forEach((p, i) => {
+    assert.equal(p.metoda, 8, p.nazwa);
+    assert.deepEqual(p.bajty, wzorzec[i].bajty, p.nazwa);
+    assert.equal(p.crc, wzorzec[i].crc, p.nazwa);
+  });
+});
+
+test("N20: zewnętrzny program unzip potwierdza poprawność, jeśli jest w systemie", async (t) => {
   let jest = true;
   try {
     execFileSync("unzip", ["-v"], { stdio: "ignore" });
@@ -62,7 +77,7 @@ test("N20: zewnętrzny program unzip potwierdza poprawność, jeśli jest w syst
   assert.match(wynik, /No errors detected/);
 });
 
-test("N25: odnośnik mailto dla numeru K7M3-Q9TX", () => {
+test("N25: odnośnik mailto dla numeru K7M3-Q9TX", async () => {
   const temat = tekst(TEKSTY, "mailto_temat", { numer: NUMER });
   const tresc = tekst(TEKSTY, "mailto_tresc", { plik: nazwaZip(NUMER) });
   assert.equal(
@@ -73,8 +88,8 @@ test("N25: odnośnik mailto dla numeru K7M3-Q9TX", () => {
   );
 });
 
-test("pełna ścieżka: plik surowy, faktura, instalacja i zgoda dają ZIP z czterema plikami", () => {
-  const w = przygotujZgloszenie({
+test("pełna ścieżka: plik surowy, faktura, instalacja i zgoda dają ZIP z czterema plikami", async () => {
+  const w = await przygotujZgloszenie({
     pliki: [generuj(N1).surowy],
     formularz: { faktura: FAKTURA, instalacja: INSTALACJA, zgoda: true },
     numer: NUMER,
@@ -106,8 +121,9 @@ test("pełna ścieżka: plik surowy, faktura, instalacja i zgoda dają ZIP z czt
     zakres: { pelne_miesiace: 0, ciag_miesiace: 0, klasyfikacja: "za_krotki" },
     uwagi: [{ kod: "ZAKRES_NIEPELNY", gdzie: "zakres" }],
   });
+  assert.ok(pliki.every((p) => p.metoda === 8), "pliki skompresowane");
   assert.deepEqual(JSON.parse(tekstPliku(pliki[2])), {
-    format: "prosumentlab/instalacja", wersja_formatu: 1, moc_pv_kwp: "7.20", magazyn: "nie",
+    format: "prosumentlab/instalacja", wersja_formatu: 2, moc_pv_kwp: "7.20", magazyn: "nie",
   });
   const faktury = JSON.parse(tekstPliku(pliki[1]));
   assert.equal(faktury.raport.operator_dystrybucyjny, "tauron_dystrybucja", "operator z trybu Taurona");
@@ -115,20 +131,41 @@ test("pełna ścieżka: plik surowy, faktura, instalacja i zgoda dają ZIP z czt
   assert.deepEqual(Object.keys(faktury), ["format", "wersja_formatu", "raport"]);
 });
 
-test("w ZIP-ie nie ma numerów płatnika ani PPE, także w nazwach plików", () => {
-  const w = przygotujZgloszenie({ pliki: [generuj(N1).surowy], formularz: { faktura: FAKTURA }, numer: NUMER, utworzono: DATA });
-  const tekst = new TextDecoder("latin1").decode(w.zip);
-  for (const zakazany of [PPE_FIKCYJNE[0], "10000001"]) assert.equal(tekst.includes(zakazany), false);
+test("w ZIP-ie nie ma numerów płatnika ani PPE, także w nazwach plików", async () => {
+  const w = await przygotujZgloszenie({ pliki: [generuj(N1).surowy], formularz: { faktura: FAKTURA }, numer: NUMER, utworzono: DATA });
+  // Bajty pliku i treść po rozpakowaniu.
+  const teksty = [w.zip, ...czytajZip(w.zip).map((p) => p.bajty)].map((b) => new TextDecoder("latin1").decode(b));
+  for (const tekst of teksty) {
+    for (const zakazany of [PPE_FIKCYJNE[0], "10000001"]) assert.equal(tekst.includes(zakazany), false);
+  }
 });
 
-test("te same dane, numer i data dają ten sam ZIP; inny numer daje inny", () => {
+test("instalacja.json w wersji 2: moc przed rozbudową tylko we wpisie rozbudowy, bez niej wpis jak dotąd", async () => {
+  const z = (zmiany) => przygotujZgloszenie({
+    pliki: [generuj(N1).surowy], formularz: { instalacja: { moc_pv_kwp: "7,2", zmiany } }, numer: NUMER, utworzono: DATA,
+  });
+  const instalacja = async (zmiany) => {
+    const w = await z(zmiany);
+    const wpis = czytajZip(w.zip).find((p) => p.nazwa === "instalacja.json");
+    return tekstPliku(wpis);
+  };
+  assert.equal(await instalacja([{ rodzaj: "pompa_ciepla", miesiac: "2025-06" }, { rodzaj: "rozbudowa_pv", miesiac: "2025-06", moc_przed_kwp: "3,1" }]),
+    '{\n  "format": "prosumentlab/instalacja",\n  "wersja_formatu": 2,\n  "moc_pv_kwp": "7.20",\n  "zmiany": [\n' +
+    '    {\n      "rodzaj": "pompa_ciepla",\n      "miesiac": "2025-06"\n    },\n' +
+    '    {\n      "rodzaj": "rozbudowa_pv",\n      "miesiac": "2025-06",\n      "moc_przed_kwp": "3.10"\n    }\n  ]\n}\n');
+  assert.deepEqual(JSON.parse(await instalacja([{ rodzaj: "rozbudowa_pv", miesiac: "2025-06" }])), {
+    format: "prosumentlab/instalacja", wersja_formatu: 2, moc_pv_kwp: "7.20", zmiany: [{ rodzaj: "rozbudowa_pv", miesiac: "2025-06" }],
+  });
+});
+
+test("te same dane, numer i data dają ten sam ZIP; inny numer daje inny", async () => {
   const dane = () => ({ pliki: [generuj(N1).surowy], formularz: { faktura: FAKTURA, zgoda: false }, numer: NUMER, utworzono: DATA });
-  assert.deepEqual(przygotujZgloszenie(dane()).zip, przygotujZgloszenie(dane()).zip);
-  assert.notDeepEqual(przygotujZgloszenie(dane()).zip, przygotujZgloszenie({ ...dane(), numer: "0000-0000" }).zip);
+  assert.deepEqual((await przygotujZgloszenie(dane())).zip, (await przygotujZgloszenie(dane())).zip);
+  assert.notDeepEqual((await przygotujZgloszenie(dane())).zip, (await przygotujZgloszenie({ ...dane(), numer: "0000-0000" })).zip);
 });
 
-test("bez pól z faktury i bez odpowiedzi: tylko zgloszenie.json i pomiary", () => {
-  const w = przygotujZgloszenie({ pliki: [generuj(N1).bezNumerow], formularz: {}, numer: NUMER, utworzono: DATA });
+test("bez pól z faktury i bez odpowiedzi: tylko zgloszenie.json i pomiary", async () => {
+  const w = await przygotujZgloszenie({ pliki: [generuj(N1).bezNumerow], formularz: {}, numer: NUMER, utworzono: DATA });
   assert.equal(w.moznaZapisac, true);
   assert.deepEqual(w.zawartosc.map((p) => p.nazwa), ["zgloszenie.json", "pomiary_1.csv"]);
   const z = jsonPliku(w, "zgloszenie.json");
@@ -138,27 +175,27 @@ test("bez pól z faktury i bez odpowiedzi: tylko zgloszenie.json i pomiary", () 
   assert.deepEqual(z.uwagi, [{ kod: "ZAKRES_NIEPELNY", gdzie: "zakres" }, { kod: "FAKTURA_BRAK_OBOWIAZKOWYCH", gdzie: "raport" }]);
 });
 
-test("pliki w ZIP-ie w kolejności pierwszej godziny, nie wyboru", () => {
+test("pliki w ZIP-ie w kolejności pierwszej godziny, nie wyboru", async () => {
   const pozny = generuj({ od: "2025-03-01", do: "2025-03-31", ziarno: 2 }).surowy;
   const wczesny = generuj({ od: "2025-01-01", do: "2025-02-28", ziarno: 2 }).surowy;
-  const w = przygotujZgloszenie({ pliki: [pozny, wczesny], formularz: {}, numer: NUMER, utworzono: DATA });
+  const w = await przygotujZgloszenie({ pliki: [pozny, wczesny], formularz: {}, numer: NUMER, utworzono: DATA });
   const z = jsonPliku(w, "zgloszenie.json");
   assert.deepEqual(z.pliki.map((p) => p.pierwszy_znacznik), ["2025-01-01 01:00", "2025-03-01 01:00"]);
   assert.deepEqual(w.pliki.map((p) => p.nazwa), ["pomiary_2.csv", "pomiary_1.csv"]);
   assert.deepEqual(z.zakres, { pelne_miesiace: 3, ciag_od: "2025-01", ciag_do: "2025-03", ciag_miesiace: 3, klasyfikacja: "za_krotki" });
 });
 
-test("plik nieczytelny nie blokuje, tylko nie trafia do zgłoszenia", () => {
+test("plik nieczytelny nie blokuje, tylko nie trafia do zgłoszenia", async () => {
   const arkusz = new Uint8Array([0x50, 0x4b, 0x03, 0x04]);
-  const w = przygotujZgloszenie({ pliki: [arkusz, generuj(N1).surowy], formularz: {}, numer: NUMER, utworzono: DATA });
+  const w = await przygotujZgloszenie({ pliki: [arkusz, generuj(N1).surowy], formularz: {}, numer: NUMER, utworzono: DATA });
   assert.equal(w.moznaZapisac, true);
   assert.deepEqual(w.pliki[0], { indeks: 0, stan: "odrzucony", kod: "blad_arkusz" });
   assert.equal(w.pliki[1].stan, "przyjety");
   assert.deepEqual(w.zawartosc.map((p) => p.nazwa), ["zgloszenie.json", "pomiary_1.csv"]);
 });
 
-test("blokady: bezpiecznik, różne punkty poboru, błąd pola, brak plików", () => {
-  const bezpiecznik = przygotujZgloszenie({
+test("blokady: bezpiecznik, różne punkty poboru, błąd pola, brak plików", async () => {
+  const bezpiecznik = await przygotujZgloszenie({
     pliki: [generuj({ ...N1, ppeWStrefie: { znacznik: "2025-06-06 05:00", seria: "pobor" } }).surowy],
     formularz: {}, numer: NUMER, utworzono: DATA,
   });
@@ -168,30 +205,30 @@ test("blokady: bezpiecznik, różne punkty poboru, błąd pola, brak plików", (
   assert.equal(bezpiecznik.blokady[0].kod, "blad_bezpiecznik");
   assert.equal(bezpiecznik.pliki[0].stan, "blokada");
 
-  const rozne = przygotujZgloszenie({
+  const rozne = await przygotujZgloszenie({
     pliki: [generuj(N1).surowy, generuj({ od: "2025-06-08", do: "2025-06-09", ppe: PPE_FIKCYJNE[1] }).surowy],
     formularz: {}, numer: NUMER, utworzono: DATA,
   });
   assert.deepEqual(rozne.blokady, [{ kod: "blad_rozne_ppe" }]);
   assert.equal(rozne.moznaZapisac, false);
 
-  const pole = przygotujZgloszenie({ pliki: [generuj(N1).surowy], formularz: { faktura: { oplata_mocowa_zl_mies: "12,345" } }, numer: NUMER, utworzono: DATA });
+  const pole = await przygotujZgloszenie({ pliki: [generuj(N1).surowy], formularz: { faktura: { oplata_mocowa_zl_mies: "12,345" } }, numer: NUMER, utworzono: DATA });
   assert.equal(pole.powod, "bledy_pol");
   assert.deepEqual(pole.bledyPol, [{ pole: "oplata_mocowa_zl_mies", kod: "faktura_kwota_format" }]);
 
-  const nic = przygotujZgloszenie({ pliki: [], formularz: {}, numer: NUMER, utworzono: DATA });
+  const nic = await przygotujZgloszenie({ pliki: [], formularz: {}, numer: NUMER, utworzono: DATA });
   assert.equal(nic.powod, "brak_plikow");
 });
 
-test("najwyżej 10 plików: jedenasty odrzucony", () => {
+test("najwyżej 10 plików: jedenasty odrzucony", async () => {
   const pliki = Array.from({ length: 11 }, (_, i) => generuj({ od: `2025-01-${String(i + 1).padStart(2, "0")}`, do: `2025-01-${String(i + 1).padStart(2, "0")}`, ziarno: 4 }).surowy);
-  const w = przygotujZgloszenie({ pliki, formularz: {}, numer: NUMER, utworzono: DATA });
+  const w = await przygotujZgloszenie({ pliki, formularz: {}, numer: NUMER, utworzono: DATA });
   assert.deepEqual(w.pliki[10], { indeks: 10, stan: "odrzucony", kod: "blad_za_duzo_plikow" });
   assert.equal(w.zawartosc.filter((p) => p.nazwa.startsWith("pomiary_")).length, 10);
 });
 
-test("uwagi: kompletność w pliku, faktura poza zakresem, zmiana poza zakresem", () => {
-  const w = przygotujZgloszenie({
+test("uwagi: kompletność w pliku, faktura poza zakresem, zmiana poza zakresem", async () => {
+  const w = await przygotujZgloszenie({
     pliki: [generuj({ ...N1, niepelne: [{ znacznik: "2025-06-06 05:00" }] }).surowy],
     formularz: {
       faktura: { ...FAKTURA, okres_od: "2025-06-01", okres_do: "2025-06-07" },
@@ -211,8 +248,8 @@ test("uwagi: kompletność w pliku, faktura poza zakresem, zmiana poza zakresem"
   assert.equal(w.pliki[0].stan, "uwaga");
 });
 
-test("system opustów: faktury.json tylko z operatorem i systemem, uwaga FAKTURA_OPUSTY, bez braków", () => {
-  const w = przygotujZgloszenie({
+test("system opustów: faktury.json tylko z operatorem i systemem, uwaga FAKTURA_OPUSTY, bez braków", async () => {
+  const w = await przygotujZgloszenie({
     pliki: [generuj(N1).surowy],
     formularz: { faktura: { ...FAKTURA, okres_od: "2025-06-01", oplata_mocowa_zl_mies: "12,345", system_rozliczenia: "opusty" } },
     numer: NUMER,
@@ -224,8 +261,8 @@ test("system opustów: faktury.json tylko z operatorem i systemem, uwaga FAKTURA
   assert.deepEqual(jsonPliku(w, "zgloszenie.json").uwagi, [{ kod: "ZAKRES_NIEPELNY", gdzie: "zakres" }, { kod: "FAKTURA_OPUSTY", gdzie: "raport" }]);
 });
 
-test("uwagi o nietypowej cenie i długim okresie trafiają do zgloszenie.json i nie blokują zapisu", () => {
-  const w = przygotujZgloszenie({
+test("uwagi o nietypowej cenie i długim okresie trafiają do zgloszenie.json i nie blokują zapisu", async () => {
+  const w = await przygotujZgloszenie({
     pliki: [generuj(N1).surowy],
     formularz: { faktura: { ...FAKTURA, okres_od: "2025-04-01", okres_do: "2025-06-07", rodzaj_ceny: "dynamiczna", cena_energii_netto_zl_kwh: "2,10" } },
     numer: NUMER,
@@ -240,8 +277,8 @@ test("uwagi o nietypowej cenie i długim okresie trafiają do zgloszenie.json i 
   ]);
 });
 
-test("okres z przyszłości względem dnia utworzenia: błąd pola, zapis zablokowany", () => {
-  const w = przygotujZgloszenie({
+test("okres z przyszłości względem dnia utworzenia: błąd pola, zapis zablokowany", async () => {
+  const w = await przygotujZgloszenie({
     pliki: [generuj(N1).surowy],
     formularz: { faktura: { ...FAKTURA, okres_od: "2026-11-01", okres_do: "2026-11-20" } },
     numer: NUMER,
@@ -252,7 +289,7 @@ test("okres z przyszłości względem dnia utworzenia: błąd pola, zapis zablok
   assert.equal(w.zip, null);
 });
 
-test("plik z samą nieistniejącą godziną 03:00 z doby zmiany czasu na letni: zakres za krótki, bez wyjątku", () => {
+test("plik z samą nieistniejącą godziną 03:00 z doby zmiany czasu na letni: zakres za krótki, bez wyjątku", async () => {
   const z = "2025-03-30 01:00";
   const plik = generuj({
     od: "2025-03-30", do: "2025-03-30", ziarno: 1, obetnijKoniec: 22,
@@ -261,7 +298,7 @@ test("plik z samą nieistniejącą godziną 03:00 z doby zmiany czasu na letni: 
       { znacznik: z, seria: "pobor", pole: "znacznik", tekst: "2025-03-30 03:00" },
     ],
   }).surowy;
-  const w = przygotujZgloszenie({
+  const w = await przygotujZgloszenie({
     pliki: [plik],
     formularz: { instalacja: { zmiany: [{ rodzaj: "pompa_ciepla", miesiac: "2025-03" }] } },
     numer: NUMER,
@@ -273,13 +310,13 @@ test("plik z samą nieistniejącą godziną 03:00 z doby zmiany czasu na letni: 
   assert.equal(w.moznaZapisac, true);
 });
 
-test("faktura w zakresie plików: bez uwagi", () => {
-  const w = przygotujZgloszenie({ pliki: [generuj(N1).surowy], formularz: { faktura: FAKTURA }, numer: NUMER, utworzono: DATA });
+test("faktura w zakresie plików: bez uwagi", async () => {
+  const w = await przygotujZgloszenie({ pliki: [generuj(N1).surowy], formularz: { faktura: FAKTURA }, numer: NUMER, utworzono: DATA });
   assert.equal(w.uwagi.some((u) => u.kod === "FAKTURA_R_POZA_ZAKRESEM"), false);
 });
 
-test("podgląd: pierwsze 5 wierszy danych dokładnie jak w pliku wyjściowym, sumy miesięczne", () => {
-  const w = przygotujZgloszenie({ pliki: [generuj(N1).surowy], formularz: {}, numer: NUMER, utworzono: DATA });
+test("podgląd: pierwsze 5 wierszy danych dokładnie jak w pliku wyjściowym, sumy miesięczne", async () => {
+  const w = await przygotujZgloszenie({ pliki: [generuj(N1).surowy], formularz: {}, numer: NUMER, utworzono: DATA });
   assert.deepEqual(w.pliki[0].pierwszeWiersze, WZORZEC_N1.toString("utf8").split("\n").slice(1, 6));
   assert.equal(w.miesiace.length, 1);
   assert.equal(w.miesiace[0].miesiac, 6);
@@ -293,7 +330,12 @@ test("podgląd: pierwsze 5 wierszy danych dokładnie jak w pliku wyjściowym, su
 // Przeliczony po usunięciu pytania o pierwsze oddanie energii (instalacja.json bez tego klucza)
 // i po zmianie wersji narzędzia na 0.1.5 (pole narzedzie w zgloszenie.json; reszta ZIP-a bez zmian,
 // sprawdzone na kodzie 0.1.4 z samą zmienioną wersją).
-const SKROT_SCENARIUSZA = "a516d84f700a7214775da535ef3590ec501a78f5f25fa34635dee0ac73639024";
+// Skrót dotyczy ZIP-a bez kompresji (metoda 0, przeglądarka bez CompressionStream("deflate-raw")):
+// bajty po kompresji zależą od wersji biblioteki kompresji, a zawartość i budowa ZIP-a nie.
+// Przeliczony po zmianie instalacja.json na wersję formatu 2 (różnią się tylko cyfra wersji
+// formatu w instalacja.json i jego CRC w nagłówku lokalnym i we wpisie katalogu; sprawdzone
+// porównaniem bajtów z ZIP-em z kodu 0.1.5).
+const SKROT_SCENARIUSZA = "79390071140f2b96345c65807c503e25ed7b3099232c9318dc3a44d422e07878";
 function scenariuszPelny() {
   return {
     pliki: [
@@ -329,24 +371,25 @@ function zamroz(o) {
   return o;
 }
 
-test("podział: ZIP złożony z części równy ZIP-owi z całości i zapisanemu skrótowi", () => {
+test("podział: ZIP złożony z części równy ZIP-owi z całości i zapisanemu skrótowi", async () => {
   const dane = scenariuszPelny();
-  const zCalosci = przygotujZgloszenie(dane).zip;
-  const przygotowane = przygotujPliki(dane.pliki);
-  const zCzesci = utworzZipZgloszenia(zlozZgloszenie({ przygotowane, formularz: dane.formularz, numer: NUMER, utworzono: DATA }));
-  assert.deepEqual(zCzesci, zCalosci);
-  assert.equal(sha256(zCalosci), SKROT_SCENARIUSZA);
+  const zCalosci = async () => (await przygotujZgloszenie(dane)).zip;
+  const zCzesci = () => utworzZipZgloszenia(zlozZgloszenie({ przygotowane: przygotujPliki(dane.pliki), formularz: dane.formularz, numer: NUMER, utworzono: DATA }));
+  assert.deepEqual(await zCzesci(), await zCalosci(), "z kompresją");
+  const [czesci, calosc] = await bezKompresji(async () => [await zCzesci(), await zCalosci()]);
+  assert.deepEqual(czesci, calosc, "bez kompresji");
+  assert.equal(sha256(calosc), SKROT_SCENARIUSZA);
 });
 
-test("podział: przygotowane pliki składa się wiele razy bez ich zmiany i bez ponownego czytania bajtów", () => {
+test("podział: przygotowane pliki składa się wiele razy bez ich zmiany i bez ponownego czytania bajtów", async () => {
   const dane = scenariuszPelny();
   const przygotowane = zamroz(przygotujPliki(dane.pliki));
   const kopieCsv = przygotowane.przyjete.map((p) => Buffer.from(p.csv.bajty));
   const a = zlozZgloszenie({ przygotowane, formularz: dane.formularz, numer: NUMER, utworzono: DATA });
   const b = zlozZgloszenie({ przygotowane, formularz: {}, numer: NUMER, utworzono: DATA });
   const c = zlozZgloszenie({ przygotowane, formularz: dane.formularz, numer: NUMER, utworzono: DATA });
-  assert.equal(sha256(utworzZipZgloszenia(a)), SKROT_SCENARIUSZA);
-  assert.deepEqual(utworzZipZgloszenia(c), utworzZipZgloszenia(a));
+  assert.equal(sha256(await bezKompresji(() => utworzZipZgloszenia(a))), SKROT_SCENARIUSZA);
+  assert.deepEqual(await utworzZipZgloszenia(c), await utworzZipZgloszenia(a));
   przygotowane.przyjete.forEach((p, i) => assert.deepEqual(Buffer.from(p.csv.bajty), kopieCsv[i], "bajty CSV bez zmian po złożeniu"));
   assert.deepEqual(b.zawartosc.map((p) => p.nazwa), ["zgloszenie.json", "pomiary_1.csv", "pomiary_2.csv", "pomiary_3.csv"]);
   // Przygotowane pliki nie trzymają bajtów wejściowych: zostaje tylko wynik odczytu zakodowany
@@ -374,7 +417,7 @@ test("podział: przygotowane pliki składa się wiele razy bez ich zmiany i bez 
   }
 });
 
-test("miesiąc faktury: faktury.json bajt w bajt taki sam jak przy datach pierwszego i ostatniego dnia", () => {
+test("miesiąc faktury: faktury.json bajt w bajt taki sam jak przy datach pierwszego i ostatniego dnia", async () => {
   const dane = scenariuszPelny();
   const przygotowane = przygotujPliki(dane.pliki);
   const zDatami = zlozZgloszenie({ przygotowane, formularz: dane.formularz, numer: NUMER, utworzono: DATA });
@@ -382,84 +425,84 @@ test("miesiąc faktury: faktury.json bajt w bajt taki sam jak przy datach pierws
   const zMiesiacem = zlozZgloszenie({ przygotowane, formularz: { ...dane.formularz, faktura }, numer: NUMER, utworzono: DATA });
   const bajty = (w) => w.zawartosc.find((p) => p.nazwa === "faktury.json").bajty;
   assert.deepEqual(bajty(zMiesiacem), bajty(zDatami));
-  assert.equal(sha256(utworzZipZgloszenia(zMiesiacem)), SKROT_SCENARIUSZA);
+  assert.equal(sha256(await bezKompresji(() => utworzZipZgloszenia(zMiesiacem))), SKROT_SCENARIUSZA);
 });
 
-test("ZIP powstaje dopiero przy zapisie: złożenie zgłoszenia nie zwraca archiwum", () => {
+test("ZIP powstaje dopiero przy zapisie: złożenie zgłoszenia nie zwraca archiwum", async () => {
   const przygotowane = przygotujPliki([generuj(N1).surowy]);
   const w = zlozZgloszenie({ przygotowane, formularz: { faktura: FAKTURA }, numer: NUMER, utworzono: DATA });
   assert.equal("zip" in w, false);
   assert.equal(w.moznaZapisac, true);
-  assert.deepEqual(utworzZipZgloszenia(w), przygotujZgloszenie({ pliki: [generuj(N1).surowy], formularz: { faktura: FAKTURA }, numer: NUMER, utworzono: DATA }).zip);
+  assert.deepEqual(await utworzZipZgloszenia(w), (await przygotujZgloszenie({ pliki: [generuj(N1).surowy], formularz: { faktura: FAKTURA }, numer: NUMER, utworzono: DATA })).zip);
 });
 
-test("utworzZipZgloszenia odmawia, gdy zapis jest niemożliwy: blokada, brak plików, błąd pola", () => {
+test("utworzZipZgloszenia odmawia, gdy zapis jest niemożliwy: blokada, brak plików, błąd pola", async () => {
   const zloz = (pliki, formularz = {}) => zlozZgloszenie({ przygotowane: przygotujPliki(pliki), formularz, numer: NUMER, utworzono: DATA });
   const blokada = zloz([generuj({ ...N1, ppeWStrefie: { znacznik: "2025-06-06 05:00", seria: "pobor" } }).surowy]);
   const brak = zloz([]);
   const pole = zloz([generuj(N1).surowy], { faktura: { oplata_mocowa_zl_mies: "12,345" } });
   for (const [w, powod] of [[blokada, "blokada"], [brak, "brak_plikow"], [pole, "bledy_pol"]]) {
     assert.equal(w.powod, powod);
-    assert.throws(() => utworzZipZgloszenia(w), new RegExp(powod), powod);
+    await assert.rejects(() => utworzZipZgloszenia(w), new RegExp(powod), powod);
   }
 });
 
-test("bezpiecznik w plikach JSON: słowo PPE w polu wpisanym ręcznie blokuje zapis", () => {
+test("bezpiecznik w plikach JSON: słowo PPE w polu wpisanym ręcznie blokuje zapis", async () => {
   const przypadki = {
     "nazwa opłaty": { ...FAKTURA, oplaty_stale_inne: [{ nazwa: "Opłata PPE", kwota_zl_mies: "1,00" }] },
     "nazwa taryfy": { ...FAKTURA, taryfa: "inna", taryfa_nazwa: "Taryfa PPE", cena_energii_netto_zl_kwh: "0,50" },
     "nazwa sprzedawcy": { ...FAKTURA, sprzedawca: "inny", sprzedawca_nazwa: "ppe" },
   };
   for (const [nazwa, faktura] of Object.entries(przypadki)) {
-    const w = przygotujZgloszenie({ pliki: [generuj(N1).surowy], formularz: { faktura }, numer: NUMER, utworzono: DATA });
+    const w = await przygotujZgloszenie({ pliki: [generuj(N1).surowy], formularz: { faktura }, numer: NUMER, utworzono: DATA });
     assert.deepEqual(w.bledyPol, [], `${nazwa}: pole przechodzi własną kontrolę`);
     assert.deepEqual(w.blokady, [{ kod: "blad_bezpiecznik_formularz" }], nazwa);
     assert.equal(w.powod, "blokada", nazwa);
     assert.equal(w.zip, null, nazwa);
   }
   // Zwykły formularz i klucz ppe_porownane w zgloszenie.json nie trafiają w reguły.
-  const zwykly = przygotujZgloszenie({ pliki: [generuj(N1).surowy], formularz: { faktura: FAKTURA, instalacja: INSTALACJA, zgoda: true }, numer: NUMER, utworzono: DATA });
+  const zwykly = await przygotujZgloszenie({ pliki: [generuj(N1).surowy], formularz: { faktura: FAKTURA, instalacja: INSTALACJA, zgoda: true }, numer: NUMER, utworzono: DATA });
   assert.deepEqual(zwykly.blokady, []);
 });
 
-test("więcej niż jeden przyjęty plik i punkty poboru nieporównane: uwaga bez numerów, JSON bez zmian", () => {
+test("więcej niż jeden przyjęty plik i punkty poboru nieporównane: uwaga bez numerów, JSON bez zmian", async () => {
   const surowy = generuj({ od: "2025-01-01", do: "2025-01-10", ziarno: 2 }).surowy;
   const bezNumerow = generuj({ od: "2025-01-11", do: "2025-01-20", ziarno: 2 }).bezNumerow;
-  const dwa = przygotujZgloszenie({ pliki: [surowy, bezNumerow], formularz: {}, numer: NUMER, utworzono: DATA });
+  const dwa = await przygotujZgloszenie({ pliki: [surowy, bezNumerow], formularz: {}, numer: NUMER, utworzono: DATA });
   assert.equal(dwa.uwagaBezNumerow, true);
   assert.equal(dwa.moznaZapisac, true);
   const z = jsonPliku(dwa, "zgloszenie.json");
   assert.equal(z.ppe_porownane, false);
   assert.equal(z.uwagi.some((u) => /numer/i.test(u.kod)), false, "format JSON bez nowych uwag");
-  assert.equal(przygotujZgloszenie({ pliki: [bezNumerow], formularz: {}, numer: NUMER, utworzono: DATA }).uwagaBezNumerow, false, "jeden plik");
-  const dwaSurowe = przygotujZgloszenie({ pliki: [surowy, generuj({ od: "2025-01-11", do: "2025-01-20", ziarno: 2 }).surowy], formularz: {}, numer: NUMER, utworzono: DATA });
+  assert.equal((await przygotujZgloszenie({ pliki: [bezNumerow], formularz: {}, numer: NUMER, utworzono: DATA })).uwagaBezNumerow, false, "jeden plik");
+  const dwaSurowe = await przygotujZgloszenie({ pliki: [surowy, generuj({ od: "2025-01-11", do: "2025-01-20", ziarno: 2 }).surowy], formularz: {}, numer: NUMER, utworzono: DATA });
   assert.equal(dwaSurowe.uwagaBezNumerow, false, "dwa pliki z numerami");
 });
 
-test("ten sam plik dwa razy: drugi odrzucony z blad_duplikat, poza ZIP-em i analizą zakresu", () => {
+test("ten sam plik dwa razy: drugi odrzucony z blad_duplikat, poza ZIP-em i analizą zakresu", async () => {
   const plik = generuj(N1).surowy;
-  const w = przygotujZgloszenie({ pliki: [plik, plik], formularz: {}, numer: NUMER, utworzono: DATA });
+  const w = await przygotujZgloszenie({ pliki: [plik, plik], formularz: {}, numer: NUMER, utworzono: DATA });
   assert.deepEqual(w.pliki[1], { indeks: 1, stan: "odrzucony", kod: "blad_duplikat" });
   assert.equal(w.pliki[0].stan, "przyjety");
   assert.deepEqual(czytajZip(w.zip).map((p) => p.nazwa), ["zgloszenie.json", "pomiary_1.csv"]);
   assert.equal(jsonPliku(w, "zgloszenie.json").pliki.length, 1);
   // Plik bez numerów o tym samym wyniku co plik surowy wcześniej na liście też jest duplikatem.
-  const zBezNumerow = przygotujZgloszenie({ pliki: [plik, generuj(N1).bezNumerow], formularz: {}, numer: NUMER, utworzono: DATA });
+  const zBezNumerow = await przygotujZgloszenie({ pliki: [plik, generuj(N1).bezNumerow], formularz: {}, numer: NUMER, utworzono: DATA });
   assert.equal(zBezNumerow.pliki[1].kod, "blad_duplikat");
   assert.equal(jsonPliku(zBezNumerow, "zgloszenie.json").ppe_porownane, true, "duplikat nie bierze udziału w porównaniu punktów");
   // Plik z numerami jest duplikatem tylko pliku z tymi samymi numerami: po pliku bez numerów
   // oba są przyjęte (rzadki przypadek bez sprzeczności), a punktów poboru nie da się porównać.
-  const odwrotnie = przygotujZgloszenie({ pliki: [generuj(N1).bezNumerow, plik], formularz: {}, numer: NUMER, utworzono: DATA });
+  const odwrotnie = await przygotujZgloszenie({ pliki: [generuj(N1).bezNumerow, plik], formularz: {}, numer: NUMER, utworzono: DATA });
   assert.deepEqual(odwrotnie.pliki.map((p) => p.stan), ["przyjety", "przyjety"]);
   assert.equal(jsonPliku(odwrotnie, "zgloszenie.json").ppe_porownane, false);
   assert.equal(odwrotnie.uwagaBezNumerow, true);
   assert.equal(odwrotnie.moznaZapisac, true);
   // Dwa pliki bez numerów z tym samym wynikiem: duplikat.
   const bezNumerow = generuj(N1).bezNumerow;
-  assert.equal(przygotujZgloszenie({ pliki: [bezNumerow, bezNumerow], formularz: {}, numer: NUMER, utworzono: DATA }).pliki[1].kod, "blad_duplikat");
+  assert.equal((await przygotujZgloszenie({ pliki: [bezNumerow, bezNumerow], formularz: {}, numer: NUMER, utworzono: DATA })).pliki[1].kod, "blad_duplikat");
 });
 
-test("ten sam wynik, inne numery: plik nie znika jako duplikat, różne punkty poboru blokują zapis", () => {
+test("ten sam wynik, inne numery: plik nie znika jako duplikat, różne punkty poboru blokują zapis", async () => {
   // To samo ziarno i zakres: wartości, strefy i znaczniki identyczne, różnią się tylko numery.
   const z = (opcje) => generuj({ ...N1, ...opcje }).surowy;
   const pierwszy = z({ ppe: PPE_FIKCYJNE[0], platnik: PLATNICY_FIKCYJNI[0] });
@@ -468,7 +511,7 @@ test("ten sam wynik, inne numery: plik nie znika jako duplikat, różne punkty p
     ["tylko inny PPE", z({ ppe: PPE_FIKCYJNE[1], platnik: PLATNICY_FIKCYJNI[0] })],
     ["tylko inny płatnik", z({ ppe: PPE_FIKCYJNE[0], platnik: PLATNICY_FIKCYJNI[1] })],
   ]) {
-    const w = przygotujZgloszenie({ pliki: [pierwszy, drugi], formularz: {}, numer: NUMER, utworzono: DATA });
+    const w = await przygotujZgloszenie({ pliki: [pierwszy, drugi], formularz: {}, numer: NUMER, utworzono: DATA });
     assert.deepEqual(w.pliki.map((p) => p.stan), ["przyjety", "przyjety"], opis);
     assert.equal(w.pliki.some((p) => p.kod === "blad_duplikat"), false, opis);
     assert.deepEqual(w.blokady, [{ kod: "blad_rozne_ppe" }], opis);
@@ -478,8 +521,8 @@ test("ten sam wynik, inne numery: plik nie znika jako duplikat, różne punkty p
   }
 });
 
-test("plik surowy, ten sam bez numerów, ten sam z innym PPE: drugi to duplikat, trzeci blokuje zapis", () => {
-  const w = przygotujZgloszenie({
+test("plik surowy, ten sam bez numerów, ten sam z innym PPE: drugi to duplikat, trzeci blokuje zapis", async () => {
+  const w = await przygotujZgloszenie({
     pliki: [generuj(N1).surowy, generuj(N1).bezNumerow, generuj({ ...N1, ppe: PPE_FIKCYJNE[1], platnik: PLATNICY_FIKCYJNI[1] }).surowy],
     formularz: {}, numer: NUMER, utworzono: DATA,
   });
@@ -490,7 +533,7 @@ test("plik surowy, ten sam bez numerów, ten sam z innym PPE: drugi to duplikat,
   assert.equal(w.moznaZapisac, false);
 });
 
-test("nieistniejąca godzina 03:00 ostatniej niedzieli marca na początku i na końcu pliku nie wyznacza pierwszej ani ostatniej godziny", () => {
+test("nieistniejąca godzina 03:00 ostatniej niedzieli marca na początku i na końcu pliku nie wyznacza pierwszej ani ostatniej godziny", async () => {
   // Doba 2026-03-29 ma wiersze 01:00, 02:00, 04:00, …; wiersz 03:00 (godzina 2:00–3:00) nie istnieje.
   const naPoczatku = generuj({
     od: "2026-03-29", do: "2026-03-30", ziarno: 3, obetnijPoczatek: 1,
@@ -500,7 +543,7 @@ test("nieistniejąca godzina 03:00 ostatniej niedzieli marca na początku i na k
     od: "2026-03-01", do: "2026-03-29", ziarno: 3, obetnijKoniec: 20,
     podmien: ["oddanie", "pobor"].map((seria) => ({ znacznik: "2026-03-29 04:00", seria, pole: "znacznik", tekst: "2026-03-29 03:00" })),
   }).surowy;
-  const w = przygotujZgloszenie({ pliki: [naPoczatku, naKoncu], formularz: {}, numer: NUMER, utworzono: DATA });
+  const w = await przygotujZgloszenie({ pliki: [naPoczatku, naKoncu], formularz: {}, numer: NUMER, utworzono: DATA });
   assert.deepEqual(w.pliki.map((p) => p.stan), ["przyjety", "przyjety"]);
   const pliki = jsonPliku(w, "zgloszenie.json").pliki;
   // Kolejność w ZIP-ie według pierwszej istniejącej godziny: plik od 1 marca pierwszy.
@@ -512,10 +555,10 @@ test("nieistniejąca godzina 03:00 ostatniej niedzieli marca na początku i na k
   assert.equal(w.pliki[1].ostatniZnacznik, "2026-03-29 02:00");
 });
 
-test("wyjątek przy odczycie jednego pliku: ten plik dostaje blad_nieznany, pozostałe działają", () => {
+test("wyjątek przy odczycie jednego pliku: ten plik dostaje blad_nieznany, pozostałe działają", async () => {
   // Obiekt zamiast bajtów wywraca dekodowanie wyjątkiem (nie ma subarray).
   const zepsuty = { length: 10 };
-  const w = przygotujZgloszenie({ pliki: [zepsuty, generuj(N1).surowy], formularz: { faktura: FAKTURA }, numer: NUMER, utworzono: DATA });
+  const w = await przygotujZgloszenie({ pliki: [zepsuty, generuj(N1).surowy], formularz: { faktura: FAKTURA }, numer: NUMER, utworzono: DATA });
   assert.deepEqual(w.pliki[0], { indeks: 0, stan: "odrzucony", kod: "blad_nieznany" });
   assert.equal(w.pliki[1].stan, "przyjety");
   assert.equal(w.moznaZapisac, true);

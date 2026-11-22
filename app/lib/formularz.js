@@ -244,6 +244,10 @@ function czytajFakture(f, bledy, brakujace, uwagi, { operator, dzisiaj }) {
   return r;
 }
 
+// Moc instalacji w kWp (obecna i przed rozbudową): najwyżej 3 cyfry przed przecinkiem i 2 po nim,
+// większa od zera.
+const FORMAT_MOCY = { calkowitych: 3, miejsc: 2, dodatnia: true };
+
 function czytajInstalacje(f, bledy) {
   const r = {};
   const liczba = (nazwa, opcje) => {
@@ -258,7 +262,7 @@ function czytajInstalacje(f, bledy) {
     else bledy.push({ pole: nazwa, kod: "blad_wyboru" });
   };
 
-  liczba("moc_pv_kwp", { calkowitych: 3, miejsc: 2, dodatnia: true });
+  liczba("moc_pv_kwp", FORMAT_MOCY);
   wybor("magazyn");
   if (r.magazyn === "tak") {
     liczba("magazyn_pojemnosc_kwh", { calkowitych: 4, miejsc: 2, dodatnia: true });
@@ -292,7 +296,16 @@ function czytajInstalacje(f, bledy) {
       bledy.push({ pole: `zmiany[${i}]`, kod: "blad_wyboru" });
       return;
     }
-    zmiany.push({ rodzaj: z.rodzaj, miesiac: m.wartosc });
+    const zmiana = { rodzaj: z.rodzaj, miesiac: m.wartosc };
+    // Moc instalacji przed rozbudową: nieobowiązkowa, w formacie mocy instalacji, tylko przy
+    // rozbudowie instalacji fotowoltaicznej. Przy innej zmianie pole nie ma znaczenia i nie trafia
+    // do pliku. Zły format to błąd pola; wpis zmiany zostaje bez tej wartości.
+    if (z.rodzaj === "rozbudowa_pv" && !pusty(z.moc_przed_kwp)) {
+      const moc = typeof z.moc_przed_kwp === "string" ? czytajDziesietna(z.moc_przed_kwp, FORMAT_MOCY) : { ok: false };
+      if (moc.ok) zmiana.moc_przed_kwp = moc.wartosc;
+      else bledy.push({ pole: "moc_przed_kwp", kod: "instalacja_liczba_format" });
+    }
+    zmiany.push(zmiana);
   });
   if (zmiany.length > 0) r.zmiany = zmiany;
   return r;
@@ -313,7 +326,7 @@ const BUDOWA = {
   },
   instalacja: {
     moc_pv_kwp: TEKST, magazyn: TEKST, magazyn_pojemnosc_kwh: TEKST, magazyn_od: TEKST,
-    zmiany: [{ rodzaj: TEKST, miesiac: TEKST }],
+    zmiany: [{ rodzaj: TEKST, miesiac: TEKST, moc_przed_kwp: TEKST }],
   },
   zgoda: "logiczna",
 };

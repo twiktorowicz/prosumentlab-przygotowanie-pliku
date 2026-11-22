@@ -8,8 +8,8 @@
 //   CHROME="/ścieżka/do/chrome" node narzedzia/proba-przegladarki.mjs
 // macOS: /Applications/Google Chrome.app/Contents/MacOS/Google Chrome
 //
-// Sprawdza przepływ z dokumentacji (pliki, zakres, formularz, podgląd, zapis ZIP-a, odnośnik
-// mailto, blokady) na szerokości 1280 px i 390 px oraz to, że karta ze stroną nie wysyła żadnego
+// Sprawdza przepływ z dokumentacji (pliki, zakres, formularz, podgląd, zapis ZIP-a z kompresją,
+// odnośnik mailto, blokady) na szerokości 1280 px i 390 px oraz to, że karta ze stroną nie wysyła żadnego
 // zapytania poza własne pliki, nie pisze w konsoli błędów i nie zostawia niczego w przeglądarce.
 // Krok wysyłki w dwóch wariantach: zwykły ekran z kursorem (droga z zapisem) i telefon z emulacją
 // ekranu dotykowego, pointer: coarse (droga z udostępnianiem na atrapach, odmowa przełącza na zapis).
@@ -490,6 +490,9 @@ async function proba() {
     const zip = readFileSync(join(PRACA, "pobrane", nazwaZip));
     const zawartosc = czytajZip(zip);
     sprawdz("zawartość ZIP-a", JSON.stringify(zawartosc.map((p) => p.nazwa)) === JSON.stringify(["zgloszenie.json", "faktury.json", "instalacja.json", "pomiary_1.csv", "pomiary_2.csv"]));
+    sprawdz("ZIP skompresowany: metoda 8 w każdym pliku, pliki pomiarów wyraźnie mniejsze",
+      zawartosc.every((p) => p.metoda === 8) && zawartosc.filter((p) => p.nazwa.endsWith(".csv")).every((p) => p.skompresowany * 3 < p.rozmiar),
+      JSON.stringify(zawartosc.map((p) => [p.nazwa, p.metoda, p.skompresowany, p.rozmiar])));
     const z = JSON.parse(new TextDecoder().decode(zawartosc[0].bajty));
     sprawdz("zgloszenie.json: numer, zgoda, klasyfikacja, wersja 0.1.5", z.numer === numer && z.zgoda_przypadek_testowy === true && z.zakres.klasyfikacja === "raport" && z.narzedzie === "0.1.5");
     const tekstZip = zip.toString("latin1");
@@ -938,7 +941,8 @@ async function proba() {
     window.__schowek = "ok";
     Object.defineProperty(navigator, "canShare", { value: (d) => Array.isArray(d?.files) && d.files.length > 0, configurable: true });
     Object.defineProperty(navigator, "share", { value: async (d) => {
-      window.__wywolania.push({ co: "share", pliki: d.files.map((f) => ({ nazwa: f.name, typ: f.type, rozmiar: f.size, plik: f instanceof File })), tytul: d.title, tekst: d.text });
+      window.__wywolania.push({ co: "share", pliki: d.files.map((f) => ({ nazwa: f.name, typ: f.type, rozmiar: f.size, plik: f instanceof File })), tytul: d.title, tekst: d.text,
+        aktywny: navigator.userActivation ? navigator.userActivation.isActive : null });
       if (window.__odmowa) throw new DOMException("Odmowa", window.__odmowa);
     }, configurable: true });
     const schowek = { writeText: async (t) => {
@@ -987,6 +991,14 @@ async function proba() {
   await czekaj(500);
   wyw = await js("window.__wywolania");
   sprawdz("bez schowka: share i tak wywołane", wyw.length === 1 && shareOk(wyw[0]), JSON.stringify(wyw));
+  // Przed share() strona czeka na skompresowany ZIP. Kliknięcie z gestem użytkownika (userGesture):
+  // w chwili share() aktywacja z gestu ma nadal trwać, bo bez niej przeglądarka odmówi udostępnienia.
+  await js("window.__wywolania = []; window.__schowek = 'ok'");
+  await strona("Runtime.evaluate", { expression: "document.querySelector('#udostepnij-przycisk').click()", userGesture: true });
+  await czekaj(500);
+  wyw = await js("window.__wywolania");
+  sprawdz("kliknięcie z gestem: share po kompresji ZIP-a nadal w czasie aktywacji przez gest",
+    wyw.length === 2 && shareOk(wyw[1]) && wyw[1].aktywny === true, JSON.stringify(wyw));
   await js("window.__wywolania = []; window.__schowek = 'ok'; window.__odmowa = 'AbortError'; document.querySelector('#udostepnij-przycisk').click()");
   await czekaj(500);
   dt = await drogaTel();

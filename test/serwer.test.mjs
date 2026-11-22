@@ -4,7 +4,7 @@
 import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
 import { request } from "node:http";
-import { readFileSync, mkdtempSync, writeFileSync, symlinkSync, chmodSync, rmSync, mkdirSync } from "node:fs";
+import { readFileSync, mkdtempSync, writeFileSync, symlinkSync, chmodSync, rmSync, mkdirSync, readdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, sep } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -252,4 +252,141 @@ test("wiersz poleceń: błąd startu podprocesu kończy test od razu", async () 
   } finally {
     await new Promise((gotowe) => zajety.close(gotowe));
   }
+});
+
+// Atrapa skryptu przyjmującego zgłoszenia (opcja --zgloszenie). Odpowiedź wybiera część adresu
+// przed „@” w nagłówku X-Adres; każdy inny adres daje 200 z potwierdzeniem.
+function wyslij({ port: naPorcie, sciezka = "/zgloszenie/", metoda = "POST", naglowki = {}, cialo = new Uint8Array([0x50, 0x4b, 5, 6]), czas = 0 }) {
+  // cialo: null to żądanie bez ciała.
+  return new Promise((wynik, blad) => {
+    const z = request({ host: "127.0.0.1", port: naPorcie, path: sciezka, method: metoda, headers: naglowki }, (o) => {
+      const czesci = [];
+      o.on("data", (c) => czesci.push(c));
+      o.on("end", () => wynik({ status: o.statusCode, naglowki: o.headers, tresc: Buffer.concat(czesci) }));
+    });
+    if (czas > 0) {
+      z.setTimeout(czas, () => {
+        z.destroy();
+        wynik({ status: null, czas: true });
+      });
+    }
+    z.on("error", blad);
+    z.end(cialo ?? undefined);
+  });
+}
+
+const ZGLOSZENIE = { "Content-Type": "application/zip", "X-Numer": "K7M3-Q9TX" };
+const adres = (lokalna) => ({ ...ZGLOSZENIE, "X-Adres": `${lokalna}@example.com` });
+
+async function zAtrapa(fn) {
+  const s = utworzSerwer(undefined, { zgloszenie: true });
+  await new Promise((gotowe) => s.listen(0, "127.0.0.1", gotowe));
+  try {
+    return await fn(s.address().port);
+  } finally {
+    s.closeAllConnections();
+    await new Promise((gotowe) => s.close(gotowe));
+  }
+}
+
+test("atrapa zgłoszeń: każda odpowiedź z kodem, stanem i nagłówkami jak w skrypcie", async () => {
+  await zAtrapa(async (p) => {
+    const przypadki = [
+      ["jan", 200, { stan: "przyjete", numer: "K7M3-Q9TX", potwierdzenie: true }],
+      ["przyjete", 200, { stan: "przyjete", numer: "K7M3-Q9TX", potwierdzenie: true }],
+      ["bez-potwierdzenia", 200, { stan: "przyjete", numer: "K7M3-Q9TX", potwierdzenie: false }],
+      ["zly-adres", 400, { stan: "zly_adres" }],
+      ["za-duze", 413, { stan: "za_duze" }],
+      ["limit", 429, { stan: "limit" }],
+      ["niedostepne", 503, { stan: "niedostepne" }],
+    ];
+    for (const [lokalna, kod, json] of przypadki) {
+      const o = await wyslij({ port: p, naglowki: adres(lokalna) });
+      assert.equal(o.status, kod, lokalna);
+      assert.deepEqual(JSON.parse(o.tresc.toString("utf8")), json, lokalna);
+      assert.equal(o.naglowki["content-type"], "application/json; charset=utf-8", lokalna);
+      assert.equal(o.naglowki["cache-control"], "no-store", lokalna);
+      assert.equal(o.naglowki["x-content-type-options"], "nosniff", lokalna);
+      for (const [naglowek, wartosc] of Object.entries(NAGLOWKI_WYMAGANE)) assert.equal(o.naglowki[naglowek], wartosc, `${lokalna}: ${naglowek}`);
+      assert.equal(o.tresc.includes("example.com"), false, `${lokalna}: bez adresu w odpowiedzi`);
+      if (kod === 429) assert.match(o.naglowki["retry-after"], /^[1-9]\d*$/, "Retry-After w sekundach");
+      else assert.equal(o.naglowki["retry-after"], undefined, lokalna);
+    }
+  });
+});
+
+test("atrapa zgłoszeń: brak odpowiedzi, połączenie wisi; serwer obsługuje dalej inne żądania", async () => {
+  await zAtrapa(async (p) => {
+    const wisi = await wyslij({ port: p, naglowki: adres("brak-odpowiedzi"), czas: 500 });
+    assert.deepEqual(wisi, { status: null, czas: true });
+    assert.equal((await wyslij({ port: p, naglowki: adres("jan") })).status, 200);
+    assert.equal((await zapytaj("/", "GET", p)).status, 200, "strona dalej podawana");
+  });
+});
+
+test("atrapa zgłoszeń: inna metoda 405 z Allow: POST, zły typ 415, zły numer 400, za duże ciało 413", async () => {
+  await zAtrapa(async (p) => {
+    const get = await wyslij({ port: p, metoda: "GET", naglowki: {}, cialo: null });
+    assert.equal(get.status, 405);
+    assert.equal(get.naglowki.allow, "POST");
+    assert.equal(get.tresc.length, 0);
+    const typ = await wyslij({ port: p, naglowki: { ...adres("jan"), "Content-Type": "multipart/form-data" } });
+    assert.deepEqual([typ.status, JSON.parse(typ.tresc).stan], [415, "zly_typ"]);
+    const numer = await wyslij({ port: p, naglowki: { ...adres("jan"), "X-Numer": "K7M3-Q9TI" } });
+    assert.deepEqual([numer.status, JSON.parse(numer.tresc).stan], [400, "zly_numer"]);
+    const duze = await wyslij({ port: p, naglowki: adres("jan"), cialo: new Uint8Array(5 * 1024 * 1024 + 1) });
+    assert.deepEqual([duze.status, JSON.parse(duze.tresc).stan], [413, "za_duze"]);
+    const rowno = await wyslij({ port: p, naglowki: adres("jan"), cialo: new Uint8Array(5 * 1024 * 1024) });
+    assert.equal(rowno.status, 200, "równo 5 MiB przyjęte");
+  });
+});
+
+test("bez opcji --zgloszenie ścieżka /zgloszenie/ daje 404 dla każdej metody", async () => {
+  for (const metoda of ["POST", "GET", "HEAD"]) {
+    const o = await wyslij({ port, metoda, naglowki: adres("jan"), cialo: null });
+    assert.equal(o.status, 404, metoda);
+  }
+  const zCialem = await wyslij({ port, naglowki: adres("jan") });
+  assert.equal(zCialem.status, 404);
+  assert.equal((await zapytaj("/", "POST")).status, 405, "inne ścieżki jak dotąd");
+});
+
+test("wiersz poleceń --zgloszenie: komunikat startu o atrapie; żądanie nie trafia na wyjście ani na dysk", async () => {
+  const baza = mkdtempSync(join(tmpdir(), "serwer-"));
+  const p = spawn(process.execPath, [fileURLToPath(new URL("../narzedzia/serwer.mjs", import.meta.url)), "--port", "0", "--zgloszenie"], { cwd: baza });
+  try {
+    let wyjscie = "";
+    let bledy = "";
+    p.stderr.on("data", (d) => { bledy += d; });
+    const portAtrapy = await new Promise((wynik, blad) => {
+      const czas = setTimeout(() => blad(new Error(`brak komunikatu startu: ${wyjscie}`)), 5000);
+      p.stdout.on("data", (d) => {
+        wyjscie += d;
+        const m = /127\.0\.0\.1:(\d+)\//.exec(wyjscie);
+        if (m && wyjscie.includes("Ctrl+C")) {
+          clearTimeout(czas);
+          wynik(Number(m[1]));
+        }
+      });
+    });
+    assert.match(wyjscie, /POST \/zgloszenie\//);
+    const start = wyjscie;
+    const tajne = "TRESC_ZGLOSZENIA";
+    const o = await wyslij({ port: portAtrapy, naglowki: adres("tajny-klient"), cialo: new TextEncoder().encode(tajne) });
+    assert.equal(o.status, 200);
+    await new Promise((r) => setTimeout(r, 200));
+    assert.equal(wyjscie, start, "nic nie dochodzi na standardowe wyjście");
+    assert.equal(bledy, "");
+    assert.deepEqual(readdirSync(baza), [], "nic nie powstaje w katalogu roboczym");
+  } finally {
+    p.kill();
+    rmSync(baza, { recursive: true, force: true });
+  }
+});
+
+test("komunikat startu z atrapą zgłoszeń opisuje, jak wybrać odpowiedź", () => {
+  const k = komunikatStartu("127.0.0.1", 8000, { zgloszenie: true });
+  assert.match(k, /POST \/zgloszenie\//);
+  for (const lokalna of ["bez-potwierdzenia", "zly-adres", "za-duze", "limit", "niedostepne", "brak-odpowiedzi"]) assert.ok(k.includes(lokalna), lokalna);
+  assert.doesNotMatch(komunikatStartu("127.0.0.1", 8000), /zgloszenie/);
 });

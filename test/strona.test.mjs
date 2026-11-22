@@ -63,8 +63,9 @@ test("pomocnicze testu: wycinanie funkcji i atrybutów odnośników działa na t
 
 test("ZIP powstaje tylko przy zapisie albo wysyłce: utworzZipZgloszenia wołane w zapisz i udostepnij", () => {
   assert.equal((MAIN.match(/\butworzZipZgloszenia\s*\(/g) ?? []).length, 2);
-  assert.match(funkcja("zapisz"), /\butworzZipZgloszenia\s*\(/);
-  assert.match(funkcja("udostepnij"), /\butworzZipZgloszenia\s*\(/);
+  // Kompresja jest asynchroniczna: oba miejsca czekają na gotowy ZIP.
+  assert.match(funkcja("zapisz"), /\bawait utworzZipZgloszenia\(zapisywany\)/);
+  assert.match(funkcja("udostepnij"), /\bawait utworzZipZgloszenia\(udostepniany\)/);
   assert.doesNotMatch(funkcja("przelicz"), /\butworzZipZgloszenia\s*\(/);
   assert.doesNotMatch(MAIN, /wynik\.zip\b/);
   assert.doesNotMatch(MAIN, /plikDoWyslania/, "bez zapamiętanego ZIP-a do wysyłki");
@@ -372,6 +373,18 @@ test("po zapisie: adres w po_zapisie to odnośnik z tym samym mailto: co „Napi
   assert.equal((MAIN.match(/\bodnosnikMailto\(/g) ?? []).length, 1, "mailto liczony w jednym miejscu");
 });
 
+test("zapis czeka na skompresowany ZIP; dane zmienione w tym czasie: plik zapisany, bez potwierdzenia i wiadomości", () => {
+  const zapis = funkcja("zapisz");
+  assert.match(MAIN, /\nasync function zapisz\(\) \{/);
+  assert.match(zapis, /const zapisywany = wynik;\n\s*const zip = await utworzZipZgloszenia\(zapisywany\);/);
+  assert.match(zapis, /el\("a", \{ href: adres, download: zapisywany\.nazwaZip \}\)/);
+  const sprawdzenie = zapis.indexOf("if (wynik !== zapisywany || czekaPrzeliczenie) return;");
+  assert.ok(sprawdzenie > zapis.indexOf("a.click();"), "plik zapisany przed sprawdzeniem");
+  assert.ok(sprawdzenie > zapis.indexOf("poprzedniZapis = zip;"), "zapisany plik zapamiętany do porównania");
+  assert.ok(sprawdzenie < zapis.indexOf("pokaz($(\"#zapis-gotowe\"), true);"), "potwierdzenie dopiero po sprawdzeniu");
+  assert.ok(sprawdzenie < zapis.indexOf("ustawWiadomosc(mailto);"), "wiadomość dopiero po sprawdzeniu");
+});
+
 test("potwierdzenie zapisu: zapis_gotowe po każdym zapisie, zapis_ponownie po zapisie innej treści", () => {
   const zapis = funkcja("zapisz");
   assert.match(zapis, /t\("zapis_gotowe", \{ plik: wynik\.nazwaZip \}\)/);
@@ -420,16 +433,20 @@ test("wybór drogi: udostępnianie tylko przy obsłudze plików i ekranie dotyko
 
 test("udostępnianie: adres do schowka bez czekania, zaraz potem share z plikiem, tytułem i tekstem", () => {
   const udostepnij = funkcja("udostepnij");
-  assert.match(udostepnij, /new File\(\[utworzZipZgloszenia\(wynik\)\], wynik\.nazwaZip, \{ type: "application\/zip" \}\)/);
+  assert.match(udostepnij, /const udostepniany = wynik;\n\s*const plik = new File\(\[await utworzZipZgloszenia\(udostepniany\)\], udostepniany\.nazwaZip, \{ type: "application\/zip" \}\)/);
   assert.match(udostepnij, /navigator\.share\(\{ files: \[plik\], title: t\("udostepnij_tytul", \{ numer: NUMER \}\), text: t\("udostepnij_tekst", \{ numer: NUMER \}\) \}\)/);
   // Schowek przed share(), bez await i z pominięciem błędu (także braku schowka).
   const schowek = udostepnij.indexOf("navigator.clipboard.writeText(ADRES)");
   assert.ok(schowek > 0 && schowek < udostepnij.indexOf("navigator.share("), "writeText przed share");
   assert.match(udostepnij, /try \{\n\s*navigator\.clipboard\.writeText\(ADRES\)\.catch\(\(\) => \{\}\);\n\s*\} catch \{/);
   assert.doesNotMatch(udostepnij, /await navigator\.clipboard/);
-  // Okno udostępniania wymaga gestu użytkownika: przed share() nie ma await.
+  // Okno udostępniania i schowek wymagają gestu użytkownika. Przed share() jest tylko jedno
+  // await: na skompresowany ZIP (ułamek sekundy, w czasie aktywacji przez gest), a schowek idzie
+  // jeszcze przed nim.
   assert.ok(udostepnij.includes("await navigator.share("));
-  assert.doesNotMatch(udostepnij.slice(0, udostepnij.indexOf("await navigator.share(")), /\bawait\b/);
+  const przedShare = udostepnij.slice(0, udostepnij.indexOf("await navigator.share("));
+  assert.deepEqual(przedShare.match(/\bawait\b[^;]*/g), ["await utworzZipZgloszenia(udostepniany)], udostepniany.nazwaZip, { type: \"application/zip\" })"]);
+  assert.ok(schowek < udostepnij.indexOf("await utworzZipZgloszenia("), "writeText przed czekaniem na ZIP");
 });
 
 test("udostępnianie: odmowa inna niż AbortError przełącza do końca wizyty na drogę z zapisem z udostepnij_niedostepne", () => {

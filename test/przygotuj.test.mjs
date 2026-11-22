@@ -38,7 +38,7 @@ function uruchom(argumenty, env = {}) {
   return { kod: w.status, stdout: w.stdout, stderr: w.stderr };
 }
 
-test("zapis ZIP-a: kod 0, ten sam ZIP co funkcja w przeglądarce", () => {
+test("zapis ZIP-a: kod 0, ten sam ZIP co funkcja w przeglądarce", async () => {
   const plik = zapisz("n1.csv", generuj(N1).surowy);
   const formularz = { faktura: { oplata_mocowa_zl_mies: "12,34" }, instalacja: { magazyn: "nie" }, zgoda: true };
   const sciezkaFormularza = zapisz("formularz.json", JSON.stringify(formularz));
@@ -46,10 +46,12 @@ test("zapis ZIP-a: kod 0, ten sam ZIP co funkcja w przeglądarce", () => {
   const w = uruchom(["--numer", NUMER, "--data", DATA, "--formularz", sciezkaFormularza, "--wyjscie", wyjscie, plik]);
   assert.equal(w.kod, 0, w.stderr);
   assert.equal(w.stderr, "");
-  const oczekiwany = przygotujZgloszenie({ pliki: [generuj(N1).surowy], formularz, numer: NUMER, utworzono: DATA }).zip;
+  const oczekiwany = (await przygotujZgloszenie({ pliki: [generuj(N1).surowy], formularz, numer: NUMER, utworzono: DATA })).zip;
   assert.deepEqual(new Uint8Array(readFileSync(wyjscie)), oczekiwany);
   const pliki = czytajZip(readFileSync(wyjscie));
   assert.deepEqual(pliki.map((p) => p.nazwa), ["zgloszenie.json", "faktury.json", "instalacja.json", "pomiary_1.csv"]);
+  assert.ok(pliki.every((p) => p.metoda === 8), "pliki skompresowane, jak w przeglądarce z CompressionStream");
+  assert.ok(pliki[3].skompresowany < pliki[3].rozmiar);
   assert.deepEqual(Buffer.from(pliki[3].bajty), WZORZEC_N1);
   // Na standardowym wyjściu tylko kody uwag z miejscem, bez danych.
   assert.equal(w.stdout, "uwaga ZAKRES_NIEPELNY zakres\nuwaga FAKTURA_BRAK_OBOWIAZKOWYCH raport\n");
@@ -133,6 +135,7 @@ test("formularz o złej budowie: kod 2 z nazwą klucza, bez wartości", () => {
     [{ instalacja: { moc: TAJNE } }, "instalacja.moc"],
     [{ instalacja: { zmiany: [{ rodzaj: "pompa_ciepla", miesiac: 202510 }] } }, "instalacja.zmiany[0].miesiac"],
     [{ instalacja: { zmiany: TAJNE } }, "instalacja.zmiany"],
+    [{ instalacja: { zmiany: [{ rodzaj: "rozbudowa_pv", miesiac: "2025-06", moc_przed_kwp: 2.5 }] } }, "instalacja.zmiany[0].moc_przed_kwp"],
     [{ zgoda: "true" }, "zgoda"],
     [{ zgoda: 1 }, "zgoda"],
     // Pola, których strona już nie ma: operatora wpisuje narzędzie, pytanie o pierwsze oddanie zniknęło.
@@ -161,7 +164,7 @@ test("formularz poprawnej budowy z każdym kluczem przechodzi", () => {
     },
     instalacja: {
       moc_pv_kwp: "5", magazyn: "tak", magazyn_pojemnosc_kwh: "5", magazyn_od: "2025-01",
-      zmiany: [{ rodzaj: "rozbudowa_pv", miesiac: "2025-06" }],
+      zmiany: [{ rodzaj: "rozbudowa_pv", miesiac: "2025-06", moc_przed_kwp: "2,5" }],
     },
     zgoda: false,
   };
@@ -169,8 +172,23 @@ test("formularz poprawnej budowy z każdym kluczem przechodzi", () => {
   assert.equal(w.kod, 0, w.stderr);
   // Cena 0,50 i 0,40 jest typowa, okres krótki: bez uwag o fakturze poza zakresem plików.
   assert.equal(w.stdout, "uwaga ZAKRES_NIEPELNY zakres\n");
-  const faktury = JSON.parse(new TextDecoder().decode(czytajZip(readFileSync(join(katalog, "pelny.zip")))[1].bajty));
+  const zip = czytajZip(readFileSync(join(katalog, "pelny.zip")));
+  const faktury = JSON.parse(new TextDecoder().decode(zip[1].bajty));
   assert.equal(faktury.raport.operator_dystrybucyjny, "tauron_dystrybucja");
+  const instalacja = JSON.parse(new TextDecoder().decode(zip[2].bajty));
+  assert.equal(instalacja.wersja_formatu, 2);
+  assert.deepEqual(instalacja.zmiany, [{ rodzaj: "rozbudowa_pv", miesiac: "2025-06", moc_przed_kwp: "2.50" }]);
+});
+
+test("ZIP z wiersza poleceń otwiera zewnętrzny program unzip, jeśli jest w systemie", (t) => {
+  if (spawnSync("unzip", ["-v"], { stdio: "ignore" }).error) return t.skip("brak programu unzip");
+  const plik = zapisz("unzip.csv", generuj({ od: "2025-01-01", do: "2025-03-31", ziarno: 5 }).surowy);
+  const wyjscie = join(katalog, "unzip.zip");
+  assert.equal(uruchom(["--numer", NUMER, "--data", DATA, "--wyjscie", wyjscie, plik]).kod, 0);
+  const w = spawnSync("unzip", ["-t", wyjscie], { encoding: "utf8" });
+  assert.equal(w.status, 0, w.stderr);
+  assert.match(w.stdout, /No errors detected/);
+  assert.match(w.stdout, /testing: pomiary_1\.csv/);
 });
 
 test("G12 z jedną ceną jako tekstem (starszy plik formularza): kod 0, cena w faktury.json", () => {
