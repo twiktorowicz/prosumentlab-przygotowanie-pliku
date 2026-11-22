@@ -60,7 +60,7 @@ nagłówek `Content-Security-Policy` ma tę samą politykę co `index.html` i do
 `frame-ancestors 'none'`:
 
 ```
-Content-Security-Policy: default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; font-src 'self'; connect-src 'none'; form-action 'none'; base-uri 'none'; frame-ancestors 'none'
+Content-Security-Policy: default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; font-src 'self'; connect-src 'self'; form-action 'none'; base-uri 'none'; frame-ancestors 'none'
 Cross-Origin-Opener-Policy: same-origin
 X-Content-Type-Options: nosniff
 Referrer-Policy: no-referrer

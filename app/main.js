@@ -1,17 +1,19 @@
 // Obsługa strony narzędzia. Cała logika danych jest w app/lib/ (bez DOM); tu tylko:
-// odczyt plików wybranych przez klienta, zebranie pól formularza, pokazanie wyniku
-// i zapis ZIP-a na urządzeniu. Teksty pochodzą wyłącznie z teksty.js i trafiają na stronę
-// jako tekst (textContent), nigdy jako HTML. Nic nie jest wysyłane ani zapisywane
-// w przeglądarce: po zamknięciu karty dane znikają.
+// odczyt plików wybranych przez klienta, zebranie pól formularza, kreator z sześcioma krokami,
+// pokazanie wyniku, zapis ZIP-a na urządzeniu i wysyłka zgłoszenia. Teksty pochodzą wyłącznie
+// z teksty.js i trafiają na stronę jako tekst (textContent), nigdy jako HTML. Strona wysyła
+// tylko zgłoszenie: jedno żądanie pod /zgloszenie/ po wybraniu „Wyślij zgłoszenie” (wyslij).
+// Niczego nie zapisuje w przeglądarce: po zamknięciu karty dane znikają.
 
 import { TEKSTY } from "./teksty.js";
-import { tekst, znacznikPolski, dataPolska, miesiacZRokiem, kwhDoWyswietlenia } from "./lib/odmiana.js";
+import { tekst, znacznikPolski, dataPolska, miesiacZRokiem, kwhDoWyswietlenia, rozmiarDoWyswietlenia } from "./lib/odmiana.js";
 import { przygotujPliki, zlozZgloszenie, utworzZipZgloszenia, odnosnikMailto, nazwaZip, WERSJA, ADRES, MAKS_PLIKOW } from "./lib/zgloszenie.js";
 import { losowyNumer } from "./lib/numer.js";
 import { LIMIT_BAJTOW } from "./lib/dekodowanie.js";
 import { liczbaZCyfr, czytajCene } from "./lib/kwoty.js";
 import { ROK_MIN } from "./lib/kalendarz.js";
 import { okresMiesiaca, sprzedawcaZListy } from "./lib/formularz.js";
+import { sprawdzAdres, wysylkaDostepna, zipZaDuzy, wynikWysylki, CZAS_WYSYLKI_MS } from "./lib/wysylka.js";
 
 const t = (klucz, wstawki) => tekst(TEKSTY, klucz, wstawki);
 const $ = (wybor, w = document) => w.querySelector(wybor);
@@ -47,11 +49,31 @@ let wynikiPlikow = new Map(); // pozycja na liście -> wynik z przygotujPliki
 let wynik = null;
 let odlozone = null;
 let czekaPrzeliczenie = false; // zmiana pola czeka na odłożone przeliczenie
-// Udostępnianie odrzucone przez przeglądarkę innym błędem niż zamknięcie okna: do końca wizyty
-// zostaje droga z zapisem.
-let udostepnianieOdrzucone = false;
-// Klient wybrał drogę z zapisem zamiast udostępniania: zostaje do końca wizyty.
-let drogaZapisWybrana = false;
+
+// Kreator: sześć kroków na jednej stronie, widoczny jeden. Stan tylko w pamięci; przycisk „wstecz”
+// przeglądarki nie zmienia kroku (bez historii przeglądarki).
+const KROKI = 6;
+let aktualnyKrok = 1;
+// Widok kroku 6: "wysylka" (adres i przycisk wysyłki), "zapasowa" (zapis pliku i wiadomość),
+// "wyslane" (ekran po wysłaniu).
+let widok6 = "wysylka";
+// Wysyłka przez stronę działa pod https: i na serwerze próbnym (http: na 127.0.0.1 albo localhost).
+const WYSYLKA_DOSTEPNA = wysylkaDostepna(location.protocol, location.hostname);
+
+// ZIP przygotowany po wejściu na krok 5: { wynik, bajty } dla zgłoszenia `wynik`. Każda zmiana
+// danych go unieważnia; zapis, odnośnik do wiadomości i wysyłka używają tego samego ZIP-a, więc
+// kliknięcie nie czeka na kompresję.
+let zip = null;
+let budowanyDla = null; // zgłoszenie, dla którego trwa kompresja
+// Zgłoszenie, dla którego budowa ZIP-a się nie udała (żadną metodą): krok 6 pokazuje blad_nieznany,
+// a kolejne wejście na krok 5 albo 6 ponawia próbę.
+let bladZipu = null;
+// Zgłoszenie z tym ZIP-em zostało zapisane albo wysłane: bez pytania przed opuszczeniem strony.
+let oddane = false;
+let wysylkaTrwa = false;
+let bladWysylki = null; // klucz tekstu po nieudanej wysyłce
+let wyslanyAdres = "";
+let wyslanePotwierdzenie = true;
 // Zapisy w tej wizycie: bajty ostatniego ZIP-a i to, czy kiedykolwiek zapisano ZIP o innej treści.
 // Gdy treści były różne, każdy kolejny zapis różni się od co najmniej jednego wcześniejszego.
 let poprzedniZapis = null;
@@ -90,7 +112,22 @@ function wstawTeksty() {
   );
 
   $("#numer").replaceChildren(...zdanieZNumerem());
+  $("#wysylka-co").replaceChildren(...zdanieZNumerem("wysylka_co"));
   $("#mailto-bez-zalacznika").textContent = t("mailto_bez_zalacznika", { plik: nazwaZip(NUMER) });
+  $("#wyslane-numer").textContent = NUMER;
+
+  // Ekran po wysłaniu: słowa z wyslane_brak_odnosnik w tekście wyslane_brak to przycisk, który
+  // wraca do kroku 6 z wpisanym adresem. Bez tej frazy w tekście zostaje sam tekst.
+  const brak = t("wyslane_brak");
+  const popraw = t("wyslane_brak_odnosnik");
+  const miejscePoprawy = brak.indexOf(popraw);
+  if (miejscePoprawy < 0) {
+    $("#wyslane-brak").textContent = brak;
+  } else {
+    const przycisk = el("button", { type: "button", klasa: "przycisk-tekstowy w-tekscie", id: "wyslane-popraw", tekst: popraw });
+    przycisk.addEventListener("click", wrocDoWysylki);
+    $("#wyslane-brak").replaceChildren(brak.slice(0, miejscePoprawy), przycisk, brak.slice(miejscePoprawy + popraw.length));
+  }
 
   // Instrukcja pobrania pliku: odnośnik na słowach z tekstu, w nowej karcie (jak przy zgodzie).
   // Fraza służy tylko do znalezienia miejsca podziału; bez niej zostaje sam tekst.
@@ -118,8 +155,8 @@ function wstawTeksty() {
 }
 
 // Zdanie z numerem zgłoszenia; czcionką o stałej szerokości jest tylko sam numer.
-function zdanieZNumerem() {
-  const [przed, po] = TEKSTY.numer.split("{numer}");
+function zdanieZNumerem(klucz = "numer") {
+  const [przed, po] = TEKSTY[klucz].split("{numer}");
   return [przed, el("span", { klasa: "numer-zgloszenia", tekst: NUMER }), po];
 }
 
@@ -244,14 +281,24 @@ function dodajOplate() {
   pokaz($("#dodaj-oplate"), lista.children.length < MAKS_OPLAT);
 }
 
+// Zmiany w okresie objętym plikami: pole wyboru, a po zaznaczeniu miesiąc i rok. Przy rozbudowie
+// instalacji fotowoltaicznej nad miesiącem jest podpis, a pod nim nieobowiązkowe pole mocy przed
+// rozbudową z podpowiedzią i własnym komunikatem błędu.
 function zbudujZmiany() {
   $("#zmiany").replaceChildren(...Object.entries(TEKSTY.opcje_zmiany).map(([rodzaj, etykieta], i) => {
     const id = `p-zmiana-${i}`;
-    const miesiac = listyMiesiacaIRoku(`zmiany-${i}`);
-    miesiac.hidden = true;
+    const szczegoly = [listyMiesiacaIRoku(`zmiany-${i}`)];
+    if (rodzaj === "rozbudowa_pv") {
+      szczegoly.unshift(el("p", { klasa: "podpis", tekst: t("instalacja_rozbudowa_od") }));
+      szczegoly.push(el("div", { klasa: "pole", "data-pole": "moc_przed_kwp" },
+        el("label", { for: "p-moc_przed_kwp", tekst: t("instalacja_moc_przed") }),
+        el("input", { type: "text", id: "p-moc_przed_kwp", inputmode: "decimal", autocomplete: "off", "aria-describedby": "moc-przed-pomoc" }),
+        el("p", { klasa: "podpowiedz", id: "moc-przed-pomoc", tekst: t("instalacja_moc_przed_pomoc") }),
+        el("p", { klasa: "blad", hidden: true })));
+    }
     return el("div", { klasa: "zmiana", "data-zmiana": String(i), "data-rodzaj": rodzaj },
       el("label", { klasa: "opcja" }, el("input", { type: "checkbox", id }), el("span", { tekst: etykieta })),
-      miesiac,
+      el("div", { klasa: "zmiana-szczegoly", hidden: true }, ...szczegoly),
       el("p", { klasa: "blad", hidden: true }),
       el("p", { klasa: "uwaga", hidden: true }),
     );
@@ -272,7 +319,7 @@ function warunki() {
   const innyOkres = $("#p-okres-inny").checked;
   pokaz($("#okres-daty"), innyOkres);
   pokaz($('[data-pole="okres_miesiac"]'), !innyOkres);
-  for (const z of $$("[data-zmiana]")) pokaz($(".miesiac-rok", z), $('input[type="checkbox"]', z).checked);
+  for (const z of $$("[data-zmiana]")) pokaz($(".zmiana-szczegoly", z), $('input[type="checkbox"]', z).checked);
 }
 
 function zbierzFormularz() {
@@ -305,9 +352,11 @@ function zbierzFormularz() {
     magazyn: wybrane("magazyn"),
     magazyn_pojemnosc_kwh: wartoscPola("magazyn_pojemnosc_kwh"),
     magazyn_od: wartoscMiesiaca($('[data-miesiac="magazyn_od"]'), { niepelny: true }),
+    // Moc przed rozbudową tylko z wiersza rozbudowy instalacji fotowoltaicznej.
     zmiany: $$("[data-zmiana]").map((z) => ({
       rodzaj: $('input[type="checkbox"]', z).checked ? z.dataset.rodzaj : "",
       miesiac: wartoscMiesiaca($(".miesiac-rok", z)),
+      ...(z.dataset.rodzaj === "rozbudowa_pv" && { moc_przed_kwp: wartoscPola("moc_przed_kwp") }),
     })),
   };
   return { faktura, instalacja, zgoda: $("#p-zgoda").checked };
@@ -354,6 +403,7 @@ function przeliczPliki() {
 function ustawBlokadeOdczytu() {
   $("#wybor-plikow").disabled = czytanie;
   for (const b of $$("#lista-plikow button")) b.disabled = czytanie;
+  $("#kreator-dalej").disabled = czytanie && aktualnyKrok === 1;
 }
 
 // Czyta pozycje z pierwszej dziesiątki, które jeszcze nie są w pamięci. Plik większy niż limit
@@ -442,7 +492,8 @@ function pokazPliki() {
       ...tresc);
   }));
 
-  // Pod listą plików tylko blokady z plików; blokada z pól formularza stoi przy przycisku zapisu.
+  // Pod listą plików tylko blokady z plików; blokada z pól formularza stoi w kroku 6, przy zapisie
+  // i wysyłce, a „Dalej” zatrzymuje się na nią w kroku z polem, które ją wywołało (bladKroku).
   $("#blokady").replaceChildren(...wynik.blokady.filter((b) => b.plik === undefined && b.kod !== BLOKADA_POL).map((b) =>
     komunikat("blad", tekstKodu(b.kod, b.znacznik ? { data: znacznikPolski(b.znacznik) } : {}))));
 }
@@ -477,11 +528,13 @@ function pokazZakres() {
 }
 
 // Komunikat błędu przy polu. `pole` z modułu formularza, np. "oplaty_stale_inne[2].nazwa".
+// Wiersz zmiany ma własny komunikat bezpośrednio w sobie; komunikat pola mocy przed rozbudową
+// leży głębiej i należy do tego pola.
 function kontenerBledu(pole) {
   const m = /^(oplaty_stale_inne|zmiany)\[(\d+)\]/.exec(pole);
   if (m) {
     const wiersz = m[1] === "zmiany" ? $(`[data-zmiana="${m[2]}"]`) : $(`[data-oplata="${m[2]}"]`);
-    return wiersz ? $(".blad", wiersz) : null;
+    return wiersz ? $(":scope > .blad", wiersz) : null;
   }
   const nazwa = pole.replace(/\[.*$/, "");
   const kontener = $(`[data-pole="${nazwa}"]`);
@@ -489,8 +542,9 @@ function kontenerBledu(pole) {
 }
 
 function pokazPola() {
+  // Komunikaty plików, kreatora i kroku 6 mają własną obsługę.
   for (const b of $$(".blad", $("main"))) {
-    if (b.closest("#lista-plikow") || b.closest("#blokady")) continue;
+    if (b.closest("#lista-plikow, #blokady, .kreator-komunikat, #krok-wysylka")) continue;
     b.hidden = true;
     b.textContent = "";
   }
@@ -600,47 +654,344 @@ function pokazPodglad() {
 // Blokada z pól wpisanych ręcznie (bezpiecznik plików JSON).
 const BLOKADA_POL = "blad_bezpiecznik_formularz";
 
-function pokazZapis() {
-  const przycisk = $("#zapisz");
-  przycisk.disabled = !wynik.moznaZapisac;
+// Nazwa pola do komunikatów (pola_nazwy).
+function nazwyPol(bledy) {
+  const pola = [...new Set(bledy.map((b) => b.pole.replace(/\[.*$/, "")))];
+  return [...new Set(pola.map((p) => TEKSTY.pola_nazwy[p] ?? p))];
+}
+
+// --- Kreator ---------------------------------------------------------------------------------
+
+const sekcjaKroku = (n) => $(`section[data-krok="${n}"]`);
+const komunikatKroku = (n) => $(".kreator-komunikat", sekcjaKroku(n));
+
+// Widoczny jest jeden krok. Po przejściu strona przewija się na górę, a nagłówek kroku dostaje
+// fokus (bez fokusu tylko przy otwarciu strony). Wejście na krok 6 zawsze otwiera widok wysyłki,
+// nigdy ekranu po wysłaniu (ten ma własny fokus, pokazWyslane). Wejście na krok 5 przygotowuje ZIP.
+function pokazKrok(n, { fokus = true } = {}) {
+  aktualnyKrok = n;
+  for (const s of $$("section.krok")) pokaz(s, s.dataset.krok === String(n));
+  for (const k of $$(".kreator-komunikat")) pokaz(k, false);
+  if (n === KROKI) widok6 = "wysylka";
+  $("#kreator-krok").textContent = t("kreator_krok", { n, m: KROKI });
+  $$("#pasek span").forEach((odcinek, i) => odcinek.classList.toggle("zrobiony", i < n));
+  pokaz($("#kreator-wstecz"), n > 1 && widok6 !== "wyslane");
+  pokaz($("#kreator-dalej"), n < KROKI);
+  ustawBlokadeOdczytu();
+  if (n >= 5) zbudujZip();
+  pokazRozmiar();
+  pokazWysylke();
+  if (fokus) {
+    window.scrollTo(0, 0);
+    $("h1", sekcjaKroku(n)).focus({ preventScroll: true });
+  }
+}
+
+// Pole formularza, w którym jest błąd: element z komunikatem błędu leży bezpośrednio w nim.
+function kontenerPola(pole) {
+  const b = kontenerBledu(pole);
+  return b ? b.parentElement : null;
+}
+
+// Pozycje listy `lista` ({ pole, … }, nazwy pól jak w błędach pól), których pole leży w kroku `n`,
+// z kontenerem pola, w kolejności na stronie. Pole bez kontenera na stronie pomija.
+function wKroku(n, lista) {
+  const sekcja = sekcjaKroku(n);
+  return wKolejnosci(lista
+    .map((b) => ({ ...b, kontener: kontenerPola(b.pole) }))
+    .filter((b) => b.kontener && sekcja.contains(b.kontener)));
+}
+
+function wKolejnosci(lista) {
+  return [...lista].sort((a, b) => (a.kontener === b.kontener ? 0 : a.kontener.compareDocumentPosition(b.kontener) & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : 1));
+}
+
+// Element, który dostaje fokus przy błędzie: konkretne pole ceny w strefie albo część opłaty, gdy
+// moduł je wskazuje, w pozostałych przypadkach pierwsze widoczne pole w kontenerze. Pole
+// w zwiniętej części (opłaty stałe) najpierw ją rozwija.
+function poleDoFokusu({ pole, kontener }) {
+  const zwiniete = kontener.closest("details");
+  if (zwiniete && !zwiniete.open) zwiniete.open = true;
+  const strefa = /^cena_energii_netto_zl_kwh\[(\d+)\]$/.exec(pole);
+  const czesc = /\.(nazwa|kwota_zl_mies)$/.exec(pole);
+  const wskazane = strefa ? $(`#p-cena-${strefa[1]}`) : czesc ? $(`[data-czesc="${czesc[1] === "nazwa" ? "nazwa" : "kwota"}"]`, kontener) : null;
+  if (wskazane) return wskazane;
+  return $$("input, select", kontener).find((e) => !e.disabled && e.getClientRects().length > 0) ?? kontener;
+}
+
+// Tekst blokady z plików taki sam jak pod listą plików.
+function tekstBlokady(b) {
+  return tekstKodu(b.kod, { ...(b.wiersz !== undefined && { wiersz: b.wiersz }), ...(b.znacznik && { data: znacznikPolski(b.znacznik) }) });
+}
+
+// Co zatrzymuje „Dalej” w kroku `n`: null albo { tekst, fokus }.
+// - krok 1: co najmniej jeden przyjęty plik i brak blokad plików;
+// - kroki 2–4: błąd w polu tego kroku (format, miesiąc bieżący, niepełny miesiąc, za duża moc przed
+//   rozbudową) albo pole tego kroku, które wywołało blokadę bezpiecznika plików JSON (tekst
+//   blokady). Pole blokady, którego nie ma w żadnym kroku, nie zatrzymuje: blokada stoi wtedy
+//   w kroku 6. Brak danych obowiązkowych z faktury nie zatrzymuje (pokazuje go uwaga pod ostatnim
+//   polem kroku 3);
+// - krok 5: bez warunków, zgoda jest nieobowiązkowa.
+function bladKroku(n) {
+  if (n === 1) {
+    const komunikat = komunikatKroku(1);
+    if (!wynik) return { tekst: t("blad_nieznany"), fokus: komunikat };
+    const blokady = wynik.blokady.filter((b) => b.kod !== BLOKADA_POL);
+    if (blokady.length > 0) return { tekst: [...new Set(blokady.map(tekstBlokady))].join(" "), fokus: komunikat };
+    if (!wynik.pliki.some((p) => p.stan === "przyjety" || p.stan === "uwaga")) return { tekst: t("kreator_pliki_brak"), fokus: komunikat };
+    return null;
+  }
+  if (n >= 2 && n <= 4) {
+    const bledne = wKroku(n, wynik?.bledyPol ?? []);
+    const blokada = wKroku(n, (wynik?.polaBezpiecznika ?? []).map((pole) => ({ pole })));
+    if (bledne.length === 0 && blokada.length === 0) return null;
+    const teksty = [];
+    if (bledne.length > 0) teksty.push(t("kreator_popraw", { pola: nazwyPol(bledne).join(", ") }));
+    if (blokada.length > 0) teksty.push(t(BLOKADA_POL));
+    return { tekst: teksty.join(" "), fokus: poleDoFokusu(wKolejnosci([...bledne, ...blokada])[0]) };
+  }
+  return null;
+}
+
+function dalej() {
+  if (czekaPrzeliczenie) przelicz();
+  const blad = bladKroku(aktualnyKrok);
+  if (blad) {
+    const komunikat = komunikatKroku(aktualnyKrok);
+    komunikat.textContent = blad.tekst;
+    pokaz(komunikat, true);
+    blad.fokus.focus();
+    return;
+  }
+  pokazKrok(aktualnyKrok + 1);
+}
+
+// „Wstecz” niczego nie sprawdza i niczego nie kasuje.
+function wstecz() {
+  pokazKrok(aktualnyKrok - 1);
+}
+
+// Komunikat kreatora po zmianie danych: znika, gdy przyczyna zniknęła, inaczej ma aktualną treść.
+function odswiezKomunikatKroku() {
+  const komunikat = komunikatKroku(aktualnyKrok);
+  if (!komunikat || komunikat.hidden) return;
+  const blad = bladKroku(aktualnyKrok);
+  if (blad) komunikat.textContent = blad.tekst;
+  else pokaz(komunikat, false);
+}
+
+// Pytanie przeglądarki przed opuszczeniem strony: gdy są wczytane pliki, a zgłoszenie z aktualnymi
+// danymi nie zostało wysłane ani zapisane.
+function ostrzezPrzedWyjsciem(z) {
+  z.preventDefault();
+  // Starsze przeglądarki pytają tylko przy ustawionym returnValue.
+  z.returnValue = true;
+}
+
+let ostrzezenieUstawione = false;
+function ustawOstrzezenie() {
+  const potrzebne = pliki.length > 0 && !oddane;
+  if (potrzebne === ostrzezenieUstawione) return;
+  ostrzezenieUstawione = potrzebne;
+  if (potrzebne) window.addEventListener("beforeunload", ostrzezPrzedWyjsciem);
+  else window.removeEventListener("beforeunload", ostrzezPrzedWyjsciem);
+}
+
+// --- ZIP -------------------------------------------------------------------------------------
+
+// Zmiana danych: przygotowany ZIP już im nie odpowiada, a zapisany albo wysłany plik też nie.
+function uniewaznijZip() {
+  zip = null;
+  budowanyDla = null;
+  bladZipu = null;
+  oddane = false;
+  bladWysylki = null;
+  ustawOstrzezenie();
+}
+
+// Kompresja jest asynchroniczna. Gotowy ZIP trafia do pamięci tylko wtedy, gdy dane się w tym
+// czasie nie zmieniły (to samo zgłoszenie i żadna zmiana nie czeka na przeliczenie). Nieudana
+// kompresja daje ZIP metodą 0 (zip.js); gdy i to się nie uda, obietnica jest odrzucona: krok 6
+// pokazuje blad_nieznany, a następne wywołanie (wejście na krok 5 albo 6) próbuje od nowa.
+function zbudujZip() {
+  if (!wynik?.moznaZapisac || zip?.wynik === wynik || budowanyDla === wynik) return;
+  const budowany = wynik;
+  budowanyDla = budowany;
+  bladZipu = null;
+  utworzZipZgloszenia(budowany).then((bajty) => {
+    if (wynik !== budowany || czekaPrzeliczenie) return;
+    zip = { wynik: budowany, bajty };
+    budowanyDla = null;
+    pokazRozmiar();
+    pokazWysylke();
+  }, (blad) => {
+    // Błąd zostaje w konsoli przeglądarki (lokalnie, nic nie jest wysyłane).
+    console.error(blad);
+    if (budowanyDla !== budowany) return;
+    budowanyDla = null;
+    if (wynik !== budowany || czekaPrzeliczenie) return;
+    bladZipu = budowany;
+    pokazWysylke();
+  });
+}
+
+function aktualnyZip() {
+  return zip && zip.wynik === wynik && !czekaPrzeliczenie ? zip : null;
+}
+
+// Rozmiar zgłoszenia pod podglądem, gdy ZIP jest gotowy.
+function pokazRozmiar() {
+  const gotowy = aktualnyZip();
+  const e = $("#podglad-rozmiar");
+  e.textContent = gotowy ? t("podglad_rozmiar", { rozmiar: rozmiarDoWyswietlenia(gotowy.bajty.length) }) : "";
+  pokaz(e, Boolean(gotowy));
+}
+
+// --- Krok 6: wysyłka, droga zapasowa, ekran po wysłaniu ----------------------------------------
+
+function pokazWysylke() {
+  const gotowy = aktualnyZip();
+  const zaDuzy = Boolean(gotowy) && zipZaDuzy(gotowy.bajty.length);
+
+  // Powód, dla którego nie ma ZIP-a do zapisu i wysyłki.
   const powod = $("#zapis-powod");
   let tresc = "";
-  if (wynik.powod === "brak_plikow") tresc = t("zapis_brak_plikow");
-  // Przy blokadzie z pól komunikat o polach stoi przy przycisku, także gdy pliki mają własną
-  // blokadę (ta jest wtedy opisana pod listą plików).
+  if (!wynik) tresc = t("zapis_blokada");
+  else if (wynik.powod === "brak_plikow") tresc = t("zapis_brak_plikow");
+  // Przy blokadzie z pól komunikat o polach stoi tutaj, także gdy pliki mają własną blokadę (ta
+  // jest wtedy opisana pod listą plików).
   else if (wynik.powod === "blokada" && wynik.blokady.some((b) => b.kod === BLOKADA_POL)) tresc = t(BLOKADA_POL);
   else if (wynik.powod === "blokada") tresc = t("zapis_blokada");
-  else if (wynik.powod === "bledy_pol") {
-    const nazwy = [...new Set(wynik.bledyPol.map((b) => b.pole.replace(/\[.*$/, "")))].map((p) => TEKSTY.pola_nazwy[p] ?? p);
-    tresc = t("zapis_popraw", { pola: nazwy.join(", ") });
-  }
+  else if (wynik.powod === "bledy_pol") tresc = t("zapis_popraw", { pola: nazwyPol(wynik.bledyPol).join(", ") });
+  else if (bladZipu === wynik) tresc = t("blad_nieznany");
   powod.textContent = tresc;
-  pokaz(powod, Boolean(tresc));
+  pokaz(powod, Boolean(tresc) && widok6 !== "wyslane");
 
-  // Droga wysyłki: z udostępnianiem tylko na ekranie dotykowym, gdy przeglądarka umie udostępnić
-  // plik ZIP, aż do odmowy udostępniania albo wyboru drogi z zapisem. W pozostałych przypadkach
-  // (komputer, przeglądarka bez udostępniania) droga z zapisem: krok 1 zapis, krok 2 wiadomość.
-  // Liczone przy każdym przeliczeniu, bo rodzaj wskaźnika może się zmienić w trakcie wizyty.
-  const drogaUdostepniania = mozeUdostepnic(PLIK_PROBNY) && matchMedia("(pointer: coarse)").matches && !udostepnianieOdrzucone && !drogaZapisWybrana;
-  pokaz($("#droga-udostepnianie"), drogaUdostepniania);
-  pokaz($("#droga-zapis"), !drogaUdostepniania);
-  $("#udostepnij-przycisk").disabled = !wynik.moznaZapisac;
-  pokaz($("#udostepnij-niedostepne"), udostepnianieOdrzucone);
+  pokaz($("#wysylka-tytul"), widok6 !== "wyslane");
+  pokaz($("#widok-wysylka"), widok6 === "wysylka");
+  pokaz($("#widok-zapasowa"), widok6 === "zapasowa" || (widok6 === "wysylka" && !WYSYLKA_DOSTEPNA));
+  pokaz($("#widok-wyslane"), widok6 === "wyslane");
+  // Bez wysyłki przez stronę: zamiast pola adresu i przycisku tekst wysylka_niedostepna, a pod nim
+  // od razu droga zapasowa (bez powrotu do wysyłki).
+  pokaz($("#wysylka-formularz"), WYSYLKA_DOSTEPNA);
+  pokaz($("#wysylka-niedostepna"), !WYSYLKA_DOSTEPNA);
+  pokaz($("#zapasowa-pokaz"), WYSYLKA_DOSTEPNA);
+  pokaz($("#zapasowa-wroc"), WYSYLKA_DOSTEPNA);
+  // Po wysłaniu bez przycisków kreatora: ekran ma własny przycisk.
+  pokaz($("#kreator-przyciski"), !(aktualnyKrok === KROKI && widok6 === "wyslane"));
+
+  const przycisk = $("#wyslij");
+  przycisk.textContent = t(wysylkaTrwa ? "wysylka_trwa" : "wysylka_przycisk");
+  przycisk.disabled = !gotowy || zaDuzy || wysylkaTrwa;
+  // Za duży ZIP: przycisk nieaktywny, tekst o zapisie pliku, droga zapasowa pod spodem.
+  const klucz = zaDuzy ? "wysylka_za_duzy" : bladWysylki;
+  const komunikat = $("#wysylka-komunikat");
+  komunikat.textContent = klucz ? t(klucz) : "";
+  pokaz(komunikat, Boolean(klucz));
+  $("#zapisz").disabled = !gotowy;
+  // W trakcie wysyłki dane zgłoszenia zostają takie, jakie wysłano.
+  $("#kreator-wstecz").disabled = wysylkaTrwa;
 }
 
-// Droga z zapisem do końca wizyty: po wyborze klienta albo po odmowie udostępniania. Fokus
-// przechodzi na przycisk zapisu, bo przycisk, który go miał, właśnie znika.
-function pokazDrogeZapisu() {
-  drogaZapisWybrana = true;
-  przejdzDoZapisu();
+function pokazBladAdresu(widoczny) {
+  pokaz($("#adres-blad"), widoczny);
+  if (widoczny) $("#p-adres").setAttribute("aria-invalid", "true");
+  else $("#p-adres").removeAttribute("aria-invalid");
 }
 
-function przejdzDoZapisu() {
-  pokaz($("#droga-udostepnianie"), false);
-  pokaz($("#droga-zapis"), true);
-  pokaz($("#udostepnij-niedostepne"), udostepnianieOdrzucone);
-  $("#zapisz").focus();
+function pokazZapasowa() {
+  widok6 = "zapasowa";
+  pokazWysylke();
+  $("#zapasowa-tytul").focus();
 }
+
+function wrocZZapasowej() {
+  widok6 = "wysylka";
+  pokazWysylke();
+  $("#wysylka-tytul").focus();
+}
+
+// Z ekranu po wysłaniu z powrotem do kroku 6 z wpisanym adresem: ponowna wysyłka tego samego
+// zgłoszenia z poprawionym adresem (obowiązuje ostatnie).
+function wrocDoWysylki() {
+  widok6 = "wysylka";
+  $("#kreator-krok").textContent = t("kreator_krok", { n: KROKI, m: KROKI });
+  pokaz($("#kreator-wstecz"), true);
+  pokazWysylke();
+  $("#p-adres").focus();
+}
+
+function pokazWyslane() {
+  widok6 = "wyslane";
+  const klucz = wyslanePotwierdzenie ? "wyslane_potwierdzenie" : "wyslane_bez_potwierdzenia";
+  const [przed, po] = TEKSTY[klucz].split("{adres}");
+  $("#wyslane-potwierdzenie").replaceChildren(przed, el("strong", { klasa: "adres", tekst: wyslanyAdres }), po);
+  // Nad paskiem postępu zamiast numeru kroku napis „Gotowe”.
+  $("#kreator-krok").textContent = t("kreator_gotowe");
+  pokaz($("#kreator-wstecz"), false);
+  pokazWysylke();
+  window.scrollTo(0, 0);
+  $("#wyslane-tytul").focus({ preventScroll: true });
+}
+
+// Wysyłka: najpierw sprawdzenie, czy wysyłka przez stronę jest tu dostępna (ukrycie pola
+// i przycisku nie jest jedynym zabezpieczeniem), potem adres sprawdzony przed żądaniem (zły adres:
+// tekst przy polu, bez żądania), potem jedno żądanie z gotowym ZIP-em, z limitem czasu. Przed
+// żądaniem nie ma czekania na kompresję. Odpowiedź zamienia na tekst moduł wysylka.js.
+async function wyslij() {
+  if (!wysylkaDostepna(location.protocol, location.hostname)) return;
+  if (czekaPrzeliczenie) przelicz();
+  const gotowy = aktualnyZip();
+  const adres = sprawdzAdres($("#p-adres").value);
+  if (!adres.ok) {
+    pokazBladAdresu(true);
+    $("#p-adres").focus();
+    return;
+  }
+  if (!gotowy || zipZaDuzy(gotowy.bajty.length) || wysylkaTrwa) return;
+  pokazBladAdresu(false);
+  wysylkaTrwa = true;
+  bladWysylki = null;
+  pokazWysylke();
+  const kontroler = new AbortController();
+  const limit = setTimeout(() => kontroler.abort(), CZAS_WYSYLKI_MS);
+  let odpowiedz = null;
+  try {
+    const o = await fetch("/zgloszenie/", {
+      method: "POST",
+      body: gotowy.bajty,
+      headers: { "Content-Type": "application/zip", "X-Numer": NUMER, "X-Adres": adres.adres },
+      credentials: "omit",
+      cache: "no-store",
+      redirect: "error",
+      signal: kontroler.signal,
+    });
+    odpowiedz = { status: o.status, json: await o.json().catch(() => null) };
+  } catch {
+    // Brak odpowiedzi: błąd sieci, przekroczony czas albo przekierowanie.
+    odpowiedz = null;
+  } finally {
+    clearTimeout(limit);
+  }
+  wysylkaTrwa = false;
+  const w = wynikWysylki(odpowiedz);
+  if (w.wyslane) {
+    wyslanyAdres = adres.adres;
+    wyslanePotwierdzenie = w.potwierdzenie;
+    oddane = true;
+    ustawOstrzezenie();
+    pokazWyslane();
+  } else if (w.przyPolu) {
+    pokazBladAdresu(true);
+    pokazWysylke();
+    $("#p-adres").focus();
+  } else {
+    bladWysylki = w.klucz;
+    pokazWysylke();
+  }
+}
+
+// --- Droga zapasowa: zapis i wiadomość -------------------------------------------------------
 
 // Krok 2: „Napisz nową wiadomość” to odnośnik do wiadomości, aktywny dopiero po zapisie. Bez
 // adresu (przed zapisem i po każdej zmianie danych) odnośnik nie ma href, ma aria-disabled i opis
@@ -668,14 +1019,14 @@ function schowajPotwierdzenieZapisu() {
   ustawWiadomosc(null);
 }
 
-// `poZapisie`: przeliczenie wywołane samym zapisem; każde inne chowa potwierdzenie zapisu.
-// Zapis niemożliwy chowa je zawsze, także przy zapisie: kliknięcie zapisu tuż po wpisaniu błędnej
-// wartości nie może zostawić potwierdzenia i wiadomości do starego pliku.
-function przelicz({ poZapisie = false } = {}) {
+// Każde przeliczenie unieważnia ZIP i potwierdzenie zapisu. Na krokach 5 i 6 ZIP powstaje od razu
+// od nowa.
+function przelicz() {
   clearTimeout(odlozone);
   czekaPrzeliczenie = false;
   warunki();
-  if (!poZapisie) schowajPotwierdzenieZapisu();
+  schowajPotwierdzenieZapisu();
+  uniewaznijZip();
   try {
     wynik = zlozZgloszenie({
       przygotowane,
@@ -687,35 +1038,36 @@ function przelicz({ poZapisie = false } = {}) {
     pokazZakres();
     pokazPola();
     pokazPodglad();
-    pokazZapis();
   } catch (blad) {
     // Błąd zostaje w konsoli przeglądarki (lokalnie, nic nie jest wysyłane), żeby dało się go
     // znaleźć; komunikaty modułów nie zawierają danych z plików.
     console.error(blad);
     pokazBladLogiki();
   }
-  if (!wynik?.moznaZapisac) schowajPotwierdzenieZapisu();
   ustawBlokadeOdczytu();
+  odswiezKomunikatKroku();
+  if (aktualnyKrok >= 5) zbudujZip();
+  pokazRozmiar();
+  pokazWysylke();
 }
 
-// Wyjątek z logiki nie unieruchamia strony: zapis jest zablokowany z ogólnym komunikatem,
+// Wyjątek z logiki nie unieruchamia strony: zapis i wysyłka są zablokowane z ogólnym komunikatem,
 // a każda kolejna zmiana pola albo listy plików liczy wszystko od nowa.
 function pokazBladLogiki() {
   wynik = null;
   $("#blokady").replaceChildren(komunikat("blad", t("blad_nieznany")));
-  $("#zapisz").disabled = true;
-  $("#udostepnij-przycisk").disabled = true;
   schowajPotwierdzenieZapisu();
-  const powod = $("#zapis-powod");
-  powod.textContent = t("zapis_blokada");
-  pokaz(powod, true);
 }
 
-// Zmiana pola przelicza zgłoszenie po 250 ms, ale potwierdzenie zapisu znika od razu: zapisany
-// ZIP już nie odpowiada danym na stronie.
-function przeliczPozniej() {
+// Zmiana pola przelicza zgłoszenie po 250 ms, ale ZIP i potwierdzenie zapisu tracą ważność od
+// razu: nie odpowiadają już danym na stronie. Adres e-mail nie należy do zgłoszenia.
+function przeliczPozniej(z) {
+  if (z?.target?.id === "p-adres") return;
   clearTimeout(odlozone);
   czekaPrzeliczenie = true;
+  uniewaznijZip();
+  pokazRozmiar();
+  pokazWysylke();
   schowajPotwierdzenieZapisu();
   odlozone = setTimeout(przelicz, 250);
 }
@@ -739,10 +1091,10 @@ function uzupelnijCene(pole) {
 }
 
 // Zmiana pola (zdarzenie change, u pól tekstowych po wyjściu z pola): reakcje zależne od pola,
-// potem przeliczenie od razu.
+// potem przeliczenie od razu. Wybór plików i adres e-mail mają własną obsługę.
 function zmianaPola(z) {
   const pole = z.target;
-  if (pole.id === "wybor-plikow") return;
+  if (pole.id === "wybor-plikow" || pole.id === "p-adres") return;
   // Pstryk sprzedaje dziś tylko w cenie dynamicznej. Klient może ją zmienić, a zmiana sprzedawcy
   // niczego nie kasuje.
   if (pole.name === "sprzedawca" && pole.value === "pstryk") $('input[name="rodzaj_ceny"][value="dynamiczna"]').checked = true;
@@ -752,26 +1104,26 @@ function zmianaPola(z) {
   przelicz();
 }
 
-// Archiwum powstaje dopiero tu; zmiana pola formularza go nie buduje. Kompresja jest asynchroniczna
-// (ułamek sekundy), więc zapis czeka na gotowy ZIP z danych z chwili kliknięcia. Gdy w tym czasie
-// dane się zmienią (nowe przeliczenie albo zmiana czekająca na przeliczenie), plik i tak jest
-// zapisany, ale potwierdzenie i wiadomość dotyczyłyby starszej wersji, więc się nie pokazują.
-async function zapisz() {
-  przelicz({ poZapisie: true });
-  if (!wynik?.moznaZapisac) return;
-  const zapisywany = wynik;
-  const zip = await utworzZipZgloszenia(zapisywany);
-  const adres = URL.createObjectURL(new Blob([zip], { type: "application/zip" }));
-  const a = el("a", { href: adres, download: zapisywany.nazwaZip });
+// Zapis z gotowego ZIP-a, bez czekania na kompresję. Zmiana czekająca na przeliczenie unieważnia
+// ZIP, więc wtedy nic nie jest zapisywane.
+function zapisz() {
+  if (czekaPrzeliczenie) przelicz();
+  const gotowy = aktualnyZip();
+  if (!gotowy) return;
+  // Pytanie przed opuszczeniem strony zdjęte przed kliknięciem odnośnika z plikiem: przeglądarka
+  // może potraktować pobranie jak opuszczenie strony.
+  oddane = true;
+  ustawOstrzezenie();
+  const adres = URL.createObjectURL(new Blob([gotowy.bajty], { type: "application/zip" }));
+  const a = el("a", { href: adres, download: gotowy.wynik.nazwaZip });
   document.body.append(a);
   a.click();
   a.remove();
   // Adres pliku musi chwilę żyć, zwłaszcza w Safari na iOS.
   setTimeout(() => URL.revokeObjectURL(adres), 60000);
 
-  if (poprzedniZapis && !rowneBajty(poprzedniZapis, zip)) zapisanoRozne = true;
-  poprzedniZapis = zip;
-  if (wynik !== zapisywany || czekaPrzeliczenie) return;
+  if (poprzedniZapis && !rowneBajty(poprzedniZapis, gotowy.bajty)) zapisanoRozne = true;
+  poprzedniZapis = gotowy.bajty;
   $("#zapis-gotowe").textContent = t("zapis_gotowe", { plik: wynik.nazwaZip });
   pokaz($("#zapis-gotowe"), true);
   pokaz($("#zapis-ponownie"), zapisanoRozne);
@@ -788,46 +1140,6 @@ function rowneBajty(a, b) {
   if (a.length !== b.length) return false;
   for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
   return true;
-}
-
-// Systemowe okno udostępniania z plikiem w załączniku. Przeglądarka pozwala na nie zwykle tylko
-// na stronie z HTTPS; bez tego przycisku nie ma, a zostaje wiadomość bez załącznika. Obsługę
-// sprawdza pusty plik o tej samej nazwie i typie co ZIP zgłoszenia.
-const PLIK_PROBNY = new File([], "zgloszenie.zip", { type: "application/zip" });
-function mozeUdostepnic(plik) {
-  try {
-    return typeof navigator.canShare === "function" && Boolean(navigator.canShare({ files: [plik] }));
-  } catch {
-    return false;
-  }
-}
-
-// ZIP powstaje przy kliknięciu z danych na stronie, bez wcześniejszego zapisu. Okno udostępniania
-// wymaga gestu użytkownika. Jedyne await przed share() to kompresja ZIP-a (ułamek sekundy), która
-// mieści się w czasie, przez jaki przeglądarka pamięta gest (kilka sekund). Odmowa inna niż
-// zamknięcie okna (Chromium nie udostępnia plików ZIP) przełącza do końca wizyty na drogę
-// z zapisem z komunikatem.
-async function udostepnij() {
-  if (czekaPrzeliczenie) przelicz();
-  if (!wynik?.moznaZapisac || udostepnianieOdrzucone) return;
-  // Adres do schowka, żeby wkleić go w polu „Do”. Bez czekania na wynik, bo share() musi być
-  // wywołane w tym samym geście. Brak schowka albo odmowa niczego nie zmienia: adres jest też
-  // w treści wiadomości.
-  try {
-    navigator.clipboard.writeText(ADRES).catch(() => {});
-  } catch {
-    // przeglądarka bez schowka
-  }
-  const udostepniany = wynik;
-  const plik = new File([await utworzZipZgloszenia(udostepniany)], udostepniany.nazwaZip, { type: "application/zip" });
-  try {
-    await navigator.share({ files: [plik], title: t("udostepnij_tytul", { numer: NUMER }), text: t("udostepnij_tekst", { numer: NUMER }) });
-  } catch (blad) {
-    // AbortError: klient zamknął okno udostępniania bez wyboru aplikacji; to nie błąd.
-    if (blad?.name === "AbortError") return;
-    udostepnianieOdrzucone = true;
-    przejdzDoZapisu();
-  }
 }
 
 // --- Start -----------------------------------------------------------------------------------
@@ -859,10 +1171,17 @@ function start() {
     dodajOplate();
     przelicz();
   });
+  $("#kreator-dalej").addEventListener("click", dalej);
+  $("#kreator-wstecz").addEventListener("click", wstecz);
   $("#zapisz").addEventListener("click", zapisz);
-  $("#udostepnij-przycisk").addEventListener("click", udostepnij);
-  $("#droga-zapis-pokaz").addEventListener("click", pokazDrogeZapisu);
+  $("#wyslij").addEventListener("click", wyslij);
+  $("#zapasowa-pokaz").addEventListener("click", pokazZapasowa);
+  $("#zapasowa-wroc").addEventListener("click", wrocZZapasowej);
+  // Adres e-mail: poprawianie chowa komunikat przy polu. Wysyłkę zaczyna tylko przycisk; Enter
+  // w polu niczego nie wysyła (pole nie leży w formularzu HTML).
+  $("#p-adres").addEventListener("input", () => pokazBladAdresu(false));
   przelicz();
+  pokazKrok(1, { fokus: false });
 }
 
 start();

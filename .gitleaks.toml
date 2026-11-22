@@ -10,7 +10,8 @@ title = "prosumentlab-przygotowanie-pliku"
 #   i po nim należy do dopasowania: drugi ciąg oddzielony od pierwszego jednym znakiem może
 #   umknąć tej regule. Łapie go test/repo.test.mjs, który ma tę samą regułę z asercjami;
 # - ppe-gs1-rozdzielony: 590 i 15 cyfr, ze spacjami albo myślnikami między cyframi;
-# - adres-e-mail: adres e-mail poza adresem zgłoszeń i domeną example.invalid.
+# - adres-e-mail: adres e-mail poza adresem zgłoszeń, wzorem adresu nazwa@domena.pl z tekstu
+#   błędu przy polu adresu i domeną example.invalid.
 
 [extend]
 useDefault = true
@@ -52,4 +53,4 @@ description = "Adres e-mail"
 regex = '''[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}'''
 
   [[rules.allowlists]]
-  regexes = ['''^raporty@prosumentlab\.pl$''', '''@example\.invalid$''']
+  regexes = ['''^raporty@prosumentlab\.pl$''', '''^nazwa@domena\.pl$''', '''@example\.invalid$''']

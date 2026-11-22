@@ -108,24 +108,19 @@ test("teksty usunięte razem z polami, których strona już nie ma", () => {
 });
 
 test("wysyłka i zapis w wersji 0.1.2: teksty zatwierdzone przez właściciela, słowo w słowo", () => {
-  // Teksty z 0.1.2, których 0.1.3 nie zmienia; zmienione są w teście wersji 0.1.3.
+  // Teksty z 0.1.2, których 0.1.3 nie zmienia; zmienione są w teście wersji 0.1.3. zapis_gdzie,
+  // podglad_tytul i podglad_wstep zmienia wersja 0.2.0 (test wersji 0.2.0).
   const ZATWIERDZONE = {
     zapis_gotowe: "Zapisano plik {plik}.",
     zapis_ponownie: "To nowsza wersja pliku. Wyślij tylko ją; jeśli przeglądarka dopisała do nazwy (1) albo (2), wybierz plik z najwyższym numerem.",
-    zapis_gdzie: "Plik zapisze się na tym urządzeniu: na komputerze zwykle w folderze Pobrane, na iPhonie w aplikacji Pliki (w Safari w folderze „Pobrane rzeczy”, w Chrome w folderze „Chrome”). Narzędzie niczego nie wysyła.",
-    podglad_tytul: "Zawartość pliku ZIP",
-    podglad_wstep: "Tak wygląda plik, który zapiszesz na swoim urządzeniu i wyślesz sam. Wybierz nazwę pliku, żeby zobaczyć, co jest w środku.",
   };
   for (const [klucz, tekst] of Object.entries(ZATWIERDZONE)) assert.equal(TEKSTY[klucz], tekst, klucz);
 });
 
 test("wysyłka krok po kroku, miesiąc faktury i zgoda w wersji 0.1.3: teksty zatwierdzone przez właściciela, słowo w słowo", () => {
-  // Teksty z 0.1.3, których 0.1.4 nie zmienia; zmienione są w teście wersji 0.1.4.
+  // Teksty z 0.1.3, których 0.1.4 nie zmienia; zmienione są w teście wersji 0.1.4. Teksty
+  // udostępniania i drogi „Wolę zapisać plik i dołączyć go sam” znikają w wersji 0.2.0.
   const ZATWIERDZONE = {
-    krok_zapis: "Wysyłka pliku",
-    udostepnij_przycisk: "Przygotuj wiadomość z plikiem",
-    udostepnij_tekst: "Dane do darmowego raportu, zgłoszenie {numer}. Adres: raporty@prosumentlab.pl",
-    droga_zapis_pokaz: "Wolę zapisać plik i dołączyć go sam",
     droga_zapis_krok1: "Krok 1. Zapisz plik na tym urządzeniu.",
     mailto_najpierw_zapisz: "Najpierw zapisz plik w kroku 1.",
     faktura_miesiac: "Miesiąc, za który jest faktura",
@@ -136,22 +131,19 @@ test("wysyłka krok po kroku, miesiąc faktury i zgoda w wersji 0.1.3: teksty za
   };
   for (const [klucz, tekst] of Object.entries(ZATWIERDZONE)) assert.equal(TEKSTY[klucz], tekst, klucz);
   assert.equal(TEKSTY.pola_nazwy.okres_miesiac, "miesiąc faktury");
-  // Bez zmian w 0.1.3 (19.27).
-  assert.equal(TEKSTY.udostepnij_tytul, "Zgłoszenie {numer} do ProsumentLab");
+  // Bez zmian w 0.1.3.
   assert.equal(TEKSTY.mailto_bez_zalacznika, "Wiadomość otworzy się bez załącznika. Zanim ją wyślesz, dołącz plik {plik} z folderu Pobrane.");
   assert.equal(TEKSTY.faktura_okres_przyszly, "Koniec okresu jest późniejszy niż dzisiejsza data. Faktura dotyczy okresu, który już się skończył, więc sprawdź datę.");
 });
 
 test("kolejność pytań o cenę i poprawki w wersji 0.1.4: teksty zatwierdzone przez właściciela, słowo w słowo", () => {
+  // Teksty udostępniania (udostepnij_niedostepne, udostepnij_podpowiedz) i nagłówki grup
+  // (faktura_grupa_faktura, faktura_grupa_cena) znikają w wersji 0.2.0.
   const ZATWIERDZONE = {
     mailto_przycisk: "Napisz nową wiadomość",
     droga_zapis_krok2: "Krok 2. Napisz wiadomość i dołącz zapisany plik.",
-    udostepnij_niedostepne: "Ta przeglądarka nie wyśle pliku ZIP. Zapisz plik w kroku 1, a potem w kroku 2 napisz wiadomość i dołącz plik.",
-    udostepnij_podpowiedz: "Wybierz pocztę. W polu „Do” wybierz „Wklej”: adres raporty@prosumentlab.pl jest już w schowku. Plik jest w załączniku, a temat możesz zostawić pusty.",
     sprzedawca_na_liscie: "Ten sprzedawca jest na liście powyżej. Możesz go tam wybrać albo zostawić swój wpis.",
     faktura_cena_grosze: "Cena wygląda na podaną w groszach. Wpisz ją w złotych, na przykład 0,62.",
-    faktura_grupa_faktura: "Faktura",
-    faktura_grupa_cena: "Cena energii",
     taryfa_przy_dynamicznej: "Przy cenie dynamicznej grupa taryfowa dotyczy tylko opłat za dystrybucję.",
     taryfa_przy_stalej: "Przy cenie stałej strefy grupy taryfowej dotyczą opłat za dystrybucję, a często też ceny energii.",
   };
@@ -182,12 +174,91 @@ test("pola stref i drobne poprawki w wersji 0.1.5: teksty zatwierdzone przez wł
   assert.equal(TEKSTY.faktura_cena_nietypowa, "Ta cena wygląda nietypowo. Sprawdź, czy to cena netto za 1 kWh.");
 });
 
-test("kopiowanie adresu osobnym przyciskiem znika: bez tekstów kopiuj_adres", () => {
-  for (const k of ["kopiuj_adres", "kopiuj_adres_gotowe"]) assert.equal(k in TEKSTY, false, k);
+// Teksty wersji 0.2.0 (kreator, wysyłka przez stronę), zatwierdzone przez właściciela; słowo
+// w słowo. Lista opcji zmian w postaci mapy, jak w pliku tekstów.
+const TEKSTY_0_2_0 = {
+  kreator_krok: "Krok {n} z {m}",
+  kreator_dalej: "Dalej",
+  kreator_wstecz: "Wstecz",
+  kreator_popraw: "Popraw zaznaczone pole, aby przejść dalej: {pola}.",
+  kreator_pliki_brak: "Dodaj plik z eLicznika, żeby przejść dalej.",
+  kreator_gotowe: "Gotowe",
+  faktura_rysunek_pokaz: "Pokaż rysunek faktury z numerami pól",
+  krok_pliki: "Plik z eLicznika",
+  krok_faktura: "Faktura",
+  krok_cena: "Cena energii",
+  krok_dodatkowe: "Dodatkowe dane",
+  krok_sprawdzenie: "Sprawdzenie i zgoda",
+  krok_wysylka: "Wysyłka",
+  wstep_opis: "Narzędzie przygotowuje z Twojego pliku nowy plik, bez numeru punktu poboru (PPE) i numeru płatnika. Robi to w Twojej przeglądarce. Do nas trafi tylko ten nowy plik, i dopiero wtedy, gdy w ostatnim kroku wybierzesz „Wyślij zgłoszenie”. Plik pobrany z eLicznika zostaje u Ciebie.",
+  panel_pokaz: "Co zostaje u Ciebie, a co trafia do nas?",
+  panel_trafia_tytul: "Trafia do nas, gdy wyślesz zgłoszenie",
+  panel_trafia_lista: ["godziny i ilości energii z licznika", "liczby i nazwy przepisane z faktury", "odpowiedzi o instalacji", "numer zgłoszenia", "adres e-mail, który wpiszesz w ostatnim kroku"],
+  plik_przyjety: "Narzędzie odczytało plik. Do zgłoszenia trafi jego kopia bez numeru punktu poboru i numeru płatnika. Twój oryginalny plik zostaje bez zmian i nie jest wysyłany.",
+  instalacja_wstep: "Te dane pomogą nam dokładniej opisać wyniki w raporcie. Jeśli nie chcesz ich podawać, przejdź dalej.",
+  instalacja_zmiany: "Czy w okresie objętym plikami coś się zmieniło? Zaznacz i podaj miesiąc.",
+  opcje_zmiany: { pompa_ciepla: "doszła pompa ciepła", samochod_elektryczny: "doszedł samochód elektryczny", rozbudowa_pv: "rozbudowa instalacji fotowoltaicznej" },
+  instalacja_rozbudowa_od: "Od kiedy działa większa instalacja",
+  instalacja_moc_przed: "Moc przed rozbudową w kWp",
+  instalacja_moc_przed_pomoc: "Wpisz, jeśli ją znasz. Musi być mniejsza niż obecna moc instalacji.",
+  instalacja_moc_przed_za_duza: "Moc przed rozbudową musi być mniejsza niż obecna moc instalacji.",
+  podglad_tytul: "Pliki zgłoszenia",
+  podglad_wstep: "Tak wyglądają pliki przygotowane przez narzędzie. Tylko one trafią do nas, a plik pobrany z eLicznika zostaje u Ciebie. Wybierz nazwę pliku, żeby zobaczyć, co jest w środku.",
+  podglad_rozmiar: "Rozmiar zgłoszenia: {rozmiar}.",
+  wysylka_adres: "Twój adres e-mail",
+  wysylka_adres_pomoc: "Na ten adres wyślemy potwierdzenie i raport. Sprawdź go dokładnie: bez poprawnego adresu nie odpiszemy.",
+  wysylka_adres_blad: "Wpisz adres e-mail w postaci nazwa@domena.pl.",
+  wysylka_co: "Do ProsumentLab trafią pliki przygotowane przez narzędzie (zgłoszenie {numer}), bez numeru PPE i numeru płatnika, oraz Twój adres e-mail. Plik pobrany z eLicznika i faktura zostają u Ciebie.",
+  wysylka_przycisk: "Wyślij zgłoszenie",
+  wysylka_trwa: "Wysyłanie…",
+  wysylka_zapasowa_pokaz: "Wolę zapisać plik i wysłać go sam",
+  wysylka_za_duzy: "To zgłoszenie jest za duże, żeby wysłać je przez stronę. Zapisz plik i wyślij go sam.",
+  wysylka_blad_sieci: "Nie udało się wysłać zgłoszenia. Sprawdź połączenie z internetem i spróbuj jeszcze raz albo zapisz plik i wyślij go sam.",
+  wysylka_blad_limit: "Z tego urządzenia albo na ten adres wysłano już dziś kilka zgłoszeń. Spróbuj później albo zapisz plik i wyślij go sam.",
+  wysylka_blad_serwera: "Nie udało się przyjąć zgłoszenia. Spróbuj za kilka minut albo zapisz plik i wyślij go sam.",
+  wysylka_niedostepna: "Wysyłka przez stronę działa tylko pod adresem prosumentlab.pl. Zapisz plik i wyślij go sam.",
+  zapasowa_tytul: "Zapisz plik i wyślij go sam",
+  zapasowa_wroc: "Wróć do wysyłki przez stronę",
+  wyslane_tytul: "Zgłoszenie wysłane",
+  wyslane_numer: "Numer zgłoszenia",
+  wyslane_numer_pomoc: "Zapisz go. Przyda się, gdy zechcesz zapytać o swoje dane albo wycofać zgodę.",
+  wyslane_potwierdzenie: "Potwierdzenie wysłaliśmy na adres {adres}. Na ten sam adres przyjdzie raport, w ciągu 10 dni roboczych.",
+  wyslane_bez_potwierdzenia: "Zgłoszenie do nas dotarło, ale nie udało się wysłać potwierdzenia na adres {adres}. Raport wyślemy na ten adres w ciągu 10 dni roboczych. Jeśli adres jest błędny, popraw go i wyślij zgłoszenie jeszcze raz.",
+  wyslane_brak: "Nie widzisz potwierdzenia po kilku minutach? Sprawdź folder ze spamem. Jeśli go tam nie ma, adres mógł być błędny: popraw go i wyślij zgłoszenie jeszcze raz. Liczy się ostatnie.",
+  wyslane_brak_odnosnik: "popraw go i wyślij zgłoszenie jeszcze raz",
+  wyslane_pytanie: "Masz pytanie? Napisz na raporty@prosumentlab.pl i podaj numer zgłoszenia.",
+  wyslane_strona: "Przejdź na stronę ProsumentLab",
+  wersja: "To jest wersja {wersja}. Kod tej wersji jest publiczny na GitHubie. Narzędzie wysyła tylko zgłoszenie i dopiero po wybraniu „Wyślij zgłoszenie”. Nie wysyła niczego do usług AI.",
+  zapis_gdzie: "Plik zapisze się na tym urządzeniu: na komputerze zwykle w folderze Pobrane, na iPhonie w aplikacji Pliki (w Safari w folderze „Pobrane rzeczy”, w Chrome w folderze „Chrome”).",
+};
+
+test("kreator i wysyłka przez stronę w wersji 0.2.0: teksty zatwierdzone przez właściciela, słowo w słowo", () => {
+  assert.equal(Object.keys(TEKSTY_0_2_0).length, 53, "wszystkie klucze tabeli");
+  for (const [klucz, tekst] of Object.entries(TEKSTY_0_2_0)) assert.deepEqual(TEKSTY[klucz], tekst, klucz);
+  // Nazwa pola mocy przed rozbudową do komunikatów kreator_popraw i zapis_popraw.
+  assert.equal(TEKSTY.pola_nazwy.moc_przed_kwp, "moc przed rozbudową");
 });
 
-test("udostępnianie: adres w podpowiedzi i w treści wiadomości dokładnie raz", () => {
-  for (const k of ["udostepnij_podpowiedz", "udostepnij_tekst"]) assert.equal(TEKSTY[k].split(ADRES).length, 2, k);
+test("wersja 0.2.0: znikają teksty udostępniania, schowka, panelu z uwagą, dawnych tytułów kroków i nagłówków grup", () => {
+  const ZNIKAJA = [
+    "panel_uwaga", "droga_zapis_pokaz", "krok_zapis", "krok_zakres", "krok_instalacja", "krok_zgoda",
+    // Kreator już ich nie pokazuje: tytuł wstępu i nagłówki grup zastępują tytuły kroków.
+    "wstep_tytul", "faktura_grupa_faktura", "faktura_grupa_cena",
+  ];
+  for (const k of ZNIKAJA) assert.equal(k in TEKSTY, false, k);
+  assert.deepEqual(Object.keys(TEKSTY).filter((k) => k.startsWith("udostepnij_")), [], "udostepnij_*");
+});
+
+test("wersja 0.2.0: teksty, z których strona robi odnośniki i wyróżnienia, mają frazę albo wstawkę dokładnie raz", () => {
+  assert.equal(TEKSTY.wyslane_brak.split(TEKSTY.wyslane_brak_odnosnik).length, 2, "odnośnik w wyslane_brak");
+  assert.equal(TEKSTY.wysylka_co.split("{numer}").length, 2, "numer w wysylka_co");
+  for (const k of ["wyslane_potwierdzenie", "wyslane_bez_potwierdzenia"]) assert.equal(TEKSTY[k].split("{adres}").length, 2, k);
+  assert.equal(TEKSTY.kreator_krok.split("{n}").length, 2);
+  assert.equal(TEKSTY.wyslane_pytanie.split(ADRES).length, 2, "adres zgłoszeń w wyslane_pytanie");
+});
+
+test("kopiowanie adresu osobnym przyciskiem znika: bez tekstów kopiuj_adres", () => {
+  for (const k of ["kopiuj_adres", "kopiuj_adres_gotowe"]) assert.equal(k in TEKSTY, false, k);
 });
 
 test("po zapisie: strona robi odnośnik z adresu, który jest w tekście dokładnie raz", () => {

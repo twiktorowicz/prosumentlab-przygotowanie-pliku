@@ -11,12 +11,15 @@
 //    40 MiB; stosunek sumy rozmiarów po rozpakowaniu do sumy rozmiarów spakowanych najwyżej 50,
 //    liczony z nagłówków dla całego ZIP-a.
 // Sprawdzenie niżej jest napisane od nowa według tych warunków, bez czytnika z test/pomoc.
-// Wysyłka przez stronę przyjmuje ZIP najwyżej 5 MiB; test podaje zmierzony rozmiar.
+// Wysyłka przez stronę przyjmuje ZIP najwyżej 5 MiB; test podaje zmierzony rozmiar. ZIP bez
+// kompresji (metoda 0: przeglądarka bez CompressionStream("deflate-raw") albo nieudana kompresja)
+// przechodzi te same warunki.
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { przygotujZgloszenie } from "../app/lib/zgloszenie.js";
 import { generuj } from "../narzedzia/generator.mjs";
+import { bezKompresji } from "./pomoc/bez-kompresji.mjs";
 
 const KIB = 1024;
 const MIB = 1024 * KIB;
@@ -151,6 +154,34 @@ test("największe zgłoszenie (10 plików po 12 miesięcy) spełnia warunki 1–
   assert.equal(s.wpisy.length, 13);
   assert.ok(w.zip.length <= LIMIT_WYSYLKI, opisz(s, w.zip));
   t.diagnostic(`10 × 12 miesięcy: ${opisz(s, w.zip)}`);
+});
+
+test("ZIP bez kompresji (metoda 0) za 12 miesięcy spełnia te same warunki 1–4 skryptu, stosunek 1", async (t) => {
+  const w = await bezKompresji(() => przygotujZgloszenie({
+    pliki: [generuj({ od: "2025-01-01", do: "2025-12-31", ziarno: 13 }).surowy],
+    formularz: FORMULARZ, numer: NUMER, utworzono: DATA,
+  }));
+  assert.equal(w.moznaZapisac, true, w.powod);
+  const s = sprawdzJakSkrypt(w.zip);
+  assert.deepEqual(s.bledy, []);
+  assert.deepEqual(s.wpisy.map((x) => x.nazwa), ["zgloszenie.json", "faktury.json", "instalacja.json", "pomiary_1.csv"]);
+  assert.ok(s.wpisy.every((x) => x.metoda === 0 && x.spakowany === x.rozmiar));
+  assert.equal(s.stosunek, 1);
+  assert.ok(w.zip.length <= LIMIT_WYSYLKI, opisz(s, w.zip));
+  t.diagnostic(`12 miesięcy bez kompresji: ${opisz(s, w.zip)}`);
+});
+
+test("największe zgłoszenie bez kompresji (metoda 0) spełnia warunki 1–4, ale ma ponad 5 MiB", async (t) => {
+  const pliki = Array.from({ length: 10 }, (_, i) => generuj({ od: `${2016 + i}-01-01`, do: `${2016 + i}-12-31`, ziarno: 20 + i }).surowy);
+  const w = await bezKompresji(() => przygotujZgloszenie({ pliki, formularz: FORMULARZ, numer: NUMER, utworzono: DATA }));
+  assert.equal(w.moznaZapisac, true, w.powod);
+  const s = sprawdzJakSkrypt(w.zip);
+  assert.deepEqual(s.bledy, []);
+  assert.equal(s.wpisy.length, 13);
+  assert.ok(s.wpisy.every((x) => x.metoda === 0));
+  // Takiego ZIP-a narzędzie nie wysyła przez stronę (limit wysyłki, wysylka_za_duzy).
+  assert.ok(w.zip.length > LIMIT_WYSYLKI, opisz(s, w.zip));
+  t.diagnostic(`10 × 12 miesięcy bez kompresji: ${opisz(s, w.zip)}`);
 });
 
 test("sprawdzenie jak w skrypcie odrzuca ZIP z naruszeniem warunku", async () => {

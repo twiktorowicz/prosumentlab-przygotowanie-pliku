@@ -84,6 +84,18 @@ for (const wariant of ["brak", "bez-deflate-raw"]) {
   });
 }
 
+// Kompresja, która nie powiedzie się w trakcie (strumień zgłasza błąd przy pierwszym albo dopiero
+// przy dalszym pliku): narzędzie buduje cały ZIP metodą 0, ten sam co do bajtu co w przeglądarce
+// bez kompresji. ZIP nie miesza metod.
+for (const odPliku of [0, 2]) {
+  test(`ZIP: nieudana kompresja (od pliku ${odPliku + 1}) daje cały ZIP metodą 0`, async () => {
+    const zip = await bezKompresji(() => utworzZip(PLIKI), "blad-kompresji", { odPliku });
+    assert.equal(typeof globalThis.CompressionStream, "function", "CompressionStream przywrócony");
+    assert.deepEqual(zip, await bezKompresji(() => utworzZip(PLIKI)));
+    assert.ok(czytajZip(zip).every((p) => p.metoda === 0));
+  });
+}
+
 test("ZIP: te same dane dają te same bajty (z kompresją i bez); nazwy tylko ASCII", async () => {
   assert.deepEqual(await utworzZip(PLIKI), await utworzZip(PLIKI));
   assert.deepEqual(await bezKompresji(() => utworzZip(PLIKI)), await bezKompresji(() => utworzZip(PLIKI)));

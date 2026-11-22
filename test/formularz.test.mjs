@@ -287,6 +287,62 @@ test("instalacja: moc przed rozbudową tylko przy rozbudowie instalacji, format 
   assert.equal(bladBudowyFormularza({ instalacja: { zmiany: [{ rodzaj: "rozbudowa_pv", miesiac: "2025-05", moc_przed_kwp: 3.1 }] } }), "instalacja.zmiany[0].moc_przed_kwp");
 });
 
+test("instalacja: moc przed rozbudową mniejsza niż obecna moc, gdy obie są podane", () => {
+  const czytaj = (moc, przed) => czytajFormularz({ instalacja: { moc_pv_kwp: moc, zmiany: [{ rodzaj: "rozbudowa_pv", miesiac: "2025-05", moc_przed_kwp: przed }] } });
+  // Mniejsza: przyjęta.
+  for (const [moc, przed] of [["8,4", "3,7"], ["8,4", "8,39"], ["10", "9,99"], ["100", "99"]]) {
+    const w = czytaj(moc, przed);
+    assert.deepEqual(w.bledy, [], `${moc} / ${przed}`);
+    assert.ok("moc_przed_kwp" in w.instalacja.zmiany[0], `${moc} / ${przed}`);
+  }
+  // Równa albo większa: błąd pola, wartość nie trafia do pliku, wpis zmiany i obecna moc zostają.
+  for (const [moc, przed] of [["8,4", "8,4"], ["8,4", "8,40"], ["8,4", "9"], ["9,99", "10"], ["1", "100"]]) {
+    const w = czytaj(moc, przed);
+    assert.deepEqual(w.bledy, [{ pole: "moc_przed_kwp", kod: "instalacja_moc_przed_za_duza" }], `${moc} / ${przed}`);
+    assert.deepEqual(w.instalacja.zmiany, [{ rodzaj: "rozbudowa_pv", miesiac: "2025-05" }], `${moc} / ${przed}`);
+    assert.ok("moc_pv_kwp" in w.instalacja, `${moc} / ${przed}`);
+  }
+  // Bez obecnej mocy albo z obecną mocą w złym formacie nie ma z czym porównać.
+  assert.deepEqual(czytaj("", "7").bledy, []);
+  assert.deepEqual(czytaj("abc", "7").bledy, [{ pole: "moc_pv_kwp", kod: "instalacja_liczba_format" }]);
+  // Zły format mocy przed: tylko błąd formatu, bez porównania.
+  assert.deepEqual(czytaj("8,4", "abc").bledy, [{ pole: "moc_przed_kwp", kod: "instalacja_liczba_format" }]);
+});
+
+// Wartości z pól wpisanych ręcznie w postaci, w jakiej trafiają do plików, z nazwą pola jak
+// w błędach pól: na nich strona szuka pola, które wywołało blokadę bezpiecznika plików JSON.
+test("wpisane: wartości z pól wpisanych ręcznie, które trafiają do pliku, z nazwą pola jak w błędach", () => {
+  const w = czytajFormularz({
+    faktura: {
+      ...FAKTURA, sprzedawca: "inny", sprzedawca_nazwa: " Moja spółdzielnia ", taryfa: "g12", cena_energii_netto_zl_kwh: ["0,6", "0,4"],
+      oplaty_stale_inne: [{ nazwa: "", kwota_zl_mies: "" }, { nazwa: "Opłata handlowa", kwota_zl_mies: "9,99" }, { nazwa: "Zła", kwota_zl_mies: "1,234" }],
+    },
+    instalacja: { moc_pv_kwp: "8,4", magazyn: "tak", magazyn_pojemnosc_kwh: "10", zmiany: [{ rodzaj: "rozbudowa_pv", miesiac: "2025-05", moc_przed_kwp: "3,7" }] },
+  });
+  assert.deepEqual(w.wpisane, [
+    { pole: "sprzedawca_nazwa", wartosc: "Moja spółdzielnia" },
+    { pole: "okres_od", wartosc: "2025-04-01" },
+    { pole: "okres_do", wartosc: "2025-04-30" },
+    { pole: "cena_energii_netto_zl_kwh[0]", wartosc: "0.60" },
+    { pole: "cena_energii_netto_zl_kwh[1]", wartosc: "0.40" },
+    { pole: "oplata_mocowa_zl_mies", wartosc: "12.34" },
+    { pole: "oplata_abonamentowa_zl_mies", wartosc: "5.67" },
+    { pole: "oplata_stala_sieciowa_zl_mies", wartosc: "8.90" },
+    { pole: "oplaty_stale_inne[1].nazwa", wartosc: "Opłata handlowa" },
+    { pole: "oplaty_stale_inne[1].kwota_zl_mies", wartosc: "9.99" },
+    { pole: "moc_pv_kwp", wartosc: "8.40" },
+    { pole: "magazyn_pojemnosc_kwh", wartosc: "10.00" },
+    { pole: "moc_przed_kwp", wartosc: "3.70" },
+  ]);
+  // Wartość, która nie trafia do pliku (błąd albo okres odrzucony po porównaniu dat), nie jest
+  // wpisana; przy systemie opustów żadne pole faktury.
+  assert.deepEqual(czytajFormularz({ faktura: { ...FAKTURA, okres_od: "2025-04-30", okres_do: "2025-04-01" } }).wpisane.filter((p) => p.pole.startsWith("okres")),
+    [{ pole: "okres_od", wartosc: "2025-04-30" }]);
+  assert.deepEqual(czytajFormularz({ faktura: { ...FAKTURA, system_rozliczenia: "opusty", sprzedawca: "inny", sprzedawca_nazwa: "X" } }).wpisane, []);
+  assert.deepEqual(czytajFormularz({ faktura: { okres_miesiac: "2025-04" } }).wpisane, [], "okres z list miesiąca nie jest wpisany ręcznie");
+  assert.deepEqual(czytajFormularz({}).wpisane, []);
+});
+
 test("zgoda tylko jako wartość logiczna true", () => {
   assert.equal(czytajFormularz({ zgoda: true }).zgoda, true);
   assert.equal(czytajFormularz({ zgoda: "true" }).zgoda, false);

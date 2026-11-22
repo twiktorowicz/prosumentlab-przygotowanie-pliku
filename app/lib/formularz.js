@@ -7,7 +7,11 @@
 // - bledy: pola, których nie da się odczytać albo nie przechodzą kontroli; takie pole nie trafia
 //   do danych i blokuje zapis, dopóki klient go nie poprawi albo nie wyczyści;
 // - brakujace: puste pola obowiązkowe grupy R; to tylko informacja, bez blokady;
-// - uwagi: nietypowe wartości (cena energii, długość okresu); tylko informacja, bez blokady.
+// - uwagi: nietypowe wartości (cena energii, długość okresu); tylko informacja, bez blokady;
+// - wpisane: wartości z pól wpisanych ręcznie, które trafiają do danych, w tej samej postaci co
+//   w danych, z nazwą pola jak w `bledy` (wiersz opłaty z numerem wiersza na stronie). Tylko dla
+//   strony: na nich szuka pola, które wywołało blokadę bezpiecznika plików JSON. Wybory z list
+//   i okres z list miesiąca nie są wpisane ręcznie.
 // Operatora sieci klient nie wybiera: podaje go wywołujący z trybu (plik z eLicznika Taurona
 // pochodzi zawsze od Tauron Dystrybucja). Przy systemie opustów faktura ma tylko system
 // rozliczenia i operatora; pozostałe pola są pomijane, także gdy mają błąd.
@@ -129,7 +133,7 @@ function czytajMiesiacFaktury(tekst, r, bledy, dzisiaj) {
   r.okres_do = okres.do;
 }
 
-function czytajFakture(f, bledy, brakujace, uwagi, { operator, dzisiaj }) {
+function czytajFakture(f, bledy, brakujace, uwagi, wpisane, { operator, dzisiaj }) {
   let r = {};
   const wybor = (pole) => {
     if (pusty(f[pole])) return;
@@ -139,9 +143,18 @@ function czytajFakture(f, bledy, brakujace, uwagi, { operator, dzisiaj }) {
   const pole = (nazwa, czytaj, kod) => {
     if (pusty(f[nazwa])) return;
     const w = typeof f[nazwa] === "string" ? czytaj(f[nazwa]) : { ok: false };
-    if (w.ok) r[nazwa] = w.wartosc;
+    if (w.ok) {
+      r[nazwa] = w.wartosc;
+      wpisane.push({ pole: nazwa, wartosc: w.wartosc });
+    }
     // Kod z odczytu, gdy go podaje (cena w groszach), w pozostałych przypadkach kod pola.
     else bledy.push({ pole: nazwa, kod: w.kod ?? kod });
+  };
+  // Wartość odrzucona po odczycie (koniec okresu po porównaniu dat) nie trafia do danych.
+  const odrzuc = (nazwa) => {
+    delete r[nazwa];
+    const i = wpisane.findIndex((p) => p.pole === nazwa);
+    if (i >= 0) wpisane.splice(i, 1);
   };
 
   wybor("system_rozliczenia");
@@ -161,11 +174,11 @@ function czytajFakture(f, bledy, brakujace, uwagi, { operator, dzisiaj }) {
     pole("okres_do", czytajDate, "faktura_data_format");
   }
   if (r.okres_od && r.okres_do && r.okres_do < r.okres_od) {
-    delete r.okres_do;
+    odrzuc("okres_do");
     bledy.push({ pole: "okres_do", kod: "faktura_okres" });
   } else if (r.okres_do && dzisiaj && r.okres_do > dzisiaj) {
     // Daty RRRR-MM-DD porównane jako tekst dają tę samą kolejność co w kalendarzu.
-    delete r.okres_do;
+    odrzuc("okres_do");
     bledy.push({ pole: "okres_do", kod: "faktura_okres_przyszly" });
   }
   wybor("rodzaj_faktury");
@@ -191,7 +204,10 @@ function czytajFakture(f, bledy, brakujace, uwagi, { operator, dzisiaj }) {
         const ceny = cena.map((c) => (typeof c === "string" ? czytajCene(c) : { ok: false }));
         const zle = ceny.findIndex((c) => !c.ok);
         if (zle >= 0) bledy.push({ pole: `cena_energii_netto_zl_kwh[${zle}]`, kod: ceny[zle].kod ?? "faktura_cena_format" });
-        else r.cena_energii_netto_zl_kwh = ceny.map((c) => c.wartosc);
+        else {
+          r.cena_energii_netto_zl_kwh = ceny.map((c) => c.wartosc);
+          ceny.forEach((c, j) => wpisane.push({ pole: `cena_energii_netto_zl_kwh[${j}]`, wartosc: c.wartosc }));
+        }
       }
     }
   } else {
@@ -215,7 +231,10 @@ function czytajFakture(f, bledy, brakujace, uwagi, { operator, dzisiaj }) {
     const kwota = czytajKwote(o.kwota_zl_mies);
     if (!nazwa.ok) bledy.push({ pole: `oplaty_stale_inne[${i}].nazwa`, kod: "tekst_wolny_blad" });
     if (!kwota.ok) bledy.push({ pole: `oplaty_stale_inne[${i}].kwota_zl_mies`, kod: "faktura_kwota_format" });
-    if (nazwa.ok && kwota.ok) inne.push({ nazwa: nazwa.wartosc, kwota_zl_mies: kwota.wartosc });
+    if (nazwa.ok && kwota.ok) {
+      inne.push({ nazwa: nazwa.wartosc, kwota_zl_mies: kwota.wartosc });
+      wpisane.push({ pole: `oplaty_stale_inne[${i}].nazwa`, wartosc: nazwa.wartosc }, { pole: `oplaty_stale_inne[${i}].kwota_zl_mies`, wartosc: kwota.wartosc });
+    }
   });
   if (inne.length > 0) r.oplaty_stale_inne = inne;
 
@@ -248,13 +267,15 @@ function czytajFakture(f, bledy, brakujace, uwagi, { operator, dzisiaj }) {
 // większa od zera.
 const FORMAT_MOCY = { calkowitych: 3, miejsc: 2, dodatnia: true };
 
-function czytajInstalacje(f, bledy) {
+function czytajInstalacje(f, bledy, wpisane) {
   const r = {};
   const liczba = (nazwa, opcje) => {
     if (pusty(f[nazwa])) return;
     const w = typeof f[nazwa] === "string" ? czytajDziesietna(f[nazwa], opcje) : { ok: false };
-    if (w.ok) r[nazwa] = w.wartosc;
-    else bledy.push({ pole: nazwa, kod: "instalacja_liczba_format" });
+    if (w.ok) {
+      r[nazwa] = w.wartosc;
+      wpisane.push({ pole: nazwa, wartosc: w.wartosc });
+    } else bledy.push({ pole: nazwa, kod: "instalacja_liczba_format" });
   };
   const wybor = (nazwa) => {
     if (pusty(f[nazwa])) return;
@@ -300,10 +321,18 @@ function czytajInstalacje(f, bledy) {
     // Moc instalacji przed rozbudową: nieobowiązkowa, w formacie mocy instalacji, tylko przy
     // rozbudowie instalacji fotowoltaicznej. Przy innej zmianie pole nie ma znaczenia i nie trafia
     // do pliku. Zły format to błąd pola; wpis zmiany zostaje bez tej wartości.
+    // Gdy podana jest też obecna moc, moc przed rozbudową musi być od niej mniejsza; inaczej to
+    // błąd pola i wartość nie trafia do pliku. Obie mają dwa miejsca po przecinku, więc porównanie
+    // setnych części na samych cyfrach.
     if (z.rodzaj === "rozbudowa_pv" && !pusty(z.moc_przed_kwp)) {
       const moc = typeof z.moc_przed_kwp === "string" ? czytajDziesietna(z.moc_przed_kwp, FORMAT_MOCY) : { ok: false };
-      if (moc.ok) zmiana.moc_przed_kwp = moc.wartosc;
-      else bledy.push({ pole: "moc_przed_kwp", kod: "instalacja_liczba_format" });
+      const setne = (w) => liczbaZCyfr(w.replace(".", ""));
+      if (!moc.ok) bledy.push({ pole: "moc_przed_kwp", kod: "instalacja_liczba_format" });
+      else if (r.moc_pv_kwp !== undefined && setne(moc.wartosc) >= setne(r.moc_pv_kwp)) bledy.push({ pole: "moc_przed_kwp", kod: "instalacja_moc_przed_za_duza" });
+      else {
+        zmiana.moc_przed_kwp = moc.wartosc;
+        wpisane.push({ pole: "moc_przed_kwp", wartosc: moc.wartosc });
+      }
     }
     zmiany.push(zmiana);
   });
@@ -372,7 +401,8 @@ export function czytajFormularz(dane = {}, { operator, dzisiaj } = {}) {
   const bledy = [];
   const brakujace = [];
   const uwagi = [];
-  const raport = czytajFakture(dane.faktura ?? {}, bledy, brakujace, uwagi, { operator, dzisiaj });
-  const instalacja = czytajInstalacje(dane.instalacja ?? {}, bledy);
-  return { raport, instalacja, zgoda: dane.zgoda === true, bledy, brakujace, uwagi };
+  const wpisane = [];
+  const raport = czytajFakture(dane.faktura ?? {}, bledy, brakujace, uwagi, wpisane, { operator, dzisiaj });
+  const instalacja = czytajInstalacje(dane.instalacja ?? {}, bledy, wpisane);
+  return { raport, instalacja, zgoda: dane.zgoda === true, bledy, brakujace, uwagi, wpisane };
 }

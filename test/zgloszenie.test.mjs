@@ -7,7 +7,7 @@ import { readFileSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
-import { przygotujZgloszenie, przygotujPliki, zlozZgloszenie, utworzZipZgloszenia, odnosnikMailto, nazwaZip, WERSJA } from "../app/lib/zgloszenie.js";
+import { przygotujZgloszenie, przygotujPliki, zlozZgloszenie, utworzZipZgloszenia, polaBezpiecznika, odnosnikMailto, nazwaZip, WERSJA } from "../app/lib/zgloszenie.js";
 import { createHash } from "node:crypto";
 import { tekst } from "../app/lib/odmiana.js";
 import { TEKSTY } from "../app/teksty.js";
@@ -463,6 +463,53 @@ test("bezpiecznik w plikach JSON: słowo PPE w polu wpisanym ręcznie blokuje za
   // Zwykły formularz i klucz ppe_porownane w zgloszenie.json nie trafiają w reguły.
   const zwykly = await przygotujZgloszenie({ pliki: [generuj(N1).surowy], formularz: { faktura: FAKTURA, instalacja: INSTALACJA, zgoda: true }, numer: NUMER, utworzono: DATA });
   assert.deepEqual(zwykly.blokady, []);
+});
+
+// Strona zatrzymuje „Dalej” w kroku z polem, które wywołało blokadę bezpiecznika plików JSON. Pole
+// wskazuje to samo sprawdzenie (bezpiecznik, reguły 1–5) na wartościach pól wpisanych ręcznie,
+// w postaci, w jakiej trafiają do plików JSON. Nazwy pól jak w błędach pól (bledyPol).
+test("blokada z pól: zgłoszenie wskazuje pola, które ją wywołały, z numerem wiersza na stronie", () => {
+  const zloz = (formularz) => zlozZgloszenie({ przygotowane: przygotujPliki([generuj(N1).surowy]), formularz, numer: NUMER, utworzono: DATA });
+  const przypadki = [
+    ["nazwa taryfy", { faktura: { ...FAKTURA, taryfa: "inna", taryfa_nazwa: "Taryfa PPE", cena_energii_netto_zl_kwh: "0,50" } }, ["taryfa_nazwa"]],
+    ["nazwa sprzedawcy", { faktura: { ...FAKTURA, sprzedawca: "inny", sprzedawca_nazwa: "ppe" } }, ["sprzedawca_nazwa"]],
+    // Pusty pierwszy wiersz opłat nie trafia do pliku, ale numer wiersza zostaje numerem ze strony.
+    ["nazwa opłaty w drugim wierszu", { faktura: { ...FAKTURA, oplaty_stale_inne: [{ nazwa: "", kwota_zl_mies: "" }, { nazwa: "Opłata PPE", kwota_zl_mies: "1,00" }] } }, ["oplaty_stale_inne[1].nazwa"]],
+    ["dwa pola naraz, w kolejności formularza", {
+      faktura: { ...FAKTURA, sprzedawca: "inny", sprzedawca_nazwa: "Sprzedawca PPE", oplaty_stale_inne: [{ nazwa: "PPE", kwota_zl_mies: "1,00" }] },
+    }, ["sprzedawca_nazwa", "oplaty_stale_inne[0].nazwa"]],
+  ];
+  for (const [opis, formularz, pola] of przypadki) {
+    const w = zloz(formularz);
+    assert.deepEqual(w.blokady, [{ kod: "blad_bezpiecznik_formularz" }], opis);
+    assert.deepEqual(w.polaBezpiecznika, pola, opis);
+  }
+  // Bez blokady: pusta lista, także przy polu, które nie trafia do pliku (nazwa sprzedawcy przy
+  // sprzedawcy z listy) i przy polu z błędem formatu.
+  assert.deepEqual(zloz({ faktura: FAKTURA, instalacja: INSTALACJA }).polaBezpiecznika, []);
+  assert.deepEqual(zloz({ faktura: { ...FAKTURA, sprzedawca_nazwa: "PPE" } }).polaBezpiecznika, []);
+  assert.deepEqual(zloz({ faktura: { ...FAKTURA, oplaty_stale_inne: [{ nazwa: "PPE", kwota_zl_mies: "1,234" }] } }).polaBezpiecznika, []);
+  // Przy systemie opustów pola faktury nie trafiają do pliku, więc nie blokują.
+  const opusty = zloz({ faktura: { ...FAKTURA, system_rozliczenia: "opusty", sprzedawca: "inny", sprzedawca_nazwa: "PPE" } });
+  assert.deepEqual([opusty.blokady, opusty.polaBezpiecznika], [[], []]);
+});
+
+test("blokada z pól: sprawdzenie wartości jak linii pliku JSON (wartość w cudzysłowie), reguły 1–5", () => {
+  const usuniete = [PLATNICY_FIKCYJNI[0], `PPE:${PPE_FIKCYJNE[0]}`];
+  const pola = (wartosc) => polaBezpiecznika([{ pole: "x", wartosc }], usuniete);
+  // Adres e-mail, numer płatnika z pliku, słowo PPE, 12 cyfr, kod GS1 ze spacjami.
+  for (const zla of [`jan@example.invalid`, `nr ${PLATNICY_FIKCYJNI[0]}`, "Opłata PPE", "1".repeat(12), `590 ${"1 ".repeat(14)}1`]) {
+    assert.deepEqual(pola(zla), ["x"], zla);
+  }
+  // „@” na początku wartości: w pliku JSON przed nim stoi cudzysłów, który reguła adresu liczy jako
+  // znak adresu. Kropka na końcu: w pliku za nią stoi cudzysłów.
+  assert.deepEqual(pola("@example.invalid"), ["x"]);
+  assert.deepEqual(pola("jan@example."), ["x"]);
+  for (const dobra of ["Taryfa G12w 2025/2026", "12.34", "0.51234", "2025-06-06", "Opłata handlowa", "ppe_porownane"]) {
+    assert.deepEqual(pola(dobra), [], dobra);
+  }
+  // Kilka wartości tego samego pola (np. cena w strefach) daje pole raz, w kolejności listy.
+  assert.deepEqual(polaBezpiecznika([{ pole: "b", wartosc: "PPE" }, { pole: "a", wartosc: "ok" }, { pole: "b", wartosc: "PPE x" }, { pole: "c", wartosc: "PPE" }], usuniete), ["b", "c"]);
 });
 
 test("więcej niż jeden przyjęty plik i punkty poboru nieporównane: uwaga bez numerów, JSON bez zmian", async () => {

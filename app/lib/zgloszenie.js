@@ -13,9 +13,10 @@
 // Zakres, faktura spoza zakresu, brak pól obowiązkowych i pliki bez numerów tylko informują.
 //
 // Treść CSV jest kodowana raz, przy odczycie plików (przygotujPliki), razem z sumą CRC. Złożenie
-// zgłoszenia po zmianie pola buduje tylko pliki JSON; archiwum powstaje dopiero przy zapisie
-// (utworzZipZgloszenia). Archiwum jest kompresowane asynchronicznie (zip.js), więc
-// utworzZipZgloszenia i przygotujZgloszenie zwracają obietnicę.
+// zgłoszenia po zmianie pola buduje tylko pliki JSON; archiwum powstaje osobno
+// (utworzZipZgloszenia), na stronie po wejściu na krok ze sprawdzeniem zgłoszenia. Archiwum jest
+// kompresowane asynchronicznie (zip.js), więc utworzZipZgloszenia i przygotujZgloszenie zwracają
+// obietnicę.
 
 import { dekoduj } from "./dekodowanie.js";
 import { czytajTauron } from "./tauron.js";
@@ -157,6 +158,22 @@ export async function utworzZipZgloszenia(wynik) {
   return utworzZip(wynik.zawartosc);
 }
 
+/**
+ * Pola, których wartość wywołuje bezpiecznik plików JSON (reguły 1–5, bez reguły 6). Wartość jest
+ * sprawdzana tak, jak stoi w linii pliku JSON: w cudzysłowie, po kodowaniu JSON. Poza tym linia
+ * ma tylko wcięcie, klucz z dwukropkiem i spacją oraz przecinek na końcu, a te nie zmieniają
+ * wyniku żadnej z reguł. Każde pole raz, w kolejności listy.
+ * @param {{ pole: string, wartosc: string }[]} wpisane wartości z pól wpisanych ręcznie
+ * @param {string[]} usuniete numery usunięte z plików (płatnik, PPE)
+ * @returns {string[]}
+ */
+export function polaBezpiecznika(wpisane, usuniete) {
+  const pola = wpisane
+    .filter(({ wartosc }) => sprawdzBezpiecznik([{ tekst: JSON.stringify(wartosc), linia: 1 }], usuniete, { regula6: false }))
+    .map(({ pole }) => pole);
+  return [...new Set(pola)];
+}
+
 // Zgłoszenie z przygotowanych plików (przygotujPliki) i formularza.
 export function zlozZgloszenie({ przygotowane, formularz, numer, utworzono }) {
   const { pliki, przyjete, analiza } = przygotowane;
@@ -252,6 +269,9 @@ export function zlozZgloszenie({ przygotowane, formularz, numer, utworzono }) {
       }),
     })),
     blokady,
+    // Pola wpisane ręcznie, które wywołały blokadę bezpiecznika plików JSON (strona zatrzymuje
+    // „Dalej” w kroku z takim polem). Pusta lista, gdy tej blokady nie ma.
+    polaBezpiecznika: wJson ? polaBezpiecznika(form.wpisane, usuniete) : [],
     bledyPol: form.bledy,
     brakujace: form.brakujace,
     uwagi,

@@ -54,21 +54,42 @@ function atrybutyOdnosnikow() {
 test("pomocnicze testu: wycinanie funkcji i atrybutów odnośników działa na trudnych przypadkach", () => {
   assert.match(funkcja("wartoscMiesiaca"), /const m = /, "parametr z domyślnym obiektem");
   assert.match(funkcja("przelicz"), /zlozZgloszenie/, "parametr z domyślną wartością");
-  assert.match(funkcja("udostepnij"), /navigator\.share/, "funkcja async");
+  assert.match(funkcja("wyslij"), /fetch\(/, "funkcja async");
   const repo = atrybutyOdnosnikow().find((a) => a.includes("ADRES_REPOZYTORIUM"));
   assert.match(repo, /rel: "noopener noreferrer"/, "atrybuty po wstawce ze zmienną");
   assert.doesNotMatch(KOD, /^\s*\/\//m, "bez linii komentarza");
   assert.match(KOD, /https:\/\/github\.com\//, "adres w tekście zostaje");
 });
 
-test("ZIP powstaje tylko przy zapisie albo wysyłce: utworzZipZgloszenia wołane w zapisz i udostepnij", () => {
-  assert.equal((MAIN.match(/\butworzZipZgloszenia\s*\(/g) ?? []).length, 2);
-  // Kompresja jest asynchroniczna: oba miejsca czekają na gotowy ZIP.
-  assert.match(funkcja("zapisz"), /\bawait utworzZipZgloszenia\(zapisywany\)/);
-  assert.match(funkcja("udostepnij"), /\bawait utworzZipZgloszenia\(udostepniany\)/);
-  assert.doesNotMatch(funkcja("przelicz"), /\butworzZipZgloszenia\s*\(/);
+test("ZIP powstaje w jednym miejscu (zbudujZip), po wejściu na krok 5 i po zmianie danych na krokach 5–6", () => {
+  assert.equal((MAIN.match(/\butworzZipZgloszenia\s*\(/g) ?? []).length, 1);
+  const budowa = funkcja("zbudujZip");
+  assert.match(budowa, /utworzZipZgloszenia\(budowany\)/);
+  // Wynik trafia do pamięci tylko wtedy, gdy dane się w tym czasie nie zmieniły.
+  assert.match(budowa, /if \(wynik !== budowany \|\| czekaPrzeliczenie\) return;/);
+  assert.match(funkcja("pokazKrok"), /if \(n >= 5\) zbudujZip\(\);/, "wejście na krok 5 i 6");
+  assert.match(funkcja("przelicz"), /if \(aktualnyKrok >= 5\) zbudujZip\(\);/, "zmiana danych na kroku 5");
+  // Każda zmiana danych unieważnia ZIP: przeliczenie i zmiana czekająca na przeliczenie.
+  assert.match(funkcja("przelicz"), /uniewaznijZip\(\);/);
+  assert.match(funkcja("przeliczPozniej"), /uniewaznijZip\(\);/);
+  assert.match(funkcja("uniewaznijZip"), /zip = null;/);
   assert.doesNotMatch(MAIN, /wynik\.zip\b/);
-  assert.doesNotMatch(MAIN, /plikDoWyslania/, "bez zapamiętanego ZIP-a do wysyłki");
+});
+
+test("zapis, odnośnik i wysyłka używają gotowego ZIP-a: bez czekania na kompresję po kliknięciu", () => {
+  // Ten sam ZIP z pamięci (aktualnyZip) w zapisie i wysyłce; przed pobraniem pliku i przed
+  // żądaniem nie ma żadnego await.
+  const zapis = funkcja("zapisz");
+  assert.doesNotMatch(MAIN, /\nasync function zapisz\(/, "zapis nie jest asynchroniczny");
+  assert.match(zapis, /const gotowy = aktualnyZip\(\);/);
+  assert.doesNotMatch(zapis, /\bawait\b/);
+  const wysylka = funkcja("wyslij");
+  assert.match(wysylka, /const gotowy = aktualnyZip\(\);/);
+  const przedZadaniem = wysylka.slice(0, wysylka.indexOf("const o = await fetch("));
+  assert.ok(przedZadaniem.length > 0);
+  assert.doesNotMatch(przedZadaniem, /\bawait\b/, "przed żądaniem bez await");
+  assert.match(wysylka, /body: gotowy\.bajty,/);
+  assert.match(funkcja("aktualnyZip"), /zip && zip\.wynik === wynik && !czekaPrzeliczenie \? zip : null/);
 });
 
 test("pliki przetwarzane raz: strona nie woła przygotujZgloszenie, tylko przygotujPliki i zlozZgloszenie", () => {
@@ -89,11 +110,94 @@ test("odnośniki otwierają się w nowej karcie, żeby nie skasować danych z pa
   assert.doesNotMatch(HTML, /<a\b(?![^>]*target="_blank")[^>]*href="(?:https?:|\/)/, "odnośniki w index.html");
 });
 
-test("nagłówek: napis ProsumentLab nad tytułem jako odnośnik do / w nowej karcie, akapit o operatorze pod opisem", () => {
+test("nagłówek kreatora: napis ProsumentLab (odnośnik do / w nowej karcie), napis z numerem kroku, pasek postępu dla oka", () => {
   const naglowek = /<header class="naglowek">([\s\S]*?)<\/header>/.exec(HTML)[1];
-  assert.match(naglowek, /<div class="tresc">\s*<a class="marka" href="\/" target="_blank" rel="noopener noreferrer" data-tekst="naglowek_marka"><\/a>\s*<h1 data-tekst="wstep_tytul"><\/h1>/);
-  assert.match(naglowek, /<p class="wstep" data-tekst="wstep_opis"><\/p>\s*<p class="wstep" data-tekst="wstep_operator"><\/p>\s*<\/div>/);
-  assert.equal((HTML.match(/href="\/"/g) ?? []).length, 1, "jeden odnośnik do strony głównej");
+  assert.match(naglowek, /<a class="marka" href="\/" target="_blank" rel="noopener noreferrer" data-tekst="naglowek_marka"><\/a>\s*<span class="kreator-krok" id="kreator-krok"><\/span>/);
+  // Pasek z sześcioma odcinkami, ukryty przed czytnikiem ekranu: informację niesie napis.
+  const pasek = /<div class="pasek" id="pasek" aria-hidden="true">([\s\S]*?)<\/div>/.exec(naglowek);
+  assert.ok(pasek, "pasek postępu");
+  assert.equal((pasek[1].match(/<span><\/span>/g) ?? []).length, 6);
+  assert.match(funkcja("pokazKrok"), /\$\("#kreator-krok"\)\.textContent = t\("kreator_krok", \{ n, m: KROKI \}\);/);
+  // Wstęp i akapit o operatorze w kroku 1, pod tytułem kroku.
+  assert.match(sekcja("krok-pliki"), /<p class="wstep" data-tekst="wstep_opis"><\/p>\s*<p class="drobny" data-tekst="wstep_operator"><\/p>/);
+  assert.equal((HTML.match(/href="\/"/g) ?? []).length, 2, "napis w nagłówku i przycisk po wysłaniu");
+});
+
+// Treść sekcji kroku o danym id.
+function sekcja(id) {
+  const m = new RegExp(`<section class="krok" id="${id}"[^>]*>([\\s\\S]*?)</section>`).exec(HTML);
+  assert.ok(m, id);
+  return m[1];
+}
+
+const KROKI = [
+  ["krok-pliki", "krok_pliki"], ["krok-faktura", "krok_faktura"], ["krok-cena", "krok_cena"],
+  ["krok-dodatkowe", "krok_dodatkowe"], ["krok-sprawdzenie", "krok_sprawdzenie"], ["krok-wysylka", "krok_wysylka"],
+];
+
+test("kreator: sześć kroków na jednej stronie, widoczny pierwszy; nagłówek kroku z tabindex=-1", () => {
+  const sekcje = [...HTML.matchAll(/<section class="krok" id="([a-z-]+)" data-krok="(\d)"( hidden)?>\s*<h1 tabindex="-1"[^>]*data-tekst="([a-z_]+)"><\/h1>/g)];
+  assert.deepEqual(sekcje.map((m) => [m[1], m[4]]), KROKI);
+  assert.deepEqual(sekcje.map((m) => m[2]), ["1", "2", "3", "4", "5", "6"]);
+  assert.deepEqual(sekcje.map((m) => Boolean(m[3])), [false, true, true, true, true, true], "na starcie widoczny tylko krok 1");
+  assert.equal((HTML.match(/<section /g) ?? []).length, 6);
+  assert.match(MAIN, /\nconst KROKI = 6;/);
+  // Bez panelu bocznego: jego treść jest w rozwijanej części kroku 1.
+  assert.doesNotMatch(HTML, /<aside/);
+  assert.match(sekcja("krok-pliki"), /<details class="panel">\s*<summary data-tekst="panel_pokaz"><\/summary>\s*<h2 data-tekst="panel_zostaje_tytul"><\/h2>\s*<ul data-tekst="panel_zostaje_lista"><\/ul>\s*<h2 data-tekst="panel_trafia_tytul"><\/h2>\s*<ul data-tekst="panel_trafia_lista"><\/ul>\s*<\/details>/);
+  assert.doesNotMatch(HTML, /panel_uwaga|krok_zakres|krok_instalacja|krok_zgoda|krok_zapis|wstep_tytul/);
+});
+
+test("kreator: pod krokiem „Wstecz” (od kroku 2) i „Dalej” (kroki 1–5), pasek nie jest przyklejony", () => {
+  assert.match(HTML, /<\/main>\s*<div class="tresc kreator-przyciski" id="kreator-przyciski">\s*<button type="button" class="przycisk przycisk-drugi" id="kreator-wstecz" data-tekst="kreator_wstecz" hidden><\/button>\s*<button type="button" class="przycisk" id="kreator-dalej" data-tekst="kreator_dalej"><\/button>\s*<\/div>/);
+  const krok = funkcja("pokazKrok");
+  assert.match(krok, /pokaz\(\$\("#kreator-wstecz"\), n > 1 && widok6 !== "wyslane"\);/);
+  assert.match(krok, /pokaz\(\$\("#kreator-dalej"\), n < KROKI\);/);
+  assert.doesNotMatch(CSS, /position:\s*(?:sticky|fixed)/, "nic nie jest przyklejone do ekranu");
+});
+
+test("kreator: przejście przewija na górę i daje fokus nagłówkowi kroku; bez historii przeglądarki", () => {
+  const krok = funkcja("pokazKrok");
+  assert.match(krok, /for \(const s of \$\$\("section\.krok"\)\) pokaz\(s, s\.dataset\.krok === String\(n\)\);/);
+  assert.match(krok, /window\.scrollTo\(0, 0\);/);
+  assert.match(krok, /\$\("h1", sekcjaKroku\(n\)\)\.focus\(\{ preventScroll: true \}\);/);
+  assert.doesNotMatch(MAIN, /\bhistory\./);
+});
+
+test("„Dalej”: sprawdza tylko bieżący krok, „Wstecz” niczego nie sprawdza i nie kasuje", () => {
+  const dalej = funkcja("dalej");
+  assert.match(dalej, /if \(czekaPrzeliczenie\) przelicz\(\);/, "najpierw zmiana czekająca na przeliczenie");
+  assert.match(dalej, /const blad = bladKroku\(aktualnyKrok\);/);
+  assert.match(dalej, /pokazKrok\(aktualnyKrok \+ 1\);/);
+  const wstecz = funkcja("wstecz");
+  assert.equal(wstecz.trim(), "pokazKrok(aktualnyKrok - 1);");
+  const blad = funkcja("bladKroku");
+  // Krok 1: przyjęty plik i brak blokad plików; kroki 2–4: błędy pól w tym kroku; krok 5 bez warunków.
+  assert.match(blad, /t\("kreator_pliki_brak"\)/);
+  assert.match(blad, /t\("kreator_popraw", \{ pola: /);
+  assert.match(blad, /if \(n >= 2 && n <= 4\)/);
+  assert.doesNotMatch(blad, /brakujace|FAKTURA_BRAK_OBOWIAZKOWYCH/, "brak danych obowiązkowych nie zatrzymuje");
+  // Odczyt pliku w toku: „Dalej” nieaktywne.
+  assert.match(funkcja("ustawBlokadeOdczytu"), /\$\("#kreator-dalej"\)\.disabled = czytanie && aktualnyKrok === 1;/);
+});
+
+test("komunikat kreatora w każdym z kroków 1–4, pod nagłówkiem, z fokusem na pierwszym błędnym polu", () => {
+  for (const [id] of KROKI.slice(0, 4)) {
+    assert.match(sekcja(id), /^\s*<h1 tabindex="-1" data-tekst="[a-z_]+"><\/h1>\s*<p class="blad kreator-komunikat" tabindex="-1" role="alert" hidden><\/p>/, id);
+  }
+  for (const [id] of KROKI.slice(4)) assert.doesNotMatch(sekcja(id), /kreator-komunikat/, id);
+  assert.match(funkcja("dalej"), /blad\.fokus\.focus\(\);/);
+});
+
+test("ostrzeżenie przed opuszczeniem strony: wczytane pliki, zgłoszenie niewysłane i niezapisane", () => {
+  const ostrzez = funkcja("ustawOstrzezenie");
+  assert.match(ostrzez, /const potrzebne = pliki\.length > 0 && !oddane;/);
+  assert.match(ostrzez, /addEventListener\("beforeunload", ostrzezPrzedWyjsciem\)/);
+  assert.match(ostrzez, /removeEventListener\("beforeunload", ostrzezPrzedWyjsciem\)/);
+  assert.match(funkcja("ostrzezPrzedWyjsciem"), /z\.preventDefault\(\);/);
+  assert.match(funkcja("zapisz"), /oddane = true;/);
+  assert.match(funkcja("wyslij"), /oddane = true;/);
+  assert.match(funkcja("uniewaznijZip"), /oddane = false;/, "nowe dane: zapisany albo wysłany ZIP już im nie odpowiada");
 });
 
 test("pola daty okresu faktury w zakresie lat narzędzia", () => {
@@ -170,31 +274,38 @@ function blokPola(nazwa) {
   return reszta.slice(0, koniec);
 }
 
-test("sekcja faktury: wstęp, potem pola w kolejności pytań: grupa „Faktura”, grupa „Cena energii”", () => {
-  const sekcja = /<section class="krok" id="krok-faktura">([\s\S]*?)<\/section>/.exec(HTML)[1];
-  assert.ok(sekcja.indexOf('data-tekst="faktura_wstep"') < sekcja.indexOf("data-pole="), "wstęp przed polami");
-  const pola = [...sekcja.matchAll(/data-pole="([a-z_]+)"/g)].map((m) => m[1]);
-  assert.deepEqual(pola, [
+test("krok 2 „Faktura” i krok 3 „Cena energii”: pola w kolejności pytań, tytuł kroku zamiast nagłówków grup", () => {
+  const faktura = sekcja("krok-faktura");
+  assert.ok(faktura.indexOf('data-tekst="faktura_wstep"') < faktura.indexOf("data-pole="), "wstęp przed polami");
+  assert.deepEqual([...faktura.matchAll(/data-pole="([a-z_]+)"/g)].map((m) => m[1]), [
     "system_rozliczenia", "sprzedawca", "sprzedawca_nazwa", "okres_miesiac", "okres_od", "okres_do", "rodzaj_faktury",
+  ]);
+  const cena = sekcja("krok-cena");
+  assert.deepEqual([...cena.matchAll(/data-pole="([a-z_]+)"/g)].map((m) => m[1]), [
     "rodzaj_ceny", "taryfa", "taryfa_nazwa", "cena_energii_netto_zl_kwh", "oplata_mocowa_zl_mies", "oplata_abonamentowa_zl_mies",
     "oplata_stala_sieciowa_zl_mies", "oplata_przejsciowa_zl_mies", "oplaty_stale_inne",
   ]);
-  // Nagłówek „Faktura” przed sposobem rozliczenia, poza polami chowanymi przy opustach; nagłówek
-  // „Cena energii” w nich, tuż przed rodzajem ceny.
-  assert.match(sekcja, /<\/figure>\s*<h3 data-tekst="faktura_grupa_faktura"><\/h3>\s*<fieldset class="pole" data-pole="system_rozliczenia"/);
-  assert.match(sekcja, /<p class="blad" hidden><\/p>\s*<\/div>\s*<h3 data-tekst="faktura_grupa_cena"><\/h3>\s*<fieldset class="pole" data-pole="rodzaj_ceny"/);
-  const pola_ = sekcja.indexOf('id="faktura-pola"');
-  assert.ok(sekcja.indexOf("faktura_grupa_faktura") < pola_ && sekcja.indexOf("faktura_grupa_cena") > pola_);
-  assert.equal((HTML.match(/<h3 data-tekst="faktura_grupa_/g) ?? []).length, 2);
+  // Rysunek faktury rozwijany, pod wstępem, przed pierwszym polem. Napis rozwijania to
+  // faktura_rysunek_pokaz; faktura_rysunek_opis zostaje opisem rysunku dla czytnika ekranu.
+  assert.match(faktura, /<p data-tekst="faktura_wstep"><\/p>\s*<details class="rysunek-pokaz">\s*<summary data-tekst="faktura_rysunek_pokaz"><\/summary>\s*<figure class="rysunek">/);
+  assert.equal((HTML.match(/faktura_rysunek_opis/g) ?? []).length, 0, "opis rysunku nie jest napisem w HTML");
+  assert.equal((MAIN.match(/"faktura_rysunek_opis"/g) ?? []).length, 1);
+  assert.match(funkcja("wstawTeksty"), /\$\("#rysunek-faktury"\)\.setAttribute\("aria-label", t\("faktura_rysunek_opis"\)\);/);
+  assert.match(faktura, /<\/figure>\s*<\/details>\s*<fieldset class="pole" data-pole="system_rozliczenia"/);
+  assert.doesNotMatch(HTML, /faktura_grupa_/, "tytuły kroków zastępują nagłówki grup");
   assert.doesNotMatch(HTML, /operator_dystrybucyjny|pierwsze_oddanie/, "bez pytań o operatora i pierwsze oddanie");
 });
 
-test("system opustów chowa wszystkie pola faktury poza systemem rozliczenia", () => {
-  const m = /<div id="faktura-pola" data-warunek="system_rozliczenia!=opusty">([\s\S]*)<\/div>\s*<p class="uwaga" id="faktura-brak"/.exec(HTML);
-  assert.ok(m, "kontener z warunkiem");
-  assert.doesNotMatch(m[1], /data-pole="system_rozliczenia"/);
-  assert.match(m[1], /data-pole="sprzedawca"/);
-  assert.match(m[1], /data-pole="oplaty_stale_inne"/);
+test("system opustów chowa wszystkie pola faktury poza systemem rozliczenia; krok 3 mówi wtedy, że pól nie trzeba wpisywać", () => {
+  const faktura = /<div id="faktura-pola" data-warunek="system_rozliczenia!=opusty">([\s\S]*)<\/div>\s*$/.exec(sekcja("krok-faktura"));
+  assert.ok(faktura, "kontener z warunkiem w kroku 2, do końca kroku");
+  assert.doesNotMatch(faktura[1], /data-pole="system_rozliczenia"/);
+  assert.match(faktura[1], /data-pole="sprzedawca"/);
+  assert.match(faktura[1], /data-pole="rodzaj_faktury"/);
+  const cena = /<p class="uwaga" data-tekst="faktura_opusty" data-warunek="system_rozliczenia=opusty" hidden><\/p>\s*<div id="cena-kontener" data-warunek="system_rozliczenia!=opusty">([\s\S]*)<\/div>\s*<p class="uwaga" id="faktura-brak" hidden><\/p>\s*$/.exec(sekcja("krok-cena"));
+  assert.ok(cena, "krok 3: tekst o opustach, pola z warunkiem, na końcu uwaga o brakujących polach");
+  assert.match(cena[1], /data-pole="rodzaj_ceny"/);
+  assert.match(cena[1], /data-pole="oplaty_stale_inne"/);
   assert.match(MAIN, /\(!\?=\)/, "warunki() rozumie „pole!=wartość”");
 });
 
@@ -308,20 +419,99 @@ test("krok 1: odnośnik „jak go pobrać z eLicznika” do /jak-pobrac-dane-z-e
 // Ciąg elementów index.html, przedzielonych tylko odstępami.
 const ciag = (czesci) => new RegExp(czesci.map((s) => s.replace(/[()[\]?.*+^$|]/g, "\\$&")).join("\\s*"));
 
-test("krok 7: tytuł, powód blokady, potem dwie drogi; droga z udostępnianiem schowana na starcie", () => {
-  assert.match(HTML, ciag([
-    '<section class="krok" id="krok-zapis">',
-    '<h2 data-tekst="krok_zapis"></h2>',
-    '<p class="uwaga" id="zapis-powod" aria-live="polite" hidden></p>',
-    '<div class="droga" id="droga-udostepnianie" hidden>',
-    '<button type="button" class="przycisk" id="udostepnij-przycisk" data-tekst="udostepnij_przycisk"></button>',
-    '<p class="podpowiedz" data-tekst="udostepnij_podpowiedz"></p>',
-    '<button type="button" class="przycisk-tekstowy" id="droga-zapis-pokaz" data-tekst="droga_zapis_pokaz"></button>',
-    "</div>",
-    '<div class="droga" id="droga-zapis">',
-    '<p class="uwaga" id="udostepnij-niedostepne" data-tekst="udostepnij_niedostepne" hidden></p>',
+test("krok 5: podgląd z rozmiarem zgłoszenia, zgoda, numer", () => {
+  assert.match(sekcja("krok-sprawdzenie"), ciag([
+    '<h1 tabindex="-1" data-tekst="krok_sprawdzenie"></h1>',
+    '<h2 data-tekst="podglad_tytul"></h2>',
+    '<div id="podglad"></div>',
+    '<p class="podglad-rozmiar" id="podglad-rozmiar" aria-live="polite" hidden></p>',
+    '<div class="zgoda">',
   ]));
-  assert.match(HTML, /<span id="zgoda-wiecej"><\/span>\s*<\/div>\s*<p class="podpowiedz" data-tekst="zgoda_bez"><\/p>/);
+  assert.match(HTML, /<span id="zgoda-wiecej"><\/span>\s*<\/div>\s*<p class="podpowiedz" data-tekst="zgoda_bez"><\/p>\s*<p class="numer" id="numer"><\/p>\s*<\/section>/);
+  assert.match(funkcja("pokazRozmiar"), /t\("podglad_rozmiar", \{ rozmiar: rozmiarDoWyswietlenia\(gotowy\.bajty\.length\) \}\)/);
+});
+
+test("krok 6: tytuł, powód blokady, wysyłka z polem adresu, ramką, przyciskiem i odnośnikiem do drogi zapasowej", () => {
+  assert.match(sekcja("krok-wysylka"), ciag([
+    '<h1 tabindex="-1" id="wysylka-tytul" data-tekst="krok_wysylka"></h1>',
+    '<p class="uwaga" id="zapis-powod" aria-live="polite" hidden></p>',
+    '<div id="widok-wysylka">',
+    '<p class="uwaga" id="wysylka-niedostepna" data-tekst="wysylka_niedostepna" hidden></p>',
+    '<div id="wysylka-formularz">',
+    '<div class="pole" data-pole="adres">',
+    '<label for="p-adres" data-tekst="wysylka_adres"></label>',
+    '<input type="email" id="p-adres" autocomplete="email" inputmode="email" aria-describedby="adres-pomoc">',
+    '<p class="podpowiedz" id="adres-pomoc" data-tekst="wysylka_adres_pomoc"></p>',
+    '<p class="blad" id="adres-blad" data-tekst="wysylka_adres_blad" role="alert" hidden></p>',
+    "</div>",
+    '<p class="ramka" id="wysylka-co"></p>',
+    '<p class="uwaga" id="wysylka-komunikat" role="alert" hidden></p>',
+    '<button type="button" class="przycisk" id="wyslij" data-tekst="wysylka_przycisk"></button>',
+    "</div>",
+    '<button type="button" class="przycisk-tekstowy" id="zapasowa-pokaz" data-tekst="wysylka_zapasowa_pokaz"></button>',
+    "</div>",
+    '<div id="widok-zapasowa" hidden>',
+    '<h2 tabindex="-1" id="zapasowa-tytul" data-tekst="zapasowa_tytul"></h2>',
+    '<div class="droga" id="droga-zapis">',
+  ]));
+  // Numer w ramce czcionką o stałej szerokości, jak w zdaniu z numerem.
+  assert.match(funkcja("wstawTeksty"), /\$\("#wysylka-co"\)\.replaceChildren\(\.\.\.zdanieZNumerem\("wysylka_co"\)\);/);
+});
+
+test("krok 6: żądanie dokładnie w ustalonej postaci, z limitem czasu 120 s", () => {
+  const wysylka = funkcja("wyslij");
+  assert.match(wysylka, /fetch\("\/zgloszenie\/", \{\n\s*method: "POST",\n\s*body: gotowy\.bajty,\n\s*headers: \{ "Content-Type": "application\/zip", "X-Numer": NUMER, "X-Adres": adres\.adres \},\n\s*credentials: "omit",\n\s*cache: "no-store",\n\s*redirect: "error",\n\s*signal: kontroler\.signal,\n\s*\}\)/);
+  assert.match(wysylka, /const kontroler = new AbortController\(\);/);
+  assert.match(wysylka, /setTimeout\(\(\) => kontroler\.abort\(\), CZAS_WYSYLKI_MS\)/);
+  assert.match(wysylka, /clearTimeout\(limit\);/);
+  // Adres sprawdzony przed żądaniem; zły adres: tekst przy polu, bez żądania.
+  const sprawdzenie = wysylka.indexOf("sprawdzAdres(");
+  assert.ok(sprawdzenie > 0 && sprawdzenie < wysylka.indexOf("fetch("));
+  assert.match(wysylka, /if \(!adres\.ok\) \{\n\s*pokazBladAdresu\(true\);/);
+  // Odpowiedź zamienia na tekst moduł wysylka.js (testy jednostkowe).
+  assert.match(wysylka, /wynikWysylki\(odpowiedz\)/);
+  assert.match(KOD, /import \{[^}]*\bwynikWysylki\b[^}]*\} from "\.\/lib\/wysylka\.js"/);
+  // W trakcie: przycisk nieaktywny z napisem wysylka_trwa.
+  assert.match(funkcja("pokazWysylke"), /przycisk\.textContent = t\(wysylkaTrwa \? "wysylka_trwa" : "wysylka_przycisk"\);/);
+  assert.match(funkcja("pokazWysylke"), /przycisk\.disabled = !gotowy \|\| zaDuzy \|\| wysylkaTrwa;/);
+});
+
+test("krok 6: wysyłka tylko pod https: i pod http: na 127.0.0.1 i localhost; inaczej droga zapasowa", () => {
+  assert.match(MAIN, /\nconst WYSYLKA_DOSTEPNA = wysylkaDostepna\(location\.protocol, location\.hostname\);/);
+  const pokaz6 = funkcja("pokazWysylke");
+  assert.match(pokaz6, /pokaz\(\$\("#wysylka-formularz"\), WYSYLKA_DOSTEPNA\);/);
+  assert.match(pokaz6, /pokaz\(\$\("#wysylka-niedostepna"\), !WYSYLKA_DOSTEPNA\);/);
+  assert.match(pokaz6, /pokaz\(\$\("#widok-zapasowa"\), widok6 === "zapasowa" \|\| \(widok6 === "wysylka" && !WYSYLKA_DOSTEPNA\)\);/);
+  assert.match(pokaz6, /pokaz\(\$\("#zapasowa-wroc"\), WYSYLKA_DOSTEPNA\);/);
+});
+
+test("krok 6: ZIP ponad limit wysyłki: przycisk nieaktywny, wysylka_za_duzy, droga zapasowa", () => {
+  const pokaz6 = funkcja("pokazWysylke");
+  assert.match(pokaz6, /const zaDuzy = Boolean\(gotowy\) && zipZaDuzy\(gotowy\.bajty\.length\);/);
+  assert.match(pokaz6, /const klucz = zaDuzy \? "wysylka_za_duzy" : bladWysylki;/);
+});
+
+test("ekran po wysłaniu: numer dużym krojem, adres, ramka z powrotem do kroku 6, pytanie, przycisk na stronę", () => {
+  assert.match(sekcja("krok-wysylka"), ciag([
+    '<div id="widok-wyslane" hidden>',
+    '<h1 tabindex="-1" id="wyslane-tytul" data-tekst="wyslane_tytul"></h1>',
+    '<div class="ramka-numer">',
+    '<span data-tekst="wyslane_numer"></span>',
+    '<span class="numer-duzy" id="wyslane-numer"></span>',
+    '<span data-tekst="wyslane_numer_pomoc"></span>',
+    "</div>",
+    '<p id="wyslane-potwierdzenie"></p>',
+    '<p class="uwaga" id="wyslane-brak"></p>',
+    '<p data-tekst="wyslane_pytanie"></p>',
+    '<a class="przycisk przycisk-drugi" href="/" target="_blank" rel="noopener noreferrer" data-tekst="wyslane_strona"></a>',
+    "</div>",
+  ]));
+  const wyslane = funkcja("pokazWyslane");
+  assert.match(wyslane, /wyslanePotwierdzenie \? "wyslane_potwierdzenie" : "wyslane_bez_potwierdzenia"/);
+  // Powrót z ekranu po wysłaniu do kroku 6 z wpisanym adresem (pole nie jest czyszczone).
+  assert.match(funkcja("wstawTeksty"), /t\("wyslane_brak_odnosnik"\)/);
+  assert.match(funkcja("wrocDoWysylki"), /widok6 = "wysylka";/);
+  assert.doesNotMatch(MAIN, /\$\("#p-adres"\)\.value = /, "adres nie jest czyszczony ani podmieniany");
 });
 
 test("droga z zapisem: krok 1 zapis z potwierdzeniem i zapis_gdzie, krok 2 wiadomość nieaktywna przed zapisem", () => {
@@ -341,7 +531,8 @@ test("droga z zapisem: krok 1 zapis z potwierdzeniem i zapis_gdzie, krok 2 wiado
     '<p class="podpowiedz" id="mailto-najpierw-zapisz" data-tekst="mailto_najpierw_zapisz"></p>',
     "</div>",
     "</div>",
-    "</section>",
+    '<button type="button" class="przycisk-tekstowy" id="zapasowa-wroc" data-tekst="zapasowa_wroc"></button>',
+    "</div>",
   ]));
   // mailto_bez_zalacznika z nazwą pliku z numeru zgłoszenia, wstawione raz na starcie.
   assert.match(funkcja("wstawTeksty"), /\$\("#mailto-bez-zalacznika"\)\.textContent = t\("mailto_bez_zalacznika", \{ plik: nazwaZip\(NUMER\) \}\)/);
@@ -358,7 +549,7 @@ test("wiadomość w kroku 2: href dopiero po zapisie, zmiana pola znów ją wył
   const schowaj = funkcja("schowajPotwierdzenieZapisu");
   assert.match(schowaj, /ustawWiadomosc\(null\)/);
   assert.match(schowaj, /pokaz\(\$\("#po-zapisie"\), false\)/);
-  assert.match(funkcja("przelicz"), /if \(!poZapisie\) schowajPotwierdzenieZapisu\(\);/);
+  assert.match(funkcja("przelicz"), /schowajPotwierdzenieZapisu\(\);/);
   assert.match(funkcja("zapisz"), /ustawWiadomosc\(mailto\)/);
   assert.match(funkcja("pokazBladLogiki"), /schowajPotwierdzenieZapisu\(\)/);
   // Wygląd nieaktywnego przycisku także dla odnośnika z aria-disabled.
@@ -373,22 +564,19 @@ test("po zapisie: adres w po_zapisie to odnośnik z tym samym mailto: co „Napi
   assert.equal((MAIN.match(/\bodnosnikMailto\(/g) ?? []).length, 1, "mailto liczony w jednym miejscu");
 });
 
-test("zapis czeka na skompresowany ZIP; dane zmienione w tym czasie: plik zapisany, bez potwierdzenia i wiadomości", () => {
+test("zapis: plik z gotowego ZIP-a, potem potwierdzenie i wiadomość; bez gotowego ZIP-a nic się nie dzieje", () => {
   const zapis = funkcja("zapisz");
-  assert.match(MAIN, /\nasync function zapisz\(\) \{/);
-  assert.match(zapis, /const zapisywany = wynik;\n\s*const zip = await utworzZipZgloszenia\(zapisywany\);/);
-  assert.match(zapis, /el\("a", \{ href: adres, download: zapisywany\.nazwaZip \}\)/);
-  const sprawdzenie = zapis.indexOf("if (wynik !== zapisywany || czekaPrzeliczenie) return;");
-  assert.ok(sprawdzenie > zapis.indexOf("a.click();"), "plik zapisany przed sprawdzeniem");
-  assert.ok(sprawdzenie > zapis.indexOf("poprzedniZapis = zip;"), "zapisany plik zapamiętany do porównania");
-  assert.ok(sprawdzenie < zapis.indexOf("pokaz($(\"#zapis-gotowe\"), true);"), "potwierdzenie dopiero po sprawdzeniu");
-  assert.ok(sprawdzenie < zapis.indexOf("ustawWiadomosc(mailto);"), "wiadomość dopiero po sprawdzeniu");
+  assert.match(zapis, /if \(czekaPrzeliczenie\) przelicz\(\);\n\s*const gotowy = aktualnyZip\(\);\n\s*if \(!gotowy\) return;/);
+  assert.match(zapis, /el\("a", \{ href: adres, download: gotowy\.wynik\.nazwaZip \}\)/);
+  const klik = zapis.indexOf("a.click();");
+  assert.ok(klik > 0 && klik < zapis.indexOf("pokaz($(\"#zapis-gotowe\"), true);"), "potwierdzenie po zapisie");
+  assert.ok(klik < zapis.indexOf("ustawWiadomosc(mailto);"), "wiadomość po zapisie");
 });
 
 test("potwierdzenie zapisu: zapis_gotowe po każdym zapisie, zapis_ponownie po zapisie innej treści", () => {
   const zapis = funkcja("zapisz");
   assert.match(zapis, /t\("zapis_gotowe", \{ plik: wynik\.nazwaZip \}\)/);
-  assert.match(zapis, /rowneBajty\(poprzedniZapis, zip\)/);
+  assert.match(zapis, /rowneBajty\(poprzedniZapis, gotowy\.bajty\)/);
   assert.match(zapis, /pokaz\(\$\("#zapis-ponownie"\), zapisanoRozne\)/);
   // Zmiana pola chowa potwierdzenie razem z komunikatem po zapisie.
   const schowaj = funkcja("schowajPotwierdzenieZapisu");
@@ -401,68 +589,31 @@ test("nieaktualne potwierdzenie zapisu: zmiana pola chowa je od razu, zapis niem
   // i aktywnej wiadomości do starego pliku.
   assert.match(funkcja("przeliczPozniej"), /schowajPotwierdzenieZapisu\(\);\n\s*odlozone = setTimeout\(przelicz, 250\);/);
   const przel = funkcja("przelicz");
-  const poZlozeniu = przel.indexOf("pokazZapis();");
-  const zawsze = przel.indexOf("if (!wynik?.moznaZapisac) schowajPotwierdzenieZapisu();");
-  assert.ok(poZlozeniu > 0 && zawsze > poZlozeniu, "po złożeniu zgłoszenia, także przy zapisie");
-  assert.doesNotMatch(przel.slice(zawsze - 40, zawsze), /poZapisie/, "bez warunku poZapisie");
-  assert.equal((MAIN.match(/\bschowajPotwierdzenieZapisu\(\)/g) ?? []).length, 5, "definicja i cztery wywołania");
+  const schowanie = przel.indexOf("schowajPotwierdzenieZapisu();");
+  assert.ok(schowanie > 0 && schowanie < przel.indexOf("zlozZgloszenie("), "każde przeliczenie, przed złożeniem zgłoszenia");
+  assert.doesNotMatch(przel, /poZapisie/, "zapis nie przelicza zgłoszenia");
+  assert.equal((MAIN.match(/\bschowajPotwierdzenieZapisu\(\)/g) ?? []).length, 4, "definicja i trzy wywołania");
 });
 
-test("wybór drogi: udostępnianie tylko przy obsłudze plików i ekranie dotykowym, do odmowy albo wyboru zapisu", () => {
-  const zapisPokaz = funkcja("pokazZapis");
-  assert.match(zapisPokaz, /const drogaUdostepniania = mozeUdostepnic\(PLIK_PROBNY\) && matchMedia\("\(pointer: coarse\)"\)\.matches && !udostepnianieOdrzucone && !drogaZapisWybrana;/);
-  assert.match(zapisPokaz, /pokaz\(\$\("#droga-udostepnianie"\), drogaUdostepniania\)/);
-  assert.match(zapisPokaz, /pokaz\(\$\("#droga-zapis"\), !drogaUdostepniania\)/);
-  // Przycisk udostępniania jest nieaktywny tak jak zapis, zamiast znikać razem z drogą.
-  assert.match(zapisPokaz, /\$\("#udostepnij-przycisk"\)\.disabled = !wynik\.moznaZapisac;/);
-  assert.match(zapisPokaz, /pokaz\(\$\("#udostepnij-niedostepne"\), udostepnianieOdrzucone\)/);
-  assert.match(MAIN, /navigator\.canShare\(\{ files: \[plik\] \}\)/);
-  assert.match(MAIN, /\nlet drogaZapisWybrana = false;/);
-  assert.equal((MAIN.match(/drogaZapisWybrana = /g) ?? []).length, 2, "ustawiane tylko na starcie i przy wyborze zapisu");
-  const wybor = funkcja("pokazDrogeZapisu");
-  assert.match(wybor, /drogaZapisWybrana = true;/);
-  assert.match(wybor, /przejdzDoZapisu\(\);/);
-  // Przejście chowa drogę z udostępnianiem i przenosi fokus na zapis (znika przycisk z fokusem).
-  const przejscie = funkcja("przejdzDoZapisu");
-  assert.match(przejscie, /pokaz\(\$\("#droga-udostepnianie"\), false\)/);
-  assert.match(przejscie, /pokaz\(\$\("#droga-zapis"\), true\)/);
-  assert.match(przejscie, /pokaz\(\$\("#udostepnij-niedostepne"\), udostepnianieOdrzucone\)/);
-  assert.match(przejscie, /\$\("#zapisz"\)\.focus\(\)/);
-  assert.match(MAIN, /\$\("#droga-zapis-pokaz"\)\.addEventListener\("click", pokazDrogeZapisu\)/);
-});
-
-test("udostępnianie: adres do schowka bez czekania, zaraz potem share z plikiem, tytułem i tekstem", () => {
-  const udostepnij = funkcja("udostepnij");
-  assert.match(udostepnij, /const udostepniany = wynik;\n\s*const plik = new File\(\[await utworzZipZgloszenia\(udostepniany\)\], udostepniany\.nazwaZip, \{ type: "application\/zip" \}\)/);
-  assert.match(udostepnij, /navigator\.share\(\{ files: \[plik\], title: t\("udostepnij_tytul", \{ numer: NUMER \}\), text: t\("udostepnij_tekst", \{ numer: NUMER \}\) \}\)/);
-  // Schowek przed share(), bez await i z pominięciem błędu (także braku schowka).
-  const schowek = udostepnij.indexOf("navigator.clipboard.writeText(ADRES)");
-  assert.ok(schowek > 0 && schowek < udostepnij.indexOf("navigator.share("), "writeText przed share");
-  assert.match(udostepnij, /try \{\n\s*navigator\.clipboard\.writeText\(ADRES\)\.catch\(\(\) => \{\}\);\n\s*\} catch \{/);
-  assert.doesNotMatch(udostepnij, /await navigator\.clipboard/);
-  // Okno udostępniania i schowek wymagają gestu użytkownika. Przed share() jest tylko jedno
-  // await: na skompresowany ZIP (ułamek sekundy, w czasie aktywacji przez gest), a schowek idzie
-  // jeszcze przed nim.
-  assert.ok(udostepnij.includes("await navigator.share("));
-  const przedShare = udostepnij.slice(0, udostepnij.indexOf("await navigator.share("));
-  assert.deepEqual(przedShare.match(/\bawait\b[^;]*/g), ["await utworzZipZgloszenia(udostepniany)], udostepniany.nazwaZip, { type: \"application/zip\" })"]);
-  assert.ok(schowek < udostepnij.indexOf("await utworzZipZgloszenia("), "writeText przed czekaniem na ZIP");
-});
-
-test("udostępnianie: odmowa inna niż AbortError przełącza do końca wizyty na drogę z zapisem z udostepnij_niedostepne", () => {
-  const udostepnij = funkcja("udostepnij");
-  assert.match(udostepnij, /blad\?\.name === "AbortError"/);
-  assert.match(udostepnij, /udostepnianieOdrzucone = true;\n\s*przejdzDoZapisu\(\);/);
-  assert.doesNotMatch(udostepnij, /console\./, "komunikat na stronie zamiast wpisu w konsoli");
-  assert.match(MAIN, /\nlet udostepnianieOdrzucone = false;/);
-  assert.equal((MAIN.match(/udostepnianieOdrzucone = /g) ?? []).length, 2, "ustawiane tylko na starcie i przy odmowie");
-});
-
-test("bez osobnego przycisku kopiowania adresu", () => {
+test("bez kopiowania adresu, schowka i udostępniania przez okno systemowe", () => {
   for (const [nazwa, tresc] of [["main.js", MAIN], ["index.html", HTML], ["style.css", CSS]]) {
     assert.doesNotMatch(tresc, /kopiuj/i, nazwa);
-    assert.doesNotMatch(tresc, /przyciski-zapisu|id="udostepnij"|#udostepnij\b(?!-)/, `${nazwa}: stary układ kroku 7`);
+    assert.doesNotMatch(tresc, /udostepn|droga-zapis-pokaz|canShare|clipboard/i, `${nazwa}: droga z udostępnianiem znika`);
   }
+});
+
+test("dodatkowe dane: przy rozbudowie instalacji miesiąc z własnym podpisem i pole mocy przed rozbudową z podpowiedzią", () => {
+  const zmiany = funkcja("zbudujZmiany");
+  assert.match(zmiany, /rodzaj === "rozbudowa_pv"/);
+  assert.match(zmiany, /t\("instalacja_rozbudowa_od"\)/);
+  assert.match(zmiany, /t\("instalacja_moc_przed"\)/);
+  assert.match(zmiany, /t\("instalacja_moc_przed_pomoc"\)/);
+  assert.match(zmiany, /"data-pole": "moc_przed_kwp"/);
+  assert.match(zmiany, /inputmode: "decimal"/);
+  // Do modułu formularza trafia moc przed tylko z wiersza rozbudowy.
+  assert.match(funkcja("zbierzFormularz"), /moc_przed_kwp: wartoscPola\("moc_przed_kwp"\)/);
+  // Błąd wiersza zmiany w jego własnym komunikacie, nie w komunikacie pola mocy przed.
+  assert.match(funkcja("kontenerBledu"), /\$\(":scope > \.blad", wiersz\)/);
 });
 
 test("zdanie pod pytaniem o grupę taryfową zależne od rodzaju ceny, bez rodzaju bez zdania", () => {
@@ -489,4 +640,71 @@ test("zmiana pola: Pstryk ustawia cenę dynamiczną, „inny okres” wpisuje da
   assert.match(daty, /if \(!okres \|\| od\.value \|\| doDnia\.value\) return;/);
   // Postać z modułu, kropka zamieniona na przecinek; błędna wartość zostaje.
   assert.match(funkcja("uzupelnijCene"), /const c = czytajCene\(pole\.value\);\n\s*if \(c\.ok\) pole\.value = c\.wartosc\.replace\("\.", ","\);/);
+});
+
+test("adres e-mail: Enter w polu niczego nie wysyła, wysyłkę zaczyna tylko przycisk", () => {
+  assert.doesNotMatch(KOD, /keydown|keyup|keypress/, "bez obsługi klawiszy");
+  assert.doesNotMatch(KOD, /"Enter"/);
+  // Pole adresu nie leży w formularzu HTML, więc Enter nie wysyła go też sam.
+  assert.doesNotMatch(HTML, /<form\b/);
+  assert.equal((KOD.match(/\bwyslij\)/g) ?? []).length, 1, "wyslij podpięte tylko pod kliknięcie przycisku");
+  assert.match(KOD, /\$\("#wyslij"\)\.addEventListener\("click", wyslij\);/);
+});
+
+test("wysyłka: funkcja sama sprawdza, czy wysyłka jest dostępna, zanim cokolwiek zrobi", () => {
+  const wysylka = funkcja("wyslij");
+  const pierwsza = wysylka.trim().split("\n")[0];
+  assert.equal(pierwsza, "if (!wysylkaDostepna(location.protocol, location.hostname)) return;");
+  assert.ok(wysylka.indexOf("wysylkaDostepna(") < wysylka.indexOf("fetch("));
+});
+
+test("zapis: pytanie przed opuszczeniem strony zdjęte przed kliknięciem odnośnika z plikiem", () => {
+  const zapis = funkcja("zapisz");
+  const klik = zapis.indexOf("a.click();");
+  const oddane = zapis.indexOf("oddane = true;");
+  const ostrzezenie = zapis.indexOf("ustawOstrzezenie();");
+  assert.ok(oddane > 0 && oddane < ostrzezenie && ostrzezenie < klik, "oddane i ustawOstrzezenie przed a.click()");
+  assert.equal((zapis.match(/ustawOstrzezenie\(\);/g) ?? []).length, 1);
+});
+
+test("nieudana budowa ZIP-a: krok 6 pokazuje blad_nieznany, kolejne wejście na krok ponawia próbę", () => {
+  const budowa = funkcja("zbudujZip");
+  // Odrzucona obietnica: koniec budowy dla tego zgłoszenia i zapamiętany błąd, jeśli dane się nie
+  // zmieniły; potem odświeżenie kroku 6.
+  const odrzucenie = budowa.slice(budowa.indexOf("}, (blad) => {"));
+  assert.ok(odrzucenie.length > 20, "obsługa odrzuconej obietnicy");
+  assert.match(odrzucenie, /budowanyDla = null;/);
+  assert.match(odrzucenie, /bladZipu = budowany;/);
+  assert.match(odrzucenie, /pokazWysylke\(\);/);
+  // Nowa próba czyści błąd; zmiana danych też.
+  assert.match(budowa, /budowanyDla = budowany;\n\s*bladZipu = null;/);
+  assert.match(funkcja("uniewaznijZip"), /bladZipu = null;/);
+  // Wejście na krok 5 albo 6 woła zbudujZip, a ten nie zaczyna od nowa tylko wtedy, gdy ZIP jest
+  // gotowy albo w budowie.
+  assert.match(budowa, /if \(!wynik\?\.moznaZapisac \|\| zip\?\.wynik === wynik \|\| budowanyDla === wynik\) return;/);
+  assert.match(funkcja("pokazWysylke"), /else if \(bladZipu === wynik\) tresc = t\("blad_nieznany"\);/);
+});
+
+test("ekran po wysłaniu: napis kreator_gotowe zamiast numeru kroku; powrót do wysyłki przywraca numer", () => {
+  assert.match(funkcja("pokazWyslane"), /\$\("#kreator-krok"\)\.textContent = t\("kreator_gotowe"\);/);
+  assert.match(funkcja("wrocDoWysylki"), /\$\("#kreator-krok"\)\.textContent = t\("kreator_krok", \{ n: KROKI, m: KROKI \}\);/);
+  // Nagłówek kroku dostaje fokus po przejściu; ekran po wysłaniu ma własny fokus (pokazWyslane).
+  assert.doesNotMatch(MAIN, /function naglowekKroku/);
+  assert.match(funkcja("pokazKrok"), /\$\("h1", sekcjaKroku\(n\)\)\.focus\(\{ preventScroll: true \}\);/);
+});
+
+test("nazwy pól w komunikatach z pola_nazwy, bez nazw zastępczych", () => {
+  assert.doesNotMatch(MAIN, /NAZWY_ZASTEPCZE/);
+  assert.match(funkcja("nazwyPol"), /TEKSTY\.pola_nazwy\[p\] \?\? p/);
+});
+
+test("blokada z pól wpisanych ręcznie zatrzymuje „Dalej” w kroku z polem, które ją wywołało", () => {
+  const blad = funkcja("bladKroku");
+  // Pola wskazane przez moduł zgłoszenia, w tym kroku, w kolejności na stronie; tekst blokady
+  // w komunikacie kroku, fokus na pierwszym polu (błędnym albo z blokadą).
+  assert.match(blad, /const blokada = wKroku\(n, \(wynik\?\.polaBezpiecznika \?\? \[\]\)\.map\(\(pole\) => \(\{ pole \}\)\)\);/);
+  assert.match(blad, /if \(blokada\.length > 0\) teksty\.push\(t\(BLOKADA_POL\)\);/);
+  assert.match(blad, /fokus: poleDoFokusu\(wKolejnosci\(\[\.\.\.bledne, \.\.\.blokada\]\)\[0\]\)/);
+  // Pole, którego nie ma w żadnym kroku, nie zatrzymuje: blokada zostaje w kroku 6.
+  assert.match(funkcja("pokazWysylke"), /wynik\.blokady\.some\(\(b\) => b\.kod === BLOKADA_POL\)\) tresc = t\(BLOKADA_POL\);/);
 });

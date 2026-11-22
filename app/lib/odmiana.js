@@ -3,7 +3,7 @@
 
 import { liczbaZCyfr } from "./kwoty.js";
 
-export const WSTAWKI = new Set(["n", "od", "do", "numer", "plik", "nazwa", "wiersz", "kolumna", "data", "pola", "kolumny", "wersja"]);
+export const WSTAWKI = new Set(["n", "m", "od", "do", "numer", "plik", "nazwa", "wiersz", "kolumna", "data", "pola", "kolumny", "wersja", "rozmiar", "adres"]);
 
 // Pełna reguła polska: 1 miesiąc; 2–4 miesiące (także 22–24, 32–34…, ale nie 12–14);
 // pozostałe: miesięcy.
@@ -51,6 +51,17 @@ export function znacznikPolski(znacznik) {
 // „stycznia 2025 r.”; nazwy miesięcy w dopełniaczu pochodzą z teksty.js.
 export function miesiacZRokiem(rok, miesiac, nazwy) {
   return `${nazwy[miesiac - 1]} ${rok} r.`;
+}
+
+// Rozmiar zgłoszenia w bajtach do wyświetlenia. Poniżej 1 MB (1 048 576 bajtów) pełne KB
+// (1024 bajty), od 1 MB megabajty z jednym miejscem po przecinku; zawsze w górę, żeby ZIP tuż
+// ponad limitem wysyłki nie wyglądał na równy limitowi. Same liczby całkowite.
+const KB = 1024;
+const MB = 1024 * 1024;
+export function rozmiarDoWyswietlenia(bajty) {
+  if (bajty < MB) return `${Math.floor((bajty + KB - 1) / KB)} KB`;
+  const dziesiate = Math.floor((bajty * 10 + MB - 1) / MB);
+  return `${Math.floor(dziesiate / 10)},${dziesiate % 10} MB`;
 }
 
 // Wh jako pełne kWh do wyświetlenia (połówki w górę). Liczby do czterech cyfr bez odstępu,

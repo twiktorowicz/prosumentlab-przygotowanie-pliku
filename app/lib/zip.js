@@ -2,7 +2,9 @@
 // - Pliki kompresowane metodą 8 (deflate) przez CompressionStream("deflate-raw"), wbudowany
 //   w przeglądarkę i w Node. Przeglądarka bez tego formatu (brak CompressionStream albo
 //   konstruktor odrzuca "deflate-raw") dostaje ZIP bez kompresji (metoda 0, „store”); taki ZIP
-//   też jest poprawny, tylko większy.
+//   też jest poprawny, tylko większy. Gdy budowa z kompresją się nie powiedzie (na przykład
+//   strumień kompresji zgłosi błąd), cały ZIP powstaje od nowa metodą 0; ZIP nigdy nie miesza
+//   metod. Gdy i to się nie uda, obietnica jest odrzucona.
 // - Kompresja jest asynchroniczna, więc utworzZip zwraca obietnicę.
 // - CRC-32 liczone z danych przed kompresją; nagłówki podają oba rozmiary (spakowany i po
 //   rozpakowaniu).
@@ -70,8 +72,20 @@ export async function utworzZip(pliki) {
     return { nazwa: new TextEncoder().encode(nazwa), bajty, crc: crc ?? crc32(bajty) };
   });
 
-  const metoda = kompresjaDostepna() ? 8 : 0;
-  for (const w of wpisy) w.dane = metoda === 8 ? await deflateRaw(w.bajty) : w.bajty;
+  if (kompresjaDostepna()) {
+    try {
+      return await zbuduj(wpisy, 8);
+    } catch {
+      // Budowa z kompresją nie powiodła się: ZIP bez kompresji, taki sam jak w przeglądarce bez niej.
+    }
+  }
+  return zbuduj(wpisy, 0);
+}
+
+async function zbuduj(wpisy, metoda) {
+  const dane = [];
+  for (const w of wpisy) dane.push(metoda === 8 ? await deflateRaw(w.bajty) : w.bajty);
+  wpisy = wpisy.map((w, i) => ({ ...w, dane: dane[i] }));
 
   const rozmiarLokalnych = wpisy.reduce((s, w) => s + 30 + w.nazwa.length + w.dane.length, 0);
   const rozmiarKatalogu = wpisy.reduce((s, w) => s + 46 + w.nazwa.length, 0);

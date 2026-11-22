@@ -18,7 +18,8 @@ const POMIJANE_PLIKI = new Set([".DS_Store"]);
 const BINARNE = /\.(zip|woff2|png|ico)$/;
 
 export const DOZWOLONE_PPE = new Set(["590000000000000010", "590000000000000021"]);
-const DOZWOLONE_ADRESY = [/^raporty@prosumentlab\.pl$/, /@example\.invalid$/];
+// nazwa@domena.pl: wzór adresu w tekście błędu przy polu adresu (app/teksty.js), nie adres.
+const DOZWOLONE_ADRESY = [/^raporty@prosumentlab\.pl$/, /^nazwa@domena\.pl$/, /@example\.invalid$/];
 
 // Wyjątki reguły 8–11 cyfr, każdy z osobna; ta sama lista jest w .gitleaks.toml.
 export const DOZWOLONE_8_11 = new Map([
@@ -119,7 +120,7 @@ test("w repozytorium nie ma numeru PPE rozdzielonego spacjami ani myślnikami", 
   assert.deepEqual(trafienia, []);
 });
 
-test("w repozytorium nie ma adresów e-mail poza adresem zgłoszeń i domeną example.invalid", () => {
+test("w repozytorium nie ma adresów e-mail poza adresem zgłoszeń, wzorem nazwa@domena.pl i domeną example.invalid", () => {
   const trafienia = [];
   const wzorzec = /[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}/g;
   for (const [sciezka, tresc] of plikiDoSkanu()) {
@@ -130,6 +131,14 @@ test("w repozytorium nie ma adresów e-mail poza adresem zgłoszeń i domeną ex
     }
   }
   assert.deepEqual(trafienia, []);
+});
+
+test(".gitleaks.toml ma regułę adresów e-mail z tymi samymi wyjątkami", () => {
+  const toml = readFileSync(join(KORZEN, ".gitleaks.toml"), "utf8");
+  const regula = /\[\[rules\]\]\nid = "adres-e-mail"\n[\s\S]*?(?=\n\[\[rules\]\]|$)/.exec(toml)?.[0];
+  assert.ok(regula, "reguła adres-e-mail");
+  const wyjatki = [...(/regexes = \[(.*)\]/.exec(regula)?.[1] ?? "").matchAll(/'{3}(.*?)'{3}/g)].map((m) => m[1]);
+  assert.deepEqual(wyjatki, DOZWOLONE_ADRESY.map((r) => r.source));
 });
 
 // Znaki niewidoczne w źródłach utrudniają przegląd: twarda spacja wygląda jak zwykła, znak

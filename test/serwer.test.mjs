@@ -9,7 +9,8 @@ import { tmpdir } from "node:os";
 import { join, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { utworzSerwer, POLITYKA, komunikatStartu } from "../narzedzia/serwer.mjs";
+import { utworzSerwer, POLITYKA, komunikatStartu, CZAS_BRAKU_ODPOWIEDZI_MS } from "../narzedzia/serwer.mjs";
+import { CZAS_WYSYLKI_MS } from "../app/lib/wysylka.js";
 import { spawn, spawnSync } from "node:child_process";
 
 let serwer;
@@ -47,7 +48,10 @@ test("strona główna z kompletem czterech nagłówków bezpieczeństwa", async 
   assert.equal(o.status, 200);
   assert.equal(o.naglowki["content-type"], "text/html; charset=utf-8");
   for (const [naglowek, wartosc] of Object.entries(NAGLOWKI_WYMAGANE)) assert.equal(o.naglowki[naglowek], wartosc, naglowek);
-  assert.match(POLITYKA, /connect-src 'none'/);
+  // Wysyłka zgłoszenia: żądania tylko do tej samej domeny (/zgloszenie/).
+  assert.match(POLITYKA, /connect-src 'self'/);
+  assert.doesNotMatch(POLITYKA, /connect-src 'none'/);
+  assert.match(POLITYKA, /form-action 'none'/);
   assert.match(POLITYKA, /frame-ancestors 'none'/);
   assert.equal(o.naglowki["cache-control"], "no-store");
   const brak = await zapytaj("/nie-ma.js");
@@ -276,10 +280,10 @@ function wyslij({ port: naPorcie, sciezka = "/zgloszenie/", metoda = "POST", nag
 }
 
 const ZGLOSZENIE = { "Content-Type": "application/zip", "X-Numer": "K7M3-Q9TX" };
-const adres = (lokalna) => ({ ...ZGLOSZENIE, "X-Adres": `${lokalna}@example.com` });
+const adres = (lokalna) => ({ ...ZGLOSZENIE, "X-Adres": `${lokalna}@example.invalid` });
 
-async function zAtrapa(fn) {
-  const s = utworzSerwer(undefined, { zgloszenie: true });
+async function zAtrapa(fn, opcje = {}) {
+  const s = utworzSerwer(undefined, { zgloszenie: true, ...opcje });
   await new Promise((gotowe) => s.listen(0, "127.0.0.1", gotowe));
   try {
     return await fn(s.address().port);
@@ -308,7 +312,7 @@ test("atrapa zgłoszeń: każda odpowiedź z kodem, stanem i nagłówkami jak w 
       assert.equal(o.naglowki["cache-control"], "no-store", lokalna);
       assert.equal(o.naglowki["x-content-type-options"], "nosniff", lokalna);
       for (const [naglowek, wartosc] of Object.entries(NAGLOWKI_WYMAGANE)) assert.equal(o.naglowki[naglowek], wartosc, `${lokalna}: ${naglowek}`);
-      assert.equal(o.tresc.includes("example.com"), false, `${lokalna}: bez adresu w odpowiedzi`);
+      assert.equal(o.tresc.includes("example.invalid"), false, `${lokalna}: bez adresu w odpowiedzi`);
       if (kod === 429) assert.match(o.naglowki["retry-after"], /^[1-9]\d*$/, "Retry-After w sekundach");
       else assert.equal(o.naglowki["retry-after"], undefined, lokalna);
     }
@@ -321,6 +325,65 @@ test("atrapa zgłoszeń: brak odpowiedzi, połączenie wisi; serwer obsługuje d
     assert.deepEqual(wisi, { status: null, czas: true });
     assert.equal((await wyslij({ port: p, naglowki: adres("jan") })).status, 200);
     assert.equal((await zapytaj("/", "GET", p)).status, 200, "strona dalej podawana");
+  });
+});
+
+test("atrapa zgłoszeń: brak odpowiedzi kończy się zamknięciem połączenia po czasie dłuższym niż limit narzędzia", async () => {
+  // Domyślnie 150 s: dłużej niż limit czasu wysyłki w narzędziu (120 s), więc narzędzie samo
+  // przerywa czekanie, a połączenie nie wisi bez końca.
+  assert.equal(CZAS_BRAKU_ODPOWIEDZI_MS, 150 * 1000);
+  assert.ok(CZAS_BRAKU_ODPOWIEDZI_MS > CZAS_WYSYLKI_MS);
+  // W teście czas skrócony opcją serwera.
+  await zAtrapa(async (p) => {
+    const t0 = Date.now();
+    const wynik = await new Promise((ok) => {
+      const z = request({ host: "127.0.0.1", port: p, path: "/zgloszenie/", method: "POST", headers: adres("brak-odpowiedzi") }, (o) => ok({ status: o.statusCode }));
+      z.setTimeout(5000, () => { z.destroy(); ok({ czas: true }); });
+      z.on("error", (b) => ok({ blad: b.code ?? b.message }));
+      z.end(new Uint8Array([0x50, 0x4b, 5, 6]));
+    });
+    const czas = Date.now() - t0;
+    assert.ok(wynik.blad, `połączenie zamknięte bez odpowiedzi: ${JSON.stringify(wynik)}`);
+    assert.ok(czas >= 250 && czas < 4000, `po około 300 ms: ${czas} ms`);
+    assert.equal((await wyslij({ port: p, naglowki: adres("jan") })).status, 200, "serwer działa dalej");
+  }, { czasBrakuOdpowiedziMs: 300 });
+});
+
+test("atrapa zgłoszeń: ciało dużo większe niż limit nie jest czytane do końca", async () => {
+  // Klient wysyła do 64 MiB po 64 KiB, czekając na odbiór. Atrapa przestaje czytać po limicie
+  // z zapasem, odpowiada 413 i zamyka połączenie, więc klient nie wyśle wszystkiego.
+  await zAtrapa(async (p) => {
+    const CALOSC = 64 * 1024 * 1024;
+    const KAWALEK = new Uint8Array(64 * 1024);
+    const wynik = await new Promise((ok) => {
+      let wyslane = 0;
+      let koniec = false;
+      const zakoncz = (w) => {
+        if (koniec) return;
+        koniec = true;
+        ok({ ...w, wyslane });
+      };
+      const z = request({ host: "127.0.0.1", port: p, path: "/zgloszenie/", method: "POST", headers: adres("jan") }, (o) => {
+        const czesci = [];
+        o.on("data", (c) => czesci.push(c));
+        o.on("end", () => zakoncz({ status: o.statusCode, tresc: Buffer.concat(czesci).toString("utf8") }));
+        o.on("error", () => zakoncz({ status: o.statusCode }));
+      });
+      z.on("error", (b) => zakoncz({ blad: b.code ?? b.message }));
+      z.setTimeout(10000, () => { z.destroy(); zakoncz({ czas: true }); });
+      const pisz = () => {
+        while (!koniec && wyslane < CALOSC) {
+          wyslane += KAWALEK.length;
+          if (!z.write(KAWALEK)) return z.once("drain", pisz);
+        }
+        if (!koniec) z.end();
+      };
+      pisz();
+    });
+    assert.ok(!wynik.czas, `bez zawieszenia: ${JSON.stringify(wynik)}`);
+    assert.ok(wynik.wyslane < 64 * 1024 * 1024, `klient nie wysłał całości: ${wynik.wyslane} B`);
+    if (wynik.status !== undefined) assert.equal(wynik.status, 413, JSON.stringify(wynik));
+    assert.equal((await wyslij({ port: p, naglowki: adres("jan") })).status, 200, "serwer działa dalej");
   });
 });
 
