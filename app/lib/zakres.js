@@ -150,7 +150,7 @@ export function analizujZakres(pliki) {
     }
   }
   if (minP === Infinity) {
-    return { blokady, ppePorownane: punkty.porownane, uwagi, zakres: { pelne_miesiace: 0, ciag_miesiace: 0, klasyfikacja: "za_krotki" }, pelneDoby: new Set(), miesiace: [], miesiacePlikow: null };
+    return { blokady, ppePorownane: punkty.porownane, uwagi, zakres: { pelne_miesiace: 0, ciag_miesiace: 0, klasyfikacja: "za_krotki" }, pelneDoby: new Set(), miesiace: [], miesiacePelne: [], miesiacePlikow: null };
   }
   const doMiesiaca = (p) => {
     const { doba } = zPorzadku(p);
@@ -274,8 +274,25 @@ export function analizujZakres(pliki) {
     zakres,
     pelneDoby,
     miesiace,
+    // Pełne miesiące w kolejności kalendarza ({ rok, miesiac }); tylko na stronę, nie do plików.
+    miesiacePelne: pelneMiesiace.map(miesiacZNumeru),
     miesiacePlikow: { od: miesiacZNumeru(pierwszyMiesiac), do: miesiacZNumeru(ostatniMiesiac) },
   };
+}
+
+// Miesiące do wyboru miesiąca faktury: pełne miesiące ze wszystkich przyjętych plików, te same,
+// które liczy analiza zakresu (każda godzina miesiąca w obu seriach, w którymkolwiek pliku), bez
+// powtórzeń, od najnowszego. `odRoku` i `doRoku` ograniczają listę do lat, które strona pozwala
+// wybrać także w listach miesiąca i roku, żeby wybór z tej listy dało się zawsze tam przenieść.
+// Bez analizy (brak przyjętych plików) lista jest pusta.
+export function miesiaceFaktury(analiza, { odRoku = -Infinity, doRoku = Infinity } = {}) {
+  const wynik = new Map();
+  for (const { rok, miesiac } of analiza?.miesiacePelne ?? []) {
+    if (rok < odRoku || rok > doRoku) continue;
+    const wartosc = tekstMiesiaca({ rok, miesiac });
+    wynik.set(wartosc, { rok, miesiac, wartosc });
+  }
+  return [...wynik.values()].sort((a, b) => (a.wartosc < b.wartosc ? 1 : a.wartosc > b.wartosc ? -1 : 0));
 }
 
 // Czy okres od `od` do `do` (doby) mieści się w całości w pełnych dobach plików.

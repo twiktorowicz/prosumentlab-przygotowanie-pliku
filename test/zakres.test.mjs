@@ -7,7 +7,7 @@ import assert from "node:assert/strict";
 
 import { dekoduj } from "../app/lib/dekodowanie.js";
 import { czytajTauron } from "../app/lib/tauron.js";
-import { analizujZakres, okresWPelnychDobach } from "../app/lib/zakres.js";
+import { analizujZakres, okresWPelnychDobach, miesiaceFaktury } from "../app/lib/zakres.js";
 import { generuj, PPE_FIKCYJNE, PLATNICY_FIKCYJNI } from "../narzedzia/generator.mjs";
 
 function plik(opcje, wariant = "surowy") {
@@ -253,4 +253,56 @@ test("sumy miesięczne do podglądu bez podwójnego liczenia nakładających si�
   const suma = (seria) => w.filter((x) => x.seria === seria).reduce((s, x) => s + x.wh, 0);
   assert.deepEqual(pojedynczy.miesiace[0], { rok: 2025, miesiac: 1, poborWh: suma("pobor"), oddanieWh: suma("oddanie") });
   assert.deepEqual(pojedynczy.miesiacePlikow, { od: { rok: 2025, miesiac: 1 }, do: { rok: 2025, miesiac: 2 } });
+});
+
+// Lista miesięcy do wyboru miesiąca faktury: pełne miesiące ze wszystkich przyjętych plików,
+// policzone przez analizę zakresu, bez powtórzeń, od najnowszego.
+const wartosci = (lista) => lista.map((m) => m.wartosc);
+
+test("miesiące faktury: jeden plik, od najnowszego, z rokiem i miesiącem liczbowo", () => {
+  const lista = miesiaceFaktury(analiza({ od: "2025-01-01", do: "2025-03-31" }));
+  assert.deepEqual(lista, [
+    { rok: 2025, miesiac: 3, wartosc: "2025-03" },
+    { rok: 2025, miesiac: 2, wartosc: "2025-02" },
+    { rok: 2025, miesiac: 1, wartosc: "2025-01" },
+  ]);
+});
+
+test("miesiące faktury: kilka plików z przerwą, w kolejności wyboru innej niż kalendarz", () => {
+  const a = analiza({ od: "2025-05-01", do: "2025-06-30" }, { od: "2025-01-01", do: "2025-03-31" });
+  assert.deepEqual(wartosci(miesiaceFaktury(a)), ["2025-06", "2025-05", "2025-03", "2025-02", "2025-01"]);
+  // Te same miesiące co w liczbie pełnych miesięcy z analizy zakresu, a nie tylko z ciągu.
+  assert.equal(miesiaceFaktury(a).length, a.zakres.pelne_miesiace);
+  assert.equal(a.zakres.ciag_miesiace, 2);
+});
+
+test("miesiące faktury: pliki zachodzące na siebie dają każdy miesiąc raz", () => {
+  const a = analiza({ od: "2025-01-01", do: "2025-02-10" }, { od: "2025-02-01", do: "2025-03-31" }, { od: "2025-01-01", do: "2025-01-31" });
+  assert.deepEqual(wartosci(miesiaceFaktury(a)), ["2025-03", "2025-02", "2025-01"]);
+});
+
+test("miesiące faktury: niepełne miesiące na brzegach i miesiąc z luką nie trafiają na listę", () => {
+  assert.deepEqual(wartosci(miesiaceFaktury(analiza({ od: "2025-01-19", do: "2025-03-15" }))), ["2025-02"]);
+  const zLuka = analiza({ od: "2025-01-01", do: "2025-03-31", luka: { znacznik: "2025-02-10 10:00", godzin: 3 } });
+  assert.deepEqual(wartosci(miesiaceFaktury(zLuka)), ["2025-03", "2025-01"]);
+});
+
+test("miesiące faktury: plik bez pełnego miesiąca i brak plików dają pustą listę", () => {
+  assert.deepEqual(miesiaceFaktury(analiza({ od: "2025-06-06", do: "2025-06-07" })), []);
+  assert.deepEqual(miesiaceFaktury(null), []);
+  assert.deepEqual(miesiaceFaktury(undefined), []);
+});
+
+test("miesiące faktury: tylko lata z zakresu list wyboru, gdy zakres jest podany", () => {
+  const a = analiza({ od: "2021-11-01", do: "2022-02-28" });
+  assert.deepEqual(wartosci(miesiaceFaktury(a)), ["2022-02", "2022-01", "2021-12", "2021-11"]);
+  assert.deepEqual(wartosci(miesiaceFaktury(a, { odRoku: 2022 })), ["2022-02", "2022-01"]);
+  assert.deepEqual(wartosci(miesiaceFaktury(a, { doRoku: 2021 })), ["2021-12", "2021-11"]);
+  assert.deepEqual(miesiaceFaktury(a, { odRoku: 2023 }), []);
+});
+
+test("miesiące faktury: wynik to nowa lista, zmiana jej nie psuje analizy", () => {
+  const a = analiza({ od: "2025-01-01", do: "2025-02-28" });
+  miesiaceFaktury(a).length = 0;
+  assert.deepEqual(wartosci(miesiaceFaktury(a)), ["2025-02", "2025-01"]);
 });

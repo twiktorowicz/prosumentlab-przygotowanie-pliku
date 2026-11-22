@@ -364,7 +364,8 @@ test("cena dynamiczna: jedno pole bez stref, własna etykieta i podpowiedź", ()
 test("okres faktury: domyślnie miesiąc z dwóch list, pole wyboru odsłania dwie daty", () => {
   const miesiac = blokPola("okres_miesiac");
   assert.match(HTML, /<fieldset class="pole" data-pole="okres_miesiac">/);
-  assert.match(miesiac, /<legend><span class="nr" aria-hidden="true">2<\/span><span data-tekst="faktura_miesiac"><\/span><\/legend>\s*<div class="miesiac-rok" data-miesiac="okres_miesiac"><\/div>\s*<p class="blad" hidden><\/p>/);
+  // Lista miesięcy z pliku (schowana bez pełnego miesiąca), pod nią dwie listy i podpowiedź.
+  assert.match(miesiac, /<legend><span class="nr" aria-hidden="true">2<\/span><span id="faktura-miesiac-etykieta" data-tekst="faktura_miesiac"><\/span><\/legend>\s*<select id="p-okres-lista" aria-labelledby="faktura-miesiac-etykieta" aria-describedby="faktura-miesiac-pomoc" hidden><\/select>\s*<div class="miesiac-rok" data-miesiac="okres_miesiac"><\/div>\s*<p class="podpowiedz" id="faktura-miesiac-pomoc" data-tekst="faktura_miesiac_pomoc" hidden><\/p>\s*<p class="blad" hidden><\/p>/);
   // Dwie daty schowane na starcie, w jednym kontenerze, tuż za polem miesiąca.
   assert.match(HTML, /<\/fieldset>\s*<div class="pole-para" id="okres-daty" hidden>\s*<div class="pole" data-pole="okres_od">/);
   assert.match(HTML, /<label class="opcja"><input type="checkbox" id="p-okres-inny"><span data-tekst="faktura_inny_okres"><\/span><\/label>/);
@@ -378,10 +379,74 @@ test("okres faktury: domyślnie miesiąc z dwóch list, pole wyboru odsłania dw
   assert.match(war, /pokaz\(\$\("#okres-daty"\), innyOkres\)/);
   assert.match(war, /pokaz\(\$\('\[data-pole="okres_miesiac"\]'\), !innyOkres\)/);
   const zbierz = funkcja("zbierzFormularz");
-  assert.match(zbierz, /okres_miesiac: innyOkres \? "" : wartoscMiesiaca\(\$\('\[data-miesiac="okres_miesiac"\]'\), \{ niepelny: true \}\)/);
+  assert.match(zbierz, /okres_miesiac: innyOkres \? "" : wartoscMiesiacaFaktury\(\{ niepelny: true \}\)/);
   assert.match(zbierz, /okres_od: innyOkres \? wartoscPola\("okres_od"\) : ""/);
   assert.match(zbierz, /okres_do: innyOkres \? wartoscPola\("okres_do"\) : ""/);
   assert.doesNotMatch(war, /\.value\s*=/, "przełączanie nie czyści pól");
+});
+
+test("miesiąc faktury z listy pełnych miesięcy z plików: pusta pozycja, miesiące od najnowszego, „inny miesiąc”", () => {
+  // Lista budowana po każdej zmianie listy plików, z modułu zakresu (bez liczenia miesięcy tutaj).
+  assert.match(KOD, /import \{[^}]*\bmiesiaceFaktury\b[^}]*\} from "\.\/lib\/zakres\.js"/);
+  assert.match(funkcja("przeliczPliki"), /\n  zbudujListeMiesiecy\(\);$/, "na końcu przeliczenia plików");
+  assert.equal((KOD.match(/\bmiesiaceFaktury\(/g) ?? []).length, 1);
+  const budowa = funkcja("zbudujListeMiesiecy");
+  assert.match(budowa, /miesiaceZPliku = miesiaceFaktury\(przygotowane\.analiza, \{ odRoku: ROK_FAKTURY_OD, doRoku: rokBiezacy \}\);/, "lata jak w dwóch listach");
+  // Kolejność pozycji: pusta (bez wyboru z góry), miesiące, „inny miesiąc” na końcu.
+  const opcje = /lista\.replaceChildren\(([\s\S]*?)\n  \);/.exec(budowa);
+  assert.ok(opcje, "pozycje listy");
+  const wybierz = opcje[1].indexOf('el("option", { value: "", tekst: t("faktura_miesiac_wybierz") })');
+  const miesiace = opcje[1].indexOf("...miesiaceZPliku.map((m) => el(\"option\", { value: m.wartosc, tekst: miesiacSlownie(m.rok, m.miesiac) }))");
+  const inny = opcje[1].indexOf('el("option", { value: INNY_MIESIAC, tekst: t("faktura_miesiac_inny") })');
+  assert.ok(wybierz >= 0 && wybierz < miesiace && miesiace < inny, opcje[1]);
+  assert.match(MAIN, /\nconst INNY_MIESIAC = "inny";/);
+  // Miesiąc słownie z rokiem, bez „r.”, w tej samej postaci co w tabeli miesięcy podglądu
+  // („październik 2025”).
+  assert.match(funkcja("miesiacSlownie"), /return `\$\{TEKSTY\.miesiace_mianownik\[miesiac - 1\]\} \$\{rok\}`;/);
+  assert.match(funkcja("pokazPodglad"), /`\$\{TEKSTY\.miesiace_mianownik\[m\.miesiac - 1\]\} \$\{m\.rok\}`/);
+});
+
+test("miesiąc faktury: lista z podpowiedzią tylko przy pełnych miesiącach, dwie listy bez nich albo przy „inny miesiąc”", () => {
+  const war = funkcja("warunki");
+  assert.match(war, /const zPliku = miesiaceZPliku\.length > 0;/);
+  assert.match(war, /pokaz\(\$\("#p-okres-lista"\), zPliku\);/);
+  assert.match(war, /pokaz\(\$\("#faktura-miesiac-pomoc"\), zPliku\);/);
+  assert.match(war, /pokaz\(\$\('\[data-miesiac="okres_miesiac"\]'\), !zPliku \|\| wybranoInny\(\)\);/);
+  // Wartość: z listy, a przy „inny miesiąc” albo bez listy z dwóch list (także niepełny wybór,
+  // który moduł formularza zgłasza jako błąd).
+  const wartosc = funkcja("wartoscMiesiacaFaktury");
+  assert.match(wartosc, /if \(miesiaceZPliku\.length > 0 && !wybranoInny\(\)\) return \$\("#p-okres-lista"\)\.value;/);
+  assert.match(wartosc, /return wartoscMiesiaca\(\$\('\[data-miesiac="okres_miesiac"\]'\), \{ niepelny \}\);/);
+  assert.match(MAIN, /const wybranoInny = \(\) => \$\("#p-okres-lista"\)\.value === INNY_MIESIAC;/);
+});
+
+test("miesiąc faktury: zmiana listy plików nie gubi wyboru", () => {
+  const budowa = funkcja("zbudujListeMiesiecy");
+  // Miesiąc z listy, którego na nowej liście nie ma (albo listy już nie ma): te same miesiąc i rok
+  // w dwóch listach, na liście pozycja „inny miesiąc”.
+  assert.match(budowa, /if \(zListy && !naLiscie\) ustawDwieListy\(dwie, zListy\);/);
+  assert.match(budowa, /else if \(naLiscie\) lista\.value = zListy;/);
+  assert.match(budowa, /else lista\.value = poprzedni === "" \? "" : INNY_MIESIAC;/);
+  // Lista pojawia się po wyborze w dwóch listach: wybór zostaje jako „inny miesiąc”.
+  assert.match(budowa, /else if \(!byla\) lista\.value = wartoscMiesiaca\(dwie, \{ niepelny: true \}\) \? INNY_MIESIAC : "";/);
+  // Lista znika przy pustej pozycji: dwie listy też bez wyboru (schowane wartości nie obowiązywały).
+  assert.match(budowa, /if \(byla && !jest && poprzedni === ""\) ustawDwieListy\(dwie, ""\);/);
+  const ustaw = funkcja("ustawDwieListy");
+  assert.match(ustaw, /\$\('\[data-czesc="miesiac"\]', kontener\)\.value = m;/);
+  assert.match(ustaw, /\$\('\[data-czesc="rok"\]', kontener\)\.value = r;/);
+  // „Wstecz” i „Dalej” nie przebudowują listy.
+  assert.doesNotMatch(funkcja("dalej"), /zbudujListeMiesiecy/);
+  assert.doesNotMatch(funkcja("pokazKrok"), /zbudujListeMiesiecy|ustawDwieListy/);
+});
+
+test("miesiąc faktury: błąd przy „inny miesiąc” daje fokus liście miesiąca z dwóch list, przy wyborze z listy liście z pliku", () => {
+  const f = funkcja("poleDoFokusu");
+  assert.match(f, /if \(pole === "okres_miesiac" && miesiaceZPliku\.length > 0 && wybranoInny\(\)\) return \$\('\[data-miesiac="okres_miesiac"\] \[data-czesc="miesiac"\]'\);/);
+  assert.ok(f.indexOf('pole === "okres_miesiac"') < f.indexOf('$$("input, select", kontener)'), "przed ogólnym wyborem pola");
+  // Lista z pliku stoi w polu przed dwiema listami, więc ogólny wybór (pierwsze widoczne pole)
+  // trafia w nią, gdy wartość pochodzi z listy.
+  const miesiac = blokPola("okres_miesiac");
+  assert.ok(miesiac.indexOf('id="p-okres-lista"') < miesiac.indexOf('data-miesiac="okres_miesiac"'));
 });
 
 test("pojemność magazynu: uwaga pod polem przy „tak” i pustym polu, bez blokady zapisu", () => {
@@ -640,7 +705,7 @@ test("zmiana pola: Pstryk ustawia cenę dynamiczną, „inny okres” wpisuje da
   assert.match(MAIN, /main\.addEventListener\("change", zmianaPola\);/);
   // Daty tylko przy wybranym miesiącu i obu pustych polach; wpisanych dat nie nadpisuje.
   const daty = funkcja("wpiszDatyZMiesiaca");
-  assert.match(daty, /okresMiesiaca\(wartoscMiesiaca\(\$\('\[data-miesiac="okres_miesiac"\]'\)\)\)/);
+  assert.match(daty, /okresMiesiaca\(wartoscMiesiacaFaktury\(\)\)/);
   assert.match(daty, /if \(!okres \|\| od\.value \|\| doDnia\.value\) return;/);
   // Postać z modułu, kropka zamieniona na przecinek; błędna wartość zostaje.
   assert.match(funkcja("uzupelnijCene"), /const c = czytajCene\(pole\.value\);\n\s*if \(c\.ok\) pole\.value = c\.wartosc\.replace\("\.", ","\);/);

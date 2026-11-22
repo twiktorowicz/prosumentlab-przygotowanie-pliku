@@ -13,6 +13,7 @@ import { LIMIT_BAJTOW } from "./lib/dekodowanie.js";
 import { liczbaZCyfr, czytajCene, zeroPrzedPrzecinkiem } from "./lib/kwoty.js";
 import { ROK_MIN } from "./lib/kalendarz.js";
 import { okresMiesiaca, sprzedawcaZListy, STREFY_KOLEJNOSC } from "./lib/formularz.js";
+import { miesiaceFaktury } from "./lib/zakres.js";
 import { sprawdzAdres, wysylkaDostepna, zipZaDuzy, wynikWysylki, sekundyCzekania, CZAS_WYSYLKI_MS } from "./lib/wysylka.js";
 
 const t = (klucz, wstawki) => tekst(TEKSTY, klucz, wstawki);
@@ -211,6 +212,65 @@ function wartoscMiesiaca(kontener, { niepelny = false } = {}) {
   return "";
 }
 
+// Miesiąc faktury: gdy wczytane pliki mają pełne miesiące, jedna lista z pustą pozycją (bez
+// wyboru z góry), tymi miesiącami od najnowszego i pozycją „inny miesiąc”. Ta pozycja pokazuje pod
+// listą dwie listy (miesiąc i rok) i wtedy wartość pochodzi z nich. Bez pełnego miesiąca w plikach
+// listy nie ma, a wartość dają same dwie listy.
+const INNY_MIESIAC = "inny";
+let miesiaceZPliku = []; // pozycje listy z pliku ({ rok, miesiac, wartosc }), bez pustej i „inny”
+const wybranoInny = () => $("#p-okres-lista").value === INNY_MIESIAC;
+
+// „październik 2025”: miesiąc słownie i rok, jak w tabeli miesięcy podglądu.
+function miesiacSlownie(rok, miesiac) {
+  return `${TEKSTY.miesiace_mianownik[miesiac - 1]} ${rok}`;
+}
+
+// Wartość RRRR-MM miesiąca faktury z listy z pliku albo, przy „inny miesiąc” i bez listy, z dwóch
+// list (z `niepelny` jak w wartoscMiesiaca).
+function wartoscMiesiacaFaktury({ niepelny = false } = {}) {
+  if (miesiaceZPliku.length > 0 && !wybranoInny()) return $("#p-okres-lista").value;
+  return wartoscMiesiaca($('[data-miesiac="okres_miesiac"]'), { niepelny });
+}
+
+// Miesiąc i rok z wartości RRRR-MM w dwóch listach; pusta wartość czyści obie.
+function ustawDwieListy(kontener, wartosc) {
+  const [r, m] = wartosc ? wartosc.split("-") : ["", ""];
+  $('[data-czesc="miesiac"]', kontener).value = m;
+  $('[data-czesc="rok"]', kontener).value = r;
+}
+
+// Lista miesięcy z pliku po każdej zmianie listy plików. Lata jak w dwóch listach, więc każdy
+// miesiąc z listy da się w nich ustawić. Wybór zostaje:
+// - miesiąc z listy, który jest na nowej liście, zostaje wybrany;
+// - miesiąc z listy, którego na nowej liście nie ma (albo listy już nie ma), przechodzi do dwóch
+//   list z tą samą wartością, a na liście (jeśli jest) wybrana jest pozycja „inny miesiąc”;
+// - „inny miesiąc” zostaje, także gdy jego miesiąc jest teraz na liście (bez przenoszenia po cichu);
+// - lista pojawia się po wyborze w dwóch listach (także niepełnym): wybór zostaje jako „inny miesiąc”;
+// - lista znika przy pustej pozycji: dwie listy też są puste, bo schowane w nich wartości nie
+//   obowiązywały, a klient nie wybrał miesiąca.
+function zbudujListeMiesiecy() {
+  const lista = $("#p-okres-lista");
+  const dwie = $('[data-miesiac="okres_miesiac"]');
+  const byla = miesiaceZPliku.length > 0;
+  const poprzedni = byla ? lista.value : "";
+  const zListy = poprzedni !== INNY_MIESIAC ? poprzedni : "";
+  const rokBiezacy = liczbaZCyfr(dzisiaj().slice(0, 4));
+  miesiaceZPliku = miesiaceFaktury(przygotowane.analiza, { odRoku: ROK_FAKTURY_OD, doRoku: rokBiezacy });
+  const jest = miesiaceZPliku.length > 0;
+  const naLiscie = miesiaceZPliku.some((m) => m.wartosc === zListy);
+  if (zListy && !naLiscie) ustawDwieListy(dwie, zListy);
+  if (byla && !jest && poprzedni === "") ustawDwieListy(dwie, "");
+  lista.replaceChildren(
+    el("option", { value: "", tekst: t("faktura_miesiac_wybierz") }),
+    ...miesiaceZPliku.map((m) => el("option", { value: m.wartosc, tekst: miesiacSlownie(m.rok, m.miesiac) })),
+    el("option", { value: INNY_MIESIAC, tekst: t("faktura_miesiac_inny") }),
+  );
+  if (!jest) lista.value = "";
+  else if (!byla) lista.value = wartoscMiesiaca(dwie, { niepelny: true }) ? INNY_MIESIAC : "";
+  else if (naLiscie) lista.value = zListy;
+  else lista.value = poprzedni === "" ? "" : INNY_MIESIAC;
+}
+
 const STREFY = { g11: 1, g12: 2, g12w: 2, g13: 3 };
 let strefInnej = 1;
 const wartosciCen = { jedna: "", strefy: [] };
@@ -321,6 +381,12 @@ function warunki() {
   const innyOkres = $("#p-okres-inny").checked;
   pokaz($("#okres-daty"), innyOkres);
   pokaz($('[data-pole="okres_miesiac"]'), !innyOkres);
+  // Lista miesięcy z pliku i jej podpowiedź tylko przy pełnych miesiącach w plikach; dwie listy
+  // bez nich albo po wyborze „inny miesiąc”.
+  const zPliku = miesiaceZPliku.length > 0;
+  pokaz($("#p-okres-lista"), zPliku);
+  pokaz($("#faktura-miesiac-pomoc"), zPliku);
+  pokaz($('[data-miesiac="okres_miesiac"]'), !zPliku || wybranoInny());
   for (const z of $$("[data-zmiana]")) pokaz($(".zmiana-szczegoly", z), $('input[type="checkbox"]', z).checked);
 }
 
@@ -333,7 +399,7 @@ function zbierzFormularz() {
     sprzedawca_nazwa: wartoscPola("sprzedawca_nazwa"),
     taryfa,
     taryfa_nazwa: wartoscPola("taryfa_nazwa"),
-    okres_miesiac: innyOkres ? "" : wartoscMiesiaca($('[data-miesiac="okres_miesiac"]'), { niepelny: true }),
+    okres_miesiac: innyOkres ? "" : wartoscMiesiacaFaktury({ niepelny: true }),
     okres_od: innyOkres ? wartoscPola("okres_od") : "",
     okres_do: innyOkres ? wartoscPola("okres_do") : "",
     rodzaj_faktury: $("#p-korekta").checked ? "korekta" : "rozliczeniowa",
@@ -400,6 +466,7 @@ function przeliczPliki() {
   }
   przygotowane = gotowe;
   wynikiPlikow = new Map(wybrane.map(({ i }, j) => [i, przygotowane.pliki[j]]));
+  zbudujListeMiesiecy();
 }
 
 function ustawBlokadeOdczytu() {
@@ -733,6 +800,9 @@ function poleDoFokusu({ pole, kontener }) {
     const cena = ceny.find((e) => !e.value.trim()) ?? ceny[0];
     if (cena) return cena;
   }
+  // Miesiąc faktury przy „inny miesiąc”: błąd dotyczy dwóch list (miesiąc bieżący albo tylko jedna
+  // część), a lista z pliku stoi w polu przed nimi i nie jest błędna.
+  if (pole === "okres_miesiac" && miesiaceZPliku.length > 0 && wybranoInny()) return $('[data-miesiac="okres_miesiac"] [data-czesc="miesiac"]');
   const strefa = /^cena_energii_netto_zl_kwh\[(\d+)\]$/.exec(pole);
   const czesc = /\.(nazwa|kwota_zl_mies)$/.exec(pole);
   const wskazane = strefa ? $(`#p-cena-${strefa[1]}`) : czesc ? $(`[data-czesc="${czesc[1] === "nazwa" ? "nazwa" : "kwota"}"]`, kontener) : null;
@@ -1121,7 +1191,7 @@ function przeliczPozniej(z) {
 function wpiszDatyZMiesiaca() {
   const od = $("#p-okres_od");
   const doDnia = $("#p-okres_do");
-  const okres = okresMiesiaca(wartoscMiesiaca($('[data-miesiac="okres_miesiac"]')));
+  const okres = okresMiesiaca(wartoscMiesiacaFaktury());
   if (!okres || od.value || doDnia.value) return;
   od.value = okres.od;
   doDnia.value = okres.do;

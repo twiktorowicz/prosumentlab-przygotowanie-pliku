@@ -243,6 +243,14 @@ test("kreator i wysyłka przez stronę w wersji 0.2.0: teksty zatwierdzone przez
   assert.equal(TEKSTY.pola_nazwy.moc_przed_kwp, "moc przed rozbudową");
 });
 
+test("miesiąc faktury z listy miesięcy z pliku w wersji 0.2.0: teksty zatwierdzone przez właściciela, słowo w słowo", () => {
+  assert.equal(TEKSTY.faktura_miesiac_wybierz, "wybierz miesiąc");
+  assert.equal(TEKSTY.faktura_miesiac_inny, "inny miesiąc");
+  assert.equal(TEKSTY.faktura_miesiac_pomoc, "Na liście są pełne miesiące z Twojego pliku. Dla faktury za jeden z nich porównamy nasze obliczenia z fakturą.");
+  // Legenda pola, która jest też etykietą listy, bez zmian.
+  assert.equal(TEKSTY.faktura_miesiac, "Miesiąc, za który jest faktura");
+});
+
 test("wersja 0.2.0: znikają teksty udostępniania, schowka, panelu z uwagą, dawnych tytułów kroków i nagłówków grup", () => {
   const ZNIKAJA = [
     "panel_uwaga", "droga_zapis_pokaz", "krok_zapis", "krok_zakres", "krok_instalacja", "krok_zgoda",

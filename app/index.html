@@ -87,8 +87,10 @@
       </div>
 
       <fieldset class="pole" data-pole="okres_miesiac">
-        <legend><span class="nr" aria-hidden="true">2</span><span data-tekst="faktura_miesiac"></span></legend>
+        <legend><span class="nr" aria-hidden="true">2</span><span id="faktura-miesiac-etykieta" data-tekst="faktura_miesiac"></span></legend>
+        <select id="p-okres-lista" aria-labelledby="faktura-miesiac-etykieta" aria-describedby="faktura-miesiac-pomoc" hidden></select>
         <div class="miesiac-rok" data-miesiac="okres_miesiac"></div>
+        <p class="podpowiedz" id="faktura-miesiac-pomoc" data-tekst="faktura_miesiac_pomoc" hidden></p>
         <p class="blad" hidden></p>
       </fieldset>
       <div class="pole-para" id="okres-daty" hidden>

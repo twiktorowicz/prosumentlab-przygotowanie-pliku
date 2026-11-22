@@ -23,8 +23,9 @@
 // plików, zmiany z wersji 0.1.4 i 0.1.5 w obu wariantach. Także w obu wariantach: odliczanie pod
 // przyciskiem wysyłki po 5 s bez odpowiedzi, znikanie komunikatu po nieudanej wysyłce przy
 // zmianie adresu i przy kolejnym kliknięciu, zero przed liczbą wpisaną od przecinka, zdanie
-// sprawdzenie_dalej na końcu kroku 5, uwaga o kolejności cen w strefach i fokus na polu ceny
-// przy błędzie ceny w taryfie „inna”.
+// sprawdzenie_dalej na końcu kroku 5, uwaga o kolejności cen w strefach, fokus na polu ceny
+// przy błędzie ceny w taryfie „inna” i miesiąc faktury z listy pełnych miesięcy z plików (wybór
+// z listy i z dwóch list, zmiana listy plików po wyborze, plik bez pełnego miesiąca).
 // Na końcu: karta ze stroną nie wysyła żadnego zapytania poza 127.0.0.1 i poza własne pliki oraz
 // POST pod /zgloszenie/, nie pisze w konsoli błędów i nie zostawia niczego w przeglądarce.
 //
@@ -138,6 +139,12 @@ async function proba() {
   const plikBezNumerow = plik("bez_numerow.csv", generuj({ od: "2026-02-01", do: "2026-02-28", ziarno: 5 }).bezNumerow);
   // Ten sam styczeń (to samo ziarno, te same wartości), ale drugi fikcyjny PPE i płatnik.
   const plikStyczenInnyPpe = plik("styczen_inny_ppe.csv", generuj({ od: "2026-01-01", do: "2026-01-31", ziarno: 5, ppe: PPE_FIKCYJNE[1], platnik: PLATNICY_FIKCYJNI[1] }).surowy);
+  // Dane do końca bieżącego miesiąca (z zegara komputera, jak w przeglądarce): ten miesiąc jest
+  // pełny w pliku, więc trafia na listę miesięcy faktury, a jego wybór to błąd pola.
+  const teraz = new Date();
+  const MIESIAC_BIEZACY = `${teraz.getFullYear()}-${String(teraz.getMonth() + 1).padStart(2, "0")}`;
+  const ostatniDzien = new Date(teraz.getFullYear(), teraz.getMonth() + 1, 0).getDate();
+  const plikBiezacy = plik("biezacy_miesiac.csv", generuj({ od: `${MIESIAC_BIEZACY}-01`, do: `${MIESIAC_BIEZACY}-${ostatniDzien}`, ziarno: 5 }).surowy);
   const plikMarzec = plik("marzec_0300.csv", generuj({
     od: "2025-03-30", do: "2025-03-30", ziarno: 5, obetnijKoniec: 22,
     podmien: ["oddanie", "pobor"].map((seria) => ({ znacznik: "2025-03-30 01:00", seria, pole: "znacznik", tekst: "2025-03-30 03:00" })),
@@ -397,11 +404,23 @@ async function proba() {
   sprawdz("puste pozycje list: „miesiąc” i „rok”", JSON.stringify(listy) === JSON.stringify(["miesiąc", "rok"]), JSON.stringify(listy));
   const [rokTeraz, miesiacTeraz] = await js("(() => { const d = new Date(); return [String(d.getFullYear()), String(d.getMonth() + 1).padStart(2, '0')]; })()");
 
-  // Wybór miesiąca faktury z list; zdarzenie change jak przy wyborze z listy.
-  const wybierzMiesiac = (m, r) => js(`(() => { const k = document.querySelector('[data-miesiac="okres_miesiac"]');
+  // Miesiąc faktury w dwóch listach (miesiąc i rok). Gdy pliki mają pełne miesiące, najpierw
+  // pozycja „inny miesiąc” na liście miesięcy z pliku, która te dwie listy pokazuje. Zdarzenie
+  // change jak przy wyborze z listy.
+  const wybierzMiesiac = (m, r) => js(`(() => { const l = document.querySelector('#p-okres-lista');
+    if (!l.hidden && l.value !== 'inny') { l.value = 'inny'; l.dispatchEvent(new Event("change", { bubbles: true })); }
+    const k = document.querySelector('[data-miesiac="okres_miesiac"]');
     k.querySelector('[data-czesc="miesiac"]').value = ${JSON.stringify(m)}; k.querySelector('[data-czesc="rok"]').value = ${JSON.stringify(r)};
     k.querySelector('select').dispatchEvent(new Event("change", { bubbles: true })); })()`);
+  // Wybór z listy miesięcy z pliku (wartość RRRR-MM, "" albo "inny").
+  const wybierzZListy = (wartosc) => wpisz("#p-okres-lista", wartosc);
   const wartosciMiesiaca = () => js("[...document.querySelectorAll('[data-miesiac=\"okres_miesiac\"] select')].map(s => s.value).join('/')");
+  const wartoscListy = () => js("document.querySelector('#p-okres-lista').value");
+  // Pole miesiąca faktury: lista z pliku, jej pozycje, podpowiedź i dwie listy.
+  const stanMiesiaca = () => js(`(() => { const widac = (e) => Boolean(e) && !e.hidden && e.getClientRects().length > 0;
+    const l = document.querySelector('#p-okres-lista'); const dwie = document.querySelector('[data-miesiac="okres_miesiac"]');
+    return { lista: widac(l), wartosc: l.value, pozycje: [...l.options].map(o => o.textContent), pomoc: widac(document.querySelector('#faktura-miesiac-pomoc')),
+      dwie: widac(dwie), wartosciDwoch: [...dwie.querySelectorAll('select')].map(s => s.value).join('/') }; })()`);
   const fakturyWPodgladzie = () => js("document.querySelector('#podglad details[data-plik=\"faktury.json\"] pre')?.textContent ?? ''");
 
   // 2. Przejście przez sześć kroków, wysyłka z każdą odpowiedzią atrapy i droga zapasowa. Ta sama
@@ -473,17 +492,29 @@ async function proba() {
     await js("document.querySelector('#krok-faktura details.pomoc summary').click()");
     sprawdz(w("„Co to znaczy?” rozwija się kliknięciem"), (await js("document.querySelector('#krok-faktura details.pomoc').open")) && (await js("document.querySelector('#krok-faktura details.pomoc p').getBoundingClientRect().height")) > 0);
     await js("document.querySelector('#krok-faktura details.pomoc summary').click()");
+    // Pliki mają 13 pełnych miesięcy: jedna lista od najnowszego, bez wyboru z góry.
+    const listaZPliku = await stanMiesiaca();
+    const POZYCJE_13 = ["wybierz miesiąc", "styczeń 2026", "grudzień 2025", "listopad 2025", "październik 2025", "wrzesień 2025", "sierpień 2025", "lipiec 2025",
+      "czerwiec 2025", "maj 2025", "kwiecień 2025", "marzec 2025", "luty 2025", "styczeń 2025", "inny miesiąc"];
+    sprawdz(w("faktura: lista pełnych miesięcy z plików od najnowszego, pusta pozycja wybrana, na końcu „inny miesiąc”, podpowiedź, bez dwóch list"),
+      listaZPliku.lista && listaZPliku.wartosc === "" && JSON.stringify(listaZPliku.pozycje) === JSON.stringify(POZYCJE_13) && listaZPliku.pomoc && !listaZPliku.dwie,
+      JSON.stringify(listaZPliku));
+    sprawdz(w("faktura: podpowiedź faktura_miesiac_pomoc pod listą"),
+      (await tekstEl("#faktura-miesiac-pomoc")) === "Na liście są pełne miesiące z Twojego pliku. Dla faktury za jeden z nich porównamy nasze obliczenia z fakturą.");
+    await wybierzZListy("inny");
     const okres = await js(`(() => {
       const widac = (e) => Boolean(e) && !e.hidden && e.getClientRects().length > 0;
       const [m, r] = document.querySelectorAll('[data-miesiac="okres_miesiac"] select');
       return { legenda: document.querySelector('[data-pole="okres_miesiac"] legend').textContent, widoczny: widac(m) && widac(r), daty: widac(document.querySelector('#okres-daty')),
-        puste: m.value === '' && r.value === '', miesiace: [...m.options].map(o => o.textContent), lata: [...r.options].map(o => o.value) };
+        puste: m.value === '' && r.value === '', miesiace: [...m.options].map(o => o.textContent), lata: [...r.options].map(o => o.value),
+        lista: widac(document.querySelector('#p-okres-lista')), etykiety: [m.getAttribute('aria-label'), r.getAttribute('aria-label')] };
     })()`);
     const lataOczekiwane = [""];
     for (let r = Number(rokTeraz); r >= 2022; r--) lataOczekiwane.push(String(r));
-    sprawdz(w("faktura: domyślnie miesiąc z dwóch pustych list, bez pól dat, lata od bieżącego do 2022"),
-      okres.legenda === "2Miesiąc, za który jest faktura" && okres.widoczny && !okres.daty && okres.puste && okres.miesiace[1] === "styczeń" &&
-      JSON.stringify(okres.lata) === JSON.stringify(lataOczekiwane), JSON.stringify(okres));
+    sprawdz(w("faktura: „inny miesiąc” pokazuje pod listą dwie puste listy z etykietami „miesiąc” i „rok”, bez pól dat, lata od bieżącego do 2022"),
+      okres.legenda === "2Miesiąc, za który jest faktura" && okres.lista && okres.widoczny && !okres.daty && okres.puste && okres.miesiace[1] === "styczeń" &&
+      JSON.stringify(okres.lata) === JSON.stringify(lataOczekiwane) && JSON.stringify(okres.etykiety) === JSON.stringify(["miesiąc", "rok"]), JSON.stringify(okres));
+    await wybierzZListy("");
     sprawdz(w(`krok 2, ${px} px: bez poziomego przewijania`), await bezPrzewijaniaWPoziomie(px));
     await zrzut(`${wariant}-2-faktura`);
 
@@ -505,14 +536,16 @@ async function proba() {
     await dalej();
     st = await stanKreatora();
     const fokusMiesiaca = await js("document.activeElement === document.querySelector('[data-miesiac=\"okres_miesiac\"] [data-czesc=\"miesiac\"]')");
-    sprawdz(w("miesiąc bieżący i „Dalej”: krok 2 zostaje, kreator_popraw z nazwą pola, fokus na liście miesiąca"),
+    sprawdz(w("„inny miesiąc”, miesiąc bieżący i „Dalej”: krok 2 zostaje, kreator_popraw z nazwą pola, fokus na liście miesiąca z dwóch list"),
       st.krok === 2 && st.komunikat === "Popraw zaznaczone pole, aby przejść dalej: miesiąc faktury." && fokusMiesiaca, JSON.stringify(st));
     sprawdz(w("przy polu błąd faktura_miesiac_biezacy"), (await tekstEl('[data-pole="okres_miesiac"] > .blad')) === "Faktury za ten miesiąc jeszcze nie ma. Wybierz miesiąc, który już się skończył.");
     sprawdz(w("komunikat kreatora pod tytułem kroku"), await js("document.querySelector('#krok-faktura h1').nextElementSibling.classList.contains('kreator-komunikat')"));
     await zrzut(`${wariant}-2a-faktura-blad`);
-    await wybierzMiesiac("01", "2026");
+    await wybierzZListy("2026-01");
     await czekaj(300);
-    sprawdz(w("po poprawie pola komunikat kreatora znika"), (await stanKreatora()).komunikat === false);
+    sprawdz(w("po wyborze z listy komunikat kreatora znika, dwie listy schowane"), (await stanKreatora()).komunikat === false && !(await stanMiesiaca()).dwie);
+    sprawdz(w("styczeń 2026 z listy: okres w faktury.json od 2026-01-01 do 2026-01-31, bez uwagi o okresie spoza danych"),
+      (await fakturyWPodgladzie()).includes('"okres_od": "2026-01-01",\n    "okres_do": "2026-01-31",') && !(await widoczny("#faktura-poza-zakresem")), await fakturyWPodgladzie());
     await js(`(() => {
       document.querySelector('input[name="system_rozliczenia"][value="net_billing_rce"]').click();
       document.querySelector('input[name="sprzedawca"][value="tauron_sprzedaz"]').click();
@@ -605,7 +638,7 @@ async function proba() {
     const wartosci2 = await js("[document.querySelector('input[name=\"sprzedawca\"]:checked')?.value, document.querySelector('input[name=\"system_rozliczenia\"]:checked')?.value]");
     sprawdz(w("„Wstecz” niczego nie kasuje: wartości w krokach 4, 3 i 2 zostają"),
       JSON.stringify(wartosci4) === JSON.stringify(["7,2", "3,7", true]) && JSON.stringify(wartosci3) === JSON.stringify(["0,60000", "0,70000", "0,40000", "12,34000"]) &&
-      JSON.stringify(wartosci2) === JSON.stringify(["tauron_sprzedaz", "net_billing_rce"]) && (await wartosciMiesiaca()) === "01/2026",
+      JSON.stringify(wartosci2) === JSON.stringify(["tauron_sprzedaz", "net_billing_rce"]) && (await wartoscListy()) === "2026-01",
       JSON.stringify([wartosci4, wartosci3, wartosci2]));
     sprawdz(w("„Wstecz” do kroku 1: pliki zostają"), (await naKrok(1)) && (await js("document.querySelectorAll('.plik').length")) === 3);
     sprawdz(w("z kroku 1 do kroku 5 bez zatrzymania"), await naKrok(5));
@@ -1028,7 +1061,7 @@ async function proba() {
     klik('input[name="magazyn"][value="tak"]');
     wpisz('#p-magazyn_pojemnosc_kwh', '10');
   })()`);
-  await wybierzMiesiac("01", "2026");
+  await wybierzZListy("2026-01");
   await czekaj(600);
   sprawdz("formularz: komplet pól, zapis możliwy", (await zapisMozliwy()) && (await js("document.querySelector('#faktura-brak').hidden")));
   await wpisz('[data-miesiac="magazyn_od"] [data-czesc="miesiac"]', "04");
@@ -1056,7 +1089,7 @@ async function proba() {
   await klik('input[name="system_rozliczenia"][value="opusty"]');
   let podgladTeraz = await fakturyWPodgladzie();
   sprawdz("opusty: pozostałe pola faktury schowane, tekst o opustach widoczny w kroku 2",
-    !(await widoczny("#faktura-pola")) && !(await widoczny('[data-miesiac="okres_miesiac"] select')) && (await tekstEl('[data-pole="system_rozliczenia"] .uwaga')).startsWith("Raportu dla systemu opustów jeszcze nie mamy"));
+    !(await widoczny("#faktura-pola")) && !(await widoczny("#p-okres-lista")) && !(await widoczny('[data-miesiac="okres_miesiac"] select')) && (await tekstEl('[data-pole="system_rozliczenia"] .uwaga')).startsWith("Raportu dla systemu opustów jeszcze nie mamy"));
   sprawdz("opusty: w podglądzie faktury.json tylko operator i system, bez wcześniej wpisanych pól",
     podgladTeraz.includes('"operator_dystrybucyjny": "tauron_dystrybucja",\n    "system_rozliczenia": "opusty"\n  }') &&
     !podgladTeraz.includes('"sprzedawca"') && !podgladTeraz.includes('"oplata_mocowa_zl_mies"') && !podgladTeraz.includes("2026-01-01"), podgladTeraz);
@@ -1068,7 +1101,7 @@ async function proba() {
   await klik('input[name="system_rozliczenia"][value="net_billing_rce"]');
   podgladTeraz = await fakturyWPodgladzie();
   sprawdz("po powrocie z opustów wpisane wartości wracają na stronę i do podglądu",
-    (await widoczny('[data-miesiac="okres_miesiac"] select')) && (await wartosciMiesiaca()) === "01/2026" &&
+    (await widoczny("#p-okres-lista")) && (await wartoscListy()) === "2026-01" &&
     podgladTeraz.includes('"okres_od": "2026-01-01"') && podgladTeraz.includes('"sprzedawca": "tauron_sprzedaz"') && podgladTeraz.includes('"oplata_mocowa_zl_mies": "12.34"'));
 
   await naKrok(3);
@@ -1095,16 +1128,21 @@ async function proba() {
   const bladMiesiaca = () => tekstEl('[data-pole="okres_miesiac"] > .blad');
   await wybierzMiesiac("02", "");
   await czekaj(300);
-  sprawdz("sam miesiąc bez roku: instalacja_miesiac_niepelny i blokada zapisu",
+  sprawdz("„inny miesiąc”, sam miesiąc bez roku: instalacja_miesiac_niepelny i blokada zapisu",
     (await bladMiesiaca()) === "Wybierz miesiąc i rok albo zostaw oba pola puste." && !(await zapisMozliwy()) &&
     (await tekstEl("#zapis-powod")) === "Zanim zapiszesz plik ZIP, popraw albo wyczyść te pola: miesiąc faktury.");
+  await dalej();
+  sprawdz("„inny miesiąc”, sam miesiąc bez roku i „Dalej”: krok 2 zostaje, fokus na liście miesiąca z dwóch list",
+    (await krok()) === 2 && (await stanKreatora()).komunikat === "Popraw zaznaczone pole, aby przejść dalej: miesiąc faktury." &&
+    (await js("document.activeElement === document.querySelector('[data-miesiac=\"okres_miesiac\"] [data-czesc=\"miesiac\"]')")));
   await wybierzMiesiac("02", "2024");
   await czekaj(300);
-  sprawdz("luty 2024: okres do 2024-02-29, bez błędu", (await fakturyWPodgladzie()).includes('"okres_od": "2024-02-01",\n    "okres_do": "2024-02-29",') && (await bladMiesiaca()) === "");
+  sprawdz("„inny miesiąc”, luty 2024: okres do 2024-02-29, bez błędu, uwaga o okresie spoza danych z plików",
+    (await fakturyWPodgladzie()).includes('"okres_od": "2024-02-01",\n    "okres_do": "2024-02-29",') && (await bladMiesiaca()) === "" && (await widoczny("#faktura-poza-zakresem")));
   await wybierzMiesiac("01", "2026");
   await czekaj(300);
   await klik("#p-okres-inny");
-  sprawdz("„inny okres” po styczniu 2026: daty 2026-01-01 i 2026-01-31 zamiast list, okres w faktury.json ten sam",
+  sprawdz("„inny okres” po styczniu 2026 z dwóch list: daty 2026-01-01 i 2026-01-31 zamiast list, okres w faktury.json ten sam",
     (await widoczny("#p-okres_od")) && (await widoczny("#p-okres_do")) && !(await widoczny('[data-pole="okres_miesiac"]')) &&
     (await js("document.querySelector('#p-okres_od').value + '/' + document.querySelector('#p-okres_do').value")) === "2026-01-01/2026-01-31" &&
     (await fakturyWPodgladzie()).includes('"okres_od": "2026-01-01",\n    "okres_do": "2026-01-31",'));
@@ -1121,7 +1159,8 @@ async function proba() {
   sprawdz("okres dłuższy niż 62 dni: uwaga, zapis możliwy", (await widoczny("#faktura-okres-dlugi")) && (await zapisMozliwy()));
   await klik("#p-okres-inny");
   sprawdz("odznaczenie „inny okres” wraca do wybranego miesiąca, bez uwagi o długim okresie",
-    (await widoczny('[data-pole="okres_miesiac"]')) && !(await widoczny("#okres-daty")) && (await wartosciMiesiaca()) === "01/2026" && !(await widoczny("#faktura-okres-dlugi")));
+    (await widoczny('[data-pole="okres_miesiac"]')) && !(await widoczny("#okres-daty")) && (await wartoscListy()) === "inny" && (await wartosciMiesiaca()) === "01/2026" &&
+    !(await widoczny("#faktura-okres-dlugi")));
   await klik("#p-okres-inny");
   sprawdz("ponowne zaznaczenie: wpisane daty zostały", (await js("document.querySelector('#p-okres_od').value + '/' + document.querySelector('#p-okres_do').value")) === "2025-10-01/2026-01-31");
   await klik("#p-okres-inny");
@@ -1251,12 +1290,13 @@ async function proba() {
     await klik('input[name="sprzedawca"][value="tauron_sprzedaz"]');
     sprawdz(w("inny sprzedawca z listy: uwaga znika"), (await naLiscie()) === false);
 
-    // „Inny okres” wpisuje daty z wybranego miesiąca; wpisanych dat nie nadpisuje.
-    await wybierzMiesiac("01", "2026");
+    // „Inny okres” wpisuje daty z wybranego miesiąca (z listy z pliku albo z dwóch list); wpisanych
+    // dat nie nadpisuje.
+    await wybierzZListy("2026-01");
     await czekaj(300);
     await klik("#p-okres-inny");
     const daty = () => js("document.querySelector('#p-okres_od').value + '/' + document.querySelector('#p-okres_do').value");
-    sprawdz(w("„inny okres” po styczniu 2026: daty 2026-01-01 i 2026-01-31"), (await daty()) === "2026-01-01/2026-01-31", await daty());
+    sprawdz(w("„inny okres” po styczniu 2026 z listy: daty 2026-01-01 i 2026-01-31"), (await daty()) === "2026-01-01/2026-01-31", await daty());
     await wpisz("#p-okres_od", "2026-01-05");
     await klik("#p-okres-inny");
     await wybierzMiesiac("03", "2025");
@@ -1264,7 +1304,7 @@ async function proba() {
     await klik("#p-okres-inny");
     sprawdz(w("ponowne zaznaczenie po zmianie miesiąca: wpisane daty zostają"), (await daty()) === "2026-01-05/2026-01-31", await daty());
     await klik("#p-okres-inny");
-    await wybierzMiesiac("01", "2026");
+    await wybierzZListy("2026-01");
     await czekaj(300);
 
     // Opusty chowają pola w krokach 2 i 3.
@@ -1517,8 +1557,125 @@ async function proba() {
       (await widoczny("#faktura-cena-nietypowa")) && (await zapisMozliwy()) && (await tekstEl("#podglad")).includes('"cena_energii_netto_zl_kwh": "2.10"'));
     sprawdz(w(`${px} px: bez poziomego przewijania`), await bezPrzewijaniaWPoziomie(px));
   };
+
+  // 6e. Miesiąc faktury z listy pełnych miesięcy z plików, w obu wariantach: plik bez pełnego
+  // miesiąca, wybór z listy i z dwóch list w faktury.json, uwaga o okresie spoza danych, zmiana
+  // listy plików po wyborze, „Wstecz” i „Dalej”, kolejność klawisza Tab i fokus przy błędzie.
+  const probaMiesiacaFaktury = async (wariant, px) => {
+    const w = (opis) => `${wariant}: ${opis}`;
+    const okresWPliku = async (od, doDnia) => (await fakturyWPodgladzie()).includes(`"okres_od": "${od}",\n    "okres_do": "${doDnia}",`);
+    const POZA = "Ta faktura dotyczy okresu, którego nie ma w całości w plikach. Ceny i opłaty z niej wykorzystamy, ale nie porównamy z nią obliczeń.";
+    const uwagaPoza = async () => (await widoczny("#faktura-poza-zakresem")) && (await tekstEl("#faktura-poza-zakresem")) === POZA;
+    const usunPlik = async (i) => {
+      await js(`document.querySelectorAll('.plik')[${i}].querySelector('button').click()`);
+      await czekaj(800);
+    };
+    // Klawisz Tab z klawiatury (zdarzenie przeglądarki, nie skrypt strony); zwraca, gdzie jest fokus.
+    const tab = async () => {
+      await strona("Input.dispatchKeyEvent", { type: "rawKeyDown", key: "Tab", code: "Tab", windowsVirtualKeyCode: 9 });
+      await strona("Input.dispatchKeyEvent", { type: "keyUp", key: "Tab", code: "Tab", windowsVirtualKeyCode: 9 });
+      await czekaj(100);
+      return js("document.activeElement?.id || document.activeElement?.dataset.czesc || document.activeElement?.tagName || ''");
+    };
+
+    // Plik bez pełnego miesiąca: dwie listy jak dotąd, bez listy z pliku i bez podpowiedzi.
+    await otworz();
+    await ustawPliki([plikiDni[0]]);
+    await naKrok(2);
+    let s = await stanMiesiaca();
+    sprawdz(w("plik bez pełnego miesiąca: dwie puste listy, bez listy z pliku i bez podpowiedzi"), !s.lista && !s.pomoc && s.dwie && s.wartosciDwoch === "/", JSON.stringify(s));
+    await zrzut(`${wariant}-2b-miesiac-bez-pelnych`);
+    await wybierzMiesiac("05", "2025");
+    await czekaj(300);
+    sprawdz(w("bez listy z pliku: maj 2025 z dwóch list w faktury.json, uwaga o okresie spoza danych"), (await okresWPliku("2025-05-01", "2025-05-31")) && (await uwagaPoza()), await fakturyWPodgladzie());
+
+    // Plik z pełnym miesiącem dodany po wyborze w dwóch listach: wybór zostaje jako „inny miesiąc”.
+    await naKrok(1);
+    await ustawPliki([plikStyczen]);
+    await naKrok(2);
+    s = await stanMiesiaca();
+    sprawdz(w("plik z pełnym miesiącem dodany po wyborze w dwóch listach: lista z pliku i podpowiedź, wybór zostaje jako „inny miesiąc”"),
+      s.lista && s.pomoc && s.wartosc === "inny" && s.dwie && s.wartosciDwoch === "05/2025" &&
+      JSON.stringify(s.pozycje) === JSON.stringify(["wybierz miesiąc", "styczeń 2026", "inny miesiąc"]) && (await okresWPliku("2025-05-01", "2025-05-31")), JSON.stringify(s));
+    await zrzut(`${wariant}-2c-miesiac-inny`);
+
+    // Kolejność klawisza Tab: z listy do miesiąca i roku przy „inny miesiąc”, a przy miesiącu
+    // z listy od razu do pola wyboru „inny okres”.
+    await js("document.querySelector('#p-okres-lista').focus()");
+    const tabInny = [await tab(), await tab()];
+    sprawdz(w("Tab przy „inny miesiąc”: lista z pliku, potem miesiąc i rok"), JSON.stringify(tabInny) === JSON.stringify(["miesiac", "rok"]), JSON.stringify(tabInny));
+    await wybierzZListy("2026-01");
+    await czekaj(300);
+    s = await stanMiesiaca();
+    sprawdz(w("styczeń 2026 z listy: dwie listy schowane, okres w faktury.json, bez uwagi o okresie spoza danych"),
+      !s.dwie && (await okresWPliku("2026-01-01", "2026-01-31")) && !(await widoczny("#faktura-poza-zakresem")), JSON.stringify(s));
+    const aria = await js(`(() => { const l = document.querySelector('#p-okres-lista');
+      return [document.getElementById(l.getAttribute('aria-labelledby'))?.textContent, document.getElementById(l.getAttribute('aria-describedby'))?.textContent?.slice(0, 20)]; })()`);
+    sprawdz(w("lista z pliku: etykieta z legendy pola, opis z podpowiedzi"), JSON.stringify(aria) === JSON.stringify(["Miesiąc, za który jest faktura", "Na liście są pełne m"]), JSON.stringify(aria));
+    await js("document.querySelector('#p-okres-lista').focus()");
+    const tabZListy = await tab();
+    sprawdz(w("Tab przy miesiącu z listy: z listy do pola wyboru „inny okres”"), tabZListy === "p-okres-inny", tabZListy);
+    await zrzut(`${wariant}-2d-miesiac-z-listy`);
+
+    // Usunięcie pliku po wyborze z listy: listy już nie ma, ten sam miesiąc w dwóch listach.
+    await naKrok(1);
+    await usunPlik(1);
+    await naKrok(2);
+    s = await stanMiesiaca();
+    sprawdz(w("usunięty plik po wyborze z listy, bez pełnych miesięcy: dwie listy ze styczniem 2026, okres w faktury.json bez zmian"),
+      !s.lista && !s.pomoc && s.dwie && s.wartosciDwoch === "01/2026" && (await okresWPliku("2026-01-01", "2026-01-31")), JSON.stringify(s));
+
+    // Rok i styczeń: miesiąc z listy, usunięcie pliku z tym miesiącem i dodanie go z powrotem.
+    await otworz();
+    await ustawPliki([plikRok, plikStyczen]);
+    await naKrok(2);
+    await wybierzZListy("2025-10");
+    await czekaj(300);
+    sprawdz(w("październik 2025 z listy: okres w faktury.json, bez uwagi o okresie spoza danych"),
+      (await okresWPliku("2025-10-01", "2025-10-31")) && !(await widoczny("#faktura-poza-zakresem")));
+    await naKrok(1);
+    await usunPlik(0);
+    await naKrok(2);
+    s = await stanMiesiaca();
+    sprawdz(w("usunięty plik z wybranym miesiącem: „inny miesiąc” z październikiem 2025 w dwóch listach, okres bez zmian, dotychczasowa uwaga o okresie spoza danych"),
+      s.lista && s.wartosc === "inny" && s.dwie && s.wartosciDwoch === "10/2025" && JSON.stringify(s.pozycje) === JSON.stringify(["wybierz miesiąc", "styczeń 2026", "inny miesiąc"]) &&
+      (await okresWPliku("2025-10-01", "2025-10-31")) && (await uwagaPoza()), JSON.stringify(s));
+    await naKrok(1);
+    await ustawPliki([plikRok]);
+    await naKrok(2);
+    s = await stanMiesiaca();
+    sprawdz(w("plik dodany z powrotem: „inny miesiąc” zostaje z październikiem 2025, bez przenoszenia na listę, uwaga znika"),
+      s.wartosc === "inny" && s.wartosciDwoch === "10/2025" && s.pozycje.length === 15 && (await okresWPliku("2025-10-01", "2025-10-31")) && !(await widoczny("#faktura-poza-zakresem")), JSON.stringify(s));
+    await wybierzMiesiac("03", "2024");
+    await czekaj(300);
+    sprawdz(w("„inny miesiąc”, marzec 2024 w dwóch listach: okres w faktury.json, uwaga o okresie spoza danych"), (await okresWPliku("2024-03-01", "2024-03-31")) && (await uwagaPoza()));
+    await wybierzZListy("2025-06");
+    await czekaj(300);
+    await naKrok(4);
+    await naKrok(1);
+    await naKrok(2);
+    sprawdz(w("„Dalej” i „Wstecz” nie zmieniają wyboru z listy"), (await wartoscListy()) === "2025-06" && (await okresWPliku("2025-06-01", "2025-06-30")) && !(await stanMiesiaca()).dwie);
+    await wybierzZListy("");
+    await czekaj(300);
+    sprawdz(w("pusta pozycja: bez okresu w faktury.json"), !(await fakturyWPodgladzie()).includes('"okres_od"'), await fakturyWPodgladzie());
+
+    // Plik z danymi do końca bieżącego miesiąca: ten miesiąc jest na liście, a jego wybór to błąd
+    // pola; „Dalej” zatrzymuje się z fokusem na liście z pliku.
+    await otworz();
+    await ustawPliki([plikBiezacy]);
+    await naKrok(2);
+    await wybierzZListy(MIESIAC_BIEZACY);
+    await czekaj(300);
+    await dalej();
+    const st = await stanKreatora();
+    sprawdz(w("miesiąc bieżący z listy i „Dalej”: krok 2 zostaje, faktura_miesiac_biezacy, fokus na liście z pliku"),
+      st.krok === 2 && st.komunikat === "Popraw zaznaczone pole, aby przejść dalej: miesiąc faktury." && st.fokus === "p-okres-lista" &&
+      (await tekstEl('[data-pole="okres_miesiac"] > .blad')) === "Faktury za ten miesiąc jeszcze nie ma. Wybierz miesiąc, który już się skończył.", JSON.stringify(st));
+    sprawdz(w(`miesiąc faktury, ${px} px: bez poziomego przewijania`), await bezPrzewijaniaWPoziomie(px));
+  };
   await proba014("komputer", 1280);
   await proba015("komputer", 1280);
+  await probaMiesiacaFaktury("komputer", 1280);
 
   // 7. Telefon: 390 px i ekran dotykowy z emulacji DevTools (pointer: coarse).
   await strona("Emulation.setTouchEmulationEnabled", { enabled: true, maxTouchPoints: 5 });
@@ -1528,6 +1685,7 @@ async function proba() {
   await probaKreatora("telefon", 390);
   await proba014("telefon", 390);
   await proba015("telefon", 390);
+  await probaMiesiacaFaktury("telefon", 390);
   await strona("Emulation.setTouchEmulationEnabled", { enabled: false });
   await szerokosc(1280);
   biezacaSzerokosc = 1280;
