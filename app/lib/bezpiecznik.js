@@ -28,7 +28,8 @@ const REGULY = [
 // jednostka UTF-16 poza odstępem, „@” i średnikiem. To ten sam warunek co wzorzec
 // /[^\s@;]+@[^\s@;]+\.[^\s@;]+/, ale wzorzec szukany od każdej pozycji cofał się po całym polu bez
 // „@” i czas rósł z kwadratem długości pola. Tu sprawdzenie zaczyna się tylko od „@”, a ciąg za
-// każdym „@” kończy się najpóźniej na następnym „@”, więc każdy znak jest czytany najwyżej dwa razy.
+// każdym „@” kończy się najpóźniej na następnym „@”, więc każdy znak jest czytany najwyżej dwa
+// razy.
 const ZNAK_ADRESU = /[^\s@;]/;
 function adresEmail(tekst) {
   for (let at = tekst.indexOf("@"); at >= 0; at = tekst.indexOf("@", at + 1)) {

@@ -2,7 +2,7 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { czytajFormularz as czytajFormularzZOpcjami, OBOWIAZKOWE_R, bladBudowyFormularza, okresMiesiaca, sprzedawcaZListy } from "../app/lib/formularz.js";
+import { czytajFormularz as czytajFormularzZOpcjami, OBOWIAZKOWE_R, STREFY_KOLEJNOSC, bladBudowyFormularza, okresMiesiaca, sprzedawcaZListy } from "../app/lib/formularz.js";
 
 // Strona i wiersz poleceń podają operatora z trybu (Tauron) i dzień z zegara urządzenia.
 const OPCJE = { operator: "tauron_dystrybucja", dzisiaj: "2026-11-20" };
@@ -272,7 +272,8 @@ test("instalacja: moc przed rozbudową tylko przy rozbudowie instalacji, format 
   for (const moc of [undefined, "", "  "]) {
     assert.deepEqual(zmiany([{ rodzaj: "rozbudowa_pv", miesiac: "2025-05", moc_przed_kwp: moc }]).instalacja.zmiany, [{ rodzaj: "rozbudowa_pv", miesiac: "2025-05" }], String(moc));
   }
-  // Przy innej zmianie moc przed nie ma znaczenia i nie trafia do pliku (pole jest tylko przy rozbudowie).
+  // Przy innej zmianie moc przed nie ma znaczenia i nie trafia do pliku (pole jest tylko przy
+  // rozbudowie).
   const inna = zmiany([{ rodzaj: "pompa_ciepla", miesiac: "2025-05", moc_przed_kwp: "3,1" }]);
   assert.deepEqual(inna.bledy, []);
   assert.deepEqual(inna.instalacja.zmiany, [{ rodzaj: "pompa_ciepla", miesiac: "2025-05" }]);
@@ -417,6 +418,76 @@ test("uwaga o długim okresie: więcej niż 62 dni, licząc oba końce", () => {
   const obie = czytajFormularz({ faktura: { ...FAKTURA, okres_od: "2025-01-01", okres_do: "2025-12-31", cena_energii_netto_zl_kwh: "0,10" } });
   assert.deepEqual(obie.uwagi, [{ kod: "FAKTURA_OKRES_DLUGI" }, { kod: "FAKTURA_CENA_NIETYPOWA" }]);
   assert.deepEqual(obie.bledy, []);
+});
+
+// Kolejność cen w strefach przy cenie stałej. G12 i G12w: pierwsza strefa (dzienna, szczytowa)
+// droższa niż druga. G13 (szczyt przedpołudniowy, szczyt popołudniowy, pozostałe godziny doby):
+// popołudniowy nie tańszy niż przedpołudniowy, pozostałe godziny nie droższe niż którykolwiek
+// szczyt. Równe ceny bez uwagi. Ceny zmyślone.
+const KOLEJNOSC = { kod: "FAKTURA_CENY_KOLEJNOSC" };
+const uwagiCen = (taryfa, cena, faktura = {}) => czytajFormularz({ faktura: { ...FAKTURA, taryfa, cena_energii_netto_zl_kwh: cena, ...faktura } }).uwagi;
+
+test("kolejność cen G13: popołudniowy tańszy niż przedpołudniowy albo pozostałe godziny droższe niż szczyt dają uwagę", () => {
+  for (const [ceny, opis] of [
+    [["0,70", "0,60", "0,40"], "popołudniowy tańszy niż przedpołudniowy"],
+    [["0,60", "0,70", "0,65"], "pozostałe droższe niż przedpołudniowy"],
+    [["0,60", "0,70", "0,75"], "pozostałe droższe niż oba szczyty"],
+    [["0,60", "0,70", "0,70"], "pozostałe równe popołudniowemu, ale droższe niż przedpołudniowy"],
+    [["0,40", "0,60", "0,70"], "kolejność odwrócona"],
+    [["0,600000", "0,599999", "0,40"], "różnica na szóstym miejscu po przecinku"],
+    [["1", "0,99", "0,5"], "cena bez przecinka i ceny z różną liczbą miejsc"],
+  ]) assert.deepEqual(uwagiCen("g13", ceny), [KOLEJNOSC], opis);
+  for (const [ceny, opis] of [
+    [["0,60", "0,70", "0,40"], "typowa kolejność"],
+    [["0,60", "0,60", "0,60"], "jedna cena we wszystkich strefach"],
+    [["0,60", "0,60", "0,40"], "oba szczyty równe"],
+    [["0,60", "0,70", "0,60"], "pozostałe równe przedpołudniowemu"],
+    [["0,6", "0,600000", "0,4"], "te same ceny zapisane z różną liczbą miejsc"],
+    [["0,60", "1", "0,599999"], "różnica na szóstym miejscu po przecinku, kolejność dobra"],
+  ]) assert.deepEqual(uwagiCen("g13", ceny), [], opis);
+});
+
+test("kolejność cen G12 i G12w: pierwsza strefa tańsza niż druga daje uwagę, równe ceny nie", () => {
+  for (const taryfa of ["g12", "g12w"]) {
+    assert.deepEqual(uwagiCen(taryfa, ["0,40", "0,70"]), [KOLEJNOSC], `${taryfa}: zamienione`);
+    assert.deepEqual(uwagiCen(taryfa, ["0,5", "0,500001"]), [KOLEJNOSC], `${taryfa}: różnica na szóstym miejscu`);
+    assert.deepEqual(uwagiCen(taryfa, ["0,70", "0,40"]), [], `${taryfa}: typowa kolejność`);
+    assert.deepEqual(uwagiCen(taryfa, ["0,50", "0,5"]), [], `${taryfa}: równe`);
+    assert.deepEqual(uwagiCen(taryfa, ["0,500001", "0,5"]), [], `${taryfa}: pierwsza droższa na szóstym miejscu`);
+  }
+});
+
+test("kolejność cen: uwaga bez błędu pola, ceny w danych bez zmian, obok uwagi o nietypowej cenie", () => {
+  const w = czytajFormularz({ faktura: { ...FAKTURA, taryfa: "g12", cena_energii_netto_zl_kwh: ["0,40", "0,70"] } });
+  assert.deepEqual(w.bledy, []);
+  assert.deepEqual(w.raport.cena_energii_netto_zl_kwh, ["0.40", "0.70"]);
+  assert.deepEqual(w.uwagi, [KOLEJNOSC]);
+  assert.deepEqual(uwagiCen("g12", ["0,10", "0,70"]), [{ kod: "FAKTURA_CENA_NIETYPOWA" }, KOLEJNOSC], "obie uwagi, kolejność stała");
+  const dlugi = uwagiCen("g12", ["0,40", "0,70"], { okres_od: "2025-01-01", okres_do: "2025-12-31" });
+  assert.deepEqual(dlugi, [{ kod: "FAKTURA_OKRES_DLUGI" }, KOLEJNOSC]);
+});
+
+test("kolejność cen: bez sprawdzenia przy taryfie „inna”, cenie dynamicznej, jednej cenie, błędnej cenie i opustach", () => {
+  assert.deepEqual(uwagiCen("inna", ["0,40", "0,70"], { taryfa_nazwa: "Taryfa X" }), [], "taryfa inna");
+  assert.deepEqual(uwagiCen("inna", ["0,40", "0,60", "0,70"], { taryfa_nazwa: "Taryfa X" }), [], "taryfa inna, trzy strefy");
+  assert.deepEqual(uwagiCen("g12", "0,40", { rodzaj_ceny: "dynamiczna" }), [], "cena dynamiczna");
+  assert.deepEqual(uwagiCen("g12", "0,40"), [], "jedna cena przy G12 (starszy plik formularza)");
+  assert.deepEqual(uwagiCen("g11", "0,40"), [], "G11");
+  // Nie wszystkie ceny poprawne: błąd pola, bez uwagi o kolejności.
+  const zla = czytajFormularz({ faktura: { ...FAKTURA, taryfa: "g12", cena_energii_netto_zl_kwh: ["0,40", "0,7x"] } });
+  assert.deepEqual(zla.bledy, [{ pole: "cena_energii_netto_zl_kwh[1]", kod: "faktura_cena_format" }]);
+  assert.deepEqual(zla.uwagi, []);
+  assert.deepEqual(uwagiCen("g12", ["0,40", "70"]), [], "druga cena w groszach: błąd, bez uwagi");
+  assert.deepEqual(uwagiCen("g13", ["0,40", "0,70"]), [], "zła liczba stref: błąd, bez uwagi");
+  assert.deepEqual(uwagiCen("g12", ["0,40", "0,70"], { system_rozliczenia: "opusty" }), [], "opusty: pola faktury pomijane");
+});
+
+test("kolejność cen: przy cenach w strefach bez wybranego rodzaju ceny sprawdzenie działa (ceny w strefach są tylko przy cenie stałej)", () => {
+  assert.deepEqual(uwagiCen("g12", ["0,40", "0,70"], { rodzaj_ceny: "" }), [KOLEJNOSC]);
+});
+
+test("kolejność cen: indeksy najdroższej i najtańszej strefy do tekstu na stronie", () => {
+  assert.deepEqual(STREFY_KOLEJNOSC, { g12: { najdrozsza: 0, najtansza: 1 }, g12w: { najdrozsza: 0, najtansza: 1 }, g13: { najdrozsza: 1, najtansza: 2 } });
 });
 
 test("plik formularza: klucze operatora i pierwszego oddania już nie istnieją", () => {

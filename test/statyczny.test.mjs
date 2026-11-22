@@ -10,11 +10,17 @@
 // location, open(, cookieStore, WebTransport, window.name, wysłanie formularza, kliknięcie
 // odnośnika zbudowanego w kodzie i dostęp do zakazanych nazw przez indeks ze sklejanego tekstu.
 // Istniejący, uzasadniony kod, który te reguły by złapały, jest wypisany z osobna w WYJATKI.
+// Trzecia część zamyka sposoby obejścia reguł nazwami: obiekt okna przez defaultView, klucze
+// obliczane w obiektach, klucze src, srcset i http-equiv w cudzysłowie oraz przypisanie obiektów
+// okna i przeglądarki albo pomocnika el() do innej nazwy. W app/ są tylko pliki o rozszerzeniach
+// z listy, a reguły dla skryptów obejmują każdy plik ze skryptem (.js, .mjs, .cjs).
+// Test jest strażą przed przypadkowym dopisaniem wysyłki, nie dowodem, że obejścia nie da się
+// napisać: reguły czytają tekst pliku, nie rozbierają kodu.
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync, readdirSync } from "node:fs";
-import { join, relative, sep } from "node:path";
+import { extname, join, relative, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const APP = fileURLToPath(new URL("../app/", import.meta.url));
@@ -31,13 +37,21 @@ function pliki(katalog = APP) {
 
 const wzgledna = (s) => relative(APP, s).split(sep).join("/");
 
-// Rodzaje plików w app/.
-const js = (p) => p.endsWith(".js");
-const html = (p) => p.endsWith(".html");
-const css = (p) => p.endsWith(".css");
-const svg = (p) => p.endsWith(".svg");
+// Rodzaje plików w app/. Plik ze skryptem to każdy plik, który przeglądarka może wykonać jako
+// moduł albo skrypt, także .mjs i .cjs, choć takich plików w app/ dziś nie ma.
+const js = (p) => /\.(?:js|mjs|cjs)$/i.test(p);
+const html = (p) => /\.html?$/i.test(p);
+const css = (p) => /\.css$/i.test(p);
+const svg = (p) => /\.svg$/i.test(p);
 
-// [opis, wzorzec, czy dotyczy pliku (ścieżka względna), przykład, który musi trafić, przykład, który nie może]
+// Rozszerzenia plików dozwolone w app/; poza nimi tylko plik sum kontrolnych SHA256SUMS w katalogu
+// głównym app/. Nowy rodzaj pliku (na przykład .mjs, .json, .wasm) wymaga zmiany tej listy
+// i reguł, które go obejmą.
+const ROZSZERZENIA = new Set([".css", ".html", ".js", ".svg"]);
+const plikDozwolony = (p) => p === "SHA256SUMS" || ROZSZERZENIA.has(extname(p));
+
+// [opis, wzorzec, czy dotyczy pliku (ścieżka względna), przykład, który musi trafić,
+//  przykład, który nie może]
 const REGULY = [
   // fetch w app/main.js sprawdza osobny test: dokładnie jedno wywołanie z adresem "/zgloszenie/".
   ["fetch poza main.js", /\bfetch\b/, (p) => p !== "main.js", "fetch(url)", "prefetchowanie"],
@@ -91,10 +105,12 @@ const REGULY = [
   ["new Date( w lib", /\bnew\s+Date\s*\(/, (p) => p.startsWith("lib/"), "new Date(2025, 0, 1)", "Date.UTC(2025, 0, 1)"],
   ["new Date(z argumentem) poza lib", /\bnew\s+Date\s*\((?!\s*\))/, (p) => !p.startsWith("lib/"), "new Date(tekst)", "new Date()"],
 
-  // Po recenzji etapu B: inne drogi wyjścia danych ze strony.
+  // Inne drogi wyjścia danych ze strony poza jednym fetch.
   // Zasób ładowany przez atrybut albo cel żądania ustawiany w kodzie.
   ["przypisanie do src, srcset, href, action, formAction, data, poster, ping, background", /\.(?:src|srcset|href|action|formAction|data|poster|ping|background)\s*=(?!=)/, js, "obraz.src = adres", "e.srcObject; e.dataset.krok = n; e.href === x"],
-  ["klucz src albo srcset w obiekcie (el(…, { src: … }))", /(?<![\w$-])src(?:set)?\s*:/, js, 'el("img", { src: adres })', 'el("p", { klasa: "x", tekst: "src" })'],
+  // Klucz bez cudzysłowu albo w cudzysłowie, apostrofach i backtickach: el() ustawia każdy
+  // nieznany klucz jako atrybut, więc { "http-equiv": … } działa tak samo jak { src: … }.
+  ["klucz src, srcset albo http-equiv w obiekcie (el(…, { src: … }), także w cudzysłowie)", /(?<![\w$-])["'`]?(?:src(?:set)?|http-equiv)["'`]?\s*:/i, js, 'el("img", { "src": adres })', 'el("p", { klasa: "x", tekst: "src", "data-src-x": 1 })'],
   ["setAttribute z atrybutem ładującym zasób albo celem żądania", /setAttribute(?:NS)?\s*\([^,)]*["'`](?:src|srcset|data|action|formaction|poster|background|ping|xlink:href|srcdoc|http-equiv)["'`]/i, js, 'e.setAttribute("src", adres)', 'e.setAttribute("aria-label", t)'],
   ["setAttribute z nazwą atrybutu ze zmiennej", /setAttribute(?:NS)?\s*\(\s*(?!["'`])/, js, "e.setAttribute(nazwa, adres)", 'e.setAttribute("aria-invalid", "true")'],
   // Elementy, które ładują zasób albo wysyłają dane, tworzone w kodzie.
@@ -125,6 +141,21 @@ const REGULY = [
   ["dostęp przez indeks ze sklejanego tekstu", /(?:(?<=[\w$)\]])|(?<=\?\.))\[\s*(?:`|\[|["'][^"'\]\n]*["']\s*\+|[\w$.]+\s*\+\s*["'`])/, js, 'navigator["sendBe" + "acon"](adres, dane)', 'TEKSTY[klucz]; $(`[data-zmiana="${i}"]`); pliki[i + 1]; const x = [`${a} b`, [1]]'],
   ["Reflect", /\bReflect\b/, js, "Reflect.get(window, nazwa)", "refleks"],
   ["nazwy składane z kodów znaków (fromCharCode, fromCodePoint, atob)", /fromCharCode|fromCodePoint|\batob\b/, () => true, "String.fromCharCode(102, 101)", "tekst.charCodeAt(0)"],
+
+  // Obejścia reguł nazwami.
+  // Obiekt okna z dokumentu albo elementu (document.defaultView.fetch,
+  // e.ownerDocument.defaultView).
+  ["defaultView", /defaultView/i, () => true, "document.defaultView.fetch(adres)", "widokDomyslny"],
+  // Klucz obliczany ({ [nazwa]: … }) składa nazwę atrybutu w el() albo nazwę metody w kodzie,
+  // więc reguły kluczy i atrybutów by go nie widziały. „{ [” na początku obiektu albo „, [x]:”
+  // i „, [x](” dalej w obiekcie.
+  ["klucz obliczany w obiekcie", /\{\s*\[|,\s*\[[^\]\n]*\]\s*[:(]/, js, 'el("img", { ["sr" + "c"]: adres })', "const x = [`${a} b`, [1]]; f(a, [b]); const { a, b } = c"],
+  // Obiekty okna i przeglądarki oraz pomocnik el() tylko z kropką, „?.”, wywołaniem albo indeksem
+  // tuż za nazwą. Nazwa użyta sama (przypisanie, parametr z wartością domyślną, rozbieranie
+  // obiektu, argument, wartość w obiekcie) daje ten obiekt pod inną nazwą, której reguły nie znają.
+  ["przypisanie window, navigator, document albo el do innej nazwy", /(?<![\w$.'"`-])(?:el|window|self|globalThis|top|parent|frames|opener|navigator|document)\b(?!\s*(?:\.|\?\.|\(|\[))/, js, "const w = window; w.fetch(adres)", 'window.scrollTo(0, 0); document.querySelector("p"); el("p", {}); e.parentElement; x.top; "window"'],
+  // Atrybuty zdarzeń w HTML i SVG to skrypt w pliku, który nie jest plikiem ze skryptem.
+  ["HTML i SVG: atrybut zdarzenia (onclick=… i podobne)", /<[^>]*\son[a-z]+\s*=/i, (p) => html(p) || svg(p), '<button type="button" onclick="wyslij()">', '<button type="button" data-tekst="one">'],
 ];
 
 // Świadome wyjątki od reguł wyjścia danych: istniejący, uzasadniony kod. Każdy wyjątek to dokładny
@@ -136,8 +167,9 @@ const WYJATKI = [
   // wywołaniu el(…) (reguła „el( z nazwą elementu ze zmiennej”), a nazwy elementów ładujących
   // zasób są zakazane (reguła „tworzenie elementu…”).
   ["main.js", "  const e = document.createElement(nazwa);", 1],
-  // el(): atrybuty z dosłownych kluczy obiektu w wywołaniu; klucze src i ping łapią reguły
-  // „klucz src…” i „atrybut ping”, wartości href sprawdza test odnośników niżej.
+  // el(): atrybuty z dosłownych kluczy obiektu w wywołaniu (klucze obliczane łapie reguła
+  // „klucz obliczany…”); klucze src, srcset, http-equiv i ping łapią reguły „klucz src…”
+  // i „atrybut ping”, wartości href sprawdza test odnośników niżej.
   ["main.js", '    else if (v === true) e.setAttribute(k, "");', 1],
   ["main.js", "    else if (v !== false && v !== undefined && v !== null) e.setAttribute(k, v);", 1],
   // Zapis pliku: kliknięcie odnośnika z adresem blob: (plik ZIP w pamięci) i atrybutem download
@@ -149,7 +181,8 @@ const WYJATKI = [
   // Arkusz stylów i skrypt strony z app/.
   ["index.html", '<link rel="stylesheet" href="style.css">', 1],
   ["index.html", '<script type="module" src="main.js"></script>', 1],
-  // Czcionki strony z /czcionki/ na tej samej stronie (lokalnie ich nie ma, przeglądarka dostaje 404).
+  // Czcionki strony z /czcionki/ na tej samej stronie (lokalnie ich nie ma, przeglądarka
+  // dostaje 404).
   ...["Sans-Regular", "Sans-Medium", "Sans-SemiBold", "Sans-Bold", "Mono-Regular", "Mono-Medium"].flatMap((k) =>
     ["Latin1", "Latin2"].map((z) => ["style.css", `url("/czcionki/IBMPlex${k}-${z}.woff2")`, 1])),
 ];
@@ -209,7 +242,27 @@ test("odnośniki budowane w kodzie (el(\"a\", …)): href tylko z listy", () => 
   }
 });
 
-test("reguły wyjścia danych łapią przykłady z recenzji etapu B", () => {
+test("w app/ są tylko pliki o rozszerzeniach z listy", () => {
+  assert.deepEqual(pliki().map(wzgledna).filter((p) => !plikDozwolony(p)), []);
+  for (const zly of ["lib/x.mjs", "x.cjs", "dane.json", "a.wasm", "lib/SHA256SUMS", "main.JS", ".htaccess", "x.htm"]) {
+    assert.equal(plikDozwolony(zly), false, zly);
+  }
+  for (const dobry of ["main.js", "lib/zip.js", "index.html", "style.css", "faktura-strona-1.svg", "SHA256SUMS"]) {
+    assert.equal(plikDozwolony(dobry), true, dobry);
+  }
+});
+
+test("reguły dla skryptów obejmują każdy plik ze skryptem, także .mjs i .cjs", () => {
+  for (const [opis, , dotyczy] of REGULY) {
+    for (const [plik, inny] of [["lib/a.js", "lib/a.mjs"], ["lib/a.js", "lib/a.cjs"], ["teksty.js", "teksty.mjs"], ["teksty.js", "TEKSTY.JS"]]) {
+      if (dotyczy(plik)) assert.ok(dotyczy(inny), `${opis}: ${inny}`);
+    }
+  }
+  // Dawny plik main.js pod inną nazwą nie ma wyjątku fetch.
+  assert.ok(REGULY.find(([opis]) => opis === "fetch poza main.js")[2]("main.mjs"));
+});
+
+test("reguły wyjścia danych łapią przykłady obejść", () => {
   const PRZYKLADY = [
     'el("img", { src: adres })', "obraz.src = adres", 'document.createElement("img")', 'document.createElement("script")',
     'document.createElement("iframe")', 'el("link", { rel: "stylesheet", href: adres })', "location.pathname = adres",
@@ -219,14 +272,23 @@ test("reguły wyjścia danych łapią przykłady z recenzji etapu B", () => {
     'const a = el("a", { href: adres }); a.click();', 'a.dispatchEvent(new MouseEvent("click"))', 'e.setAttribute("src", adres)',
     "e.setAttribute(nazwa, adres)", "a.href = adres", 'e.style.backgroundImage = "url(" + adres + ")"', "const x = ok[`fe${t}`]",
     'ok?.["fe" + "tch"](adres)', 'ok[["fe", "tch"].join("")](adres)', 'ok[nazwa + "tch"](adres)',
+    // Obejścia nazwami: obiekt okna przez defaultView, klucz obliczany, klucz w cudzysłowie,
+    // obiekty okna i przeglądarki oraz el() pod inną nazwą.
+    "document.defaultView.fetch(adres)", "e.ownerDocument.defaultView.open(adres)", 'el("img", { [klucz]: adres })',
+    'el("p", { klasa: "x", ["sr" + "c"]: adres })', "const o = { a: 1,\n  [nazwa]: adres }", "const o = { [nazwa]() {} }",
+    'el("img", { "src": adres })', "el(\"img\", { 'srcset': adres })", 'el("p", { "http-equiv": "refresh" })', 'el("p", { "SRC" : adres })',
+    "const w = window; w.fetch(adres)", "const { fetch: f } = window", "const n = navigator", "const d = document", "const zrob = el",
+    "const $ = (wybor, w = document) => w.querySelector(wybor)", "f(window)", "const o = { okno: globalThis }", "return self;",
+    "const x = a || top",
   ];
   for (const przyklad of PRZYKLADY) {
     assert.ok(REGULY.some(([, wzorzec, dotyczy]) => dotyczy("main.js") && wzorzec.test(przyklad)), przyklad);
   }
-  for (const przyklad of ['<iframe src="/x"></iframe>', '<link rel="prefetch" href="/x">', '<img src="/x.png">', '<object type="x"></object>', '<input type="image" src="/x">']) {
+  for (const przyklad of ['<iframe src="/x"></iframe>', '<link rel="prefetch" href="/x">', '<img src="/x.png">', '<object type="x"></object>', '<input type="image" src="/x">', '<button type="button" onclick="wyslij()">', '<body\n  onload="wyslij()">']) {
     assert.ok(REGULY.some(([, wzorzec, dotyczy]) => dotyczy("index.html") && wzorzec.test(przyklad)), przyklad);
   }
   assert.ok(REGULY.some(([, wzorzec, dotyczy]) => dotyczy("faktura-strona-1.svg") && wzorzec.test('<image href="https://x.example/a.png"/>')));
+  assert.ok(REGULY.some(([, wzorzec, dotyczy]) => dotyczy("faktura-strona-1.svg") && wzorzec.test('<rect x="1" onload="wyslij()"/>')));
   assert.ok(REGULY.some(([, wzorzec, dotyczy]) => dotyczy("style.css") && wzorzec.test('background: url("/x.png")')));
 });
 

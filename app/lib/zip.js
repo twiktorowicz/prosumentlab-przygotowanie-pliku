@@ -76,7 +76,8 @@ export async function utworzZip(pliki) {
     try {
       return await zbuduj(wpisy, 8);
     } catch {
-      // Budowa z kompresją nie powiodła się: ZIP bez kompresji, taki sam jak w przeglądarce bez niej.
+      // Budowa z kompresją nie powiodła się: ZIP bez kompresji, taki sam jak w przeglądarce
+      // bez niej.
     }
   }
   return zbuduj(wpisy, 0);

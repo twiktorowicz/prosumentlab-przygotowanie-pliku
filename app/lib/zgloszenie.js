@@ -29,7 +29,9 @@ import { utworzZip } from "./zip.js";
 import { crc32 } from "./crc32.js";
 import { sprawdzBezpiecznik } from "./bezpiecznik.js";
 
-export const WERSJA = "0.1.5";
+// Wersja narzędzia w zgloszenie.json, w tekście wersji i w adresie wydania na GitHubie. Skrypt
+// przyjmujący zgłoszenia odrzuca wersje starsze niż 0.2.0 (pierwsza z wysyłką przez stronę).
+export const WERSJA = "0.2.0";
 export const ADRES = "raporty@prosumentlab.pl";
 export const MAKS_PLIKOW = 10;
 // Tryb narzędzia i operator sieci, od którego pochodzi plik w tym trybie (eLicznik to portal

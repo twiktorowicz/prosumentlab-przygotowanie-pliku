@@ -9,6 +9,7 @@ import {
   czytajDziesietna,
   czytajTekstWolny,
   liczbaZCyfr,
+  zeroPrzedPrzecinkiem,
 } from "../app/lib/kwoty.js";
 
 const wartosc = (w) => (w.ok ? w.wartosc : "błąd");
@@ -170,4 +171,27 @@ test("liczby z cyfr", () => {
   assert.equal(liczbaZCyfr("0042"), 42);
   assert.equal(liczbaZCyfr("4a"), null);
   assert.equal(liczbaZCyfr(""), null);
+});
+
+// Liczba wpisana od przecinka („,3”): strona po wyjściu z pola wpisuje w pole wersję z zerem na
+// początku. Moduły dalej odrzucają „,3”, więc zamiana jest osobną funkcją, a nie łagodniejszym
+// odczytem.
+test("zero przed przecinkiem: „,3” -> „0,3”, inne wpisy bez zmian", () => {
+  for (const [wejscie, wynik] of [
+    [",3", "0,3"], [",51234", "0,51234"], [" ,3 ", "0,3"], [",05", "0,05"], [".3", "0.3"], [",30000", "0,30000"],
+  ]) assert.equal(zeroPrzedPrzecinkiem(wejscie), wynik, JSON.stringify(wejscie));
+  // Wpis, który nie jest liczbą zaczynającą się od przecinka, zostaje co do znaku, także ze
+  // spacjami: strona nie zmienia pola bez potrzeby.
+  for (const bez of ["", " ", "0,3", "3", "12,34", " 1,5 ", ",", ".", ",,3", ",3,4", ",3a", ", 3", "-,3", "+,3", ",3 000", "0,", "abc", ",\u00a03"]) {
+    assert.equal(zeroPrzedPrzecinkiem(bez), bez, JSON.stringify(bez));
+  }
+  for (const inne of [undefined, null, 3]) assert.equal(zeroPrzedPrzecinkiem(inne), inne);
+});
+
+test("zero przed przecinkiem: wynik przechodzi przez odczyt ceny, kwoty i mocy, a „,3” bez zamiany nie", () => {
+  assert.equal(czytajCene(",3").ok, false, "moduł zostaje ścisły");
+  assert.equal(czytajKwote(",5").ok, false);
+  assert.equal(wartosc(czytajCene(zeroPrzedPrzecinkiem(",3"))), "0.30");
+  assert.equal(wartosc(czytajKwote(zeroPrzedPrzecinkiem(",5"))), "0.50");
+  assert.equal(wartosc(czytajDziesietna(zeroPrzedPrzecinkiem(",75"), { calkowitych: 3, miejsc: 2, dodatnia: true })), "0.75");
 });

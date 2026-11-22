@@ -20,12 +20,14 @@ tylko kod, który ją realizuje, i dane syntetyczne do testów.
 3. **Bez zależności od innych repozytoriów** i bez ich ścieżek w plikach. Komentarz w kodzie
    tłumaczy regułę wprost, zamiast odsyłać do dokumentu spoza repozytorium.
 4. **Czysty JavaScript w modułach ES.** Bez bibliotek, bez npm, bez kroku budowania. Narzędzie
-   w przeglądarce nie korzysta z sieci.
+   w przeglądarce łączy się z siecią tylko w jednym miejscu: po wybraniu „Wyślij zgłoszenie”
+   wysyła przygotowane zgłoszenie pod względny adres `/zgloszenie/` tej samej strony.
 5. **Liczby z tekstu.** Kwoty i ceny są tekstem, energia i grosze liczbami całkowitymi. W `app/lib/`
    nie ma `Number(`, `parseFloat` ani `parseInt`. Znaczniki czasu są rozbierane z tekstu, bez
    `new Date(tekst)` i `Date.parse`; wynik nie zależy od strefy czasowej.
-6. **Narzędzie niczego nie wysyła i niczego nie zapisuje w przeglądarce** (`localStorage`,
-   `sessionStorage`, `IndexedDB`, ciasteczka). Test statyczny odrzuca zabronione wywołania w `app/`.
+6. **Narzędzie niczego nie zapisuje w przeglądarce** (`localStorage`, `sessionStorage`,
+   `IndexedDB`, ciasteczka) i nie wysyła niczego poza zgłoszeniem z zasady 4. Test statyczny
+   odrzuca zabronione wywołania w `app/`.
 7. **Teksty dla klienta są tylko w `app/teksty.js`.** W tekstach dla klienta piszemy „narzędzie
    do przygotowania pliku”, nigdy „anonimizator” ani „anonimizacja”. Nowy albo zmieniony tekst
    zatwierdza właściciel przed commitem.

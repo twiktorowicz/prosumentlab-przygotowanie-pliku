@@ -148,7 +148,7 @@ test("kolejność pytań o cenę i poprawki w wersji 0.1.4: teksty zatwierdzone 
     taryfa_przy_stalej: "Przy cenie stałej strefy grupy taryfowej dotyczą opłat za dystrybucję, a często też ceny energii.",
   };
   for (const [klucz, tekst] of Object.entries(ZATWIERDZONE)) assert.equal(TEKSTY[klucz], tekst, klucz);
-  // Bez zmian w 0.1.4 (19.28).
+  // Bez zmian w 0.1.4.
   assert.equal(TEKSTY.pomoc_rodzaj_ceny, "Chodzi o cenę energii kupowanej z sieci, nie o wycenę energii oddanej. Cena stała to stawka za 1 kWh z cennika, taka sama przez cały okres, czasem inna w każdej strefie. Cena dynamiczna zmienia się co godzinę razem z cenami na rynku energii.");
   assert.equal(TEKSTY.pomoc_taryfa, "Grupa taryfowa to oznaczenie w rodzaju G11, G12 albo G13. Jest na fakturze przy danych punktu poboru (punkt 4 na rysunku).");
   assert.equal(TEKSTY.faktura_cena_format, "Wpisz cenę tak, jak jest na fakturze, na przykład 0,51234.");
@@ -167,7 +167,7 @@ test("pola stref i drobne poprawki w wersji 0.1.5: teksty zatwierdzone przez wł
   assert.deepEqual(TEKSTY.strefy_g12w, ["strefa szczytowa", "strefa pozaszczytowa"]);
   assert.deepEqual(TEKSTY.strefy_g12, ["strefa dzienna", "strefa nocna"]);
   assert.deepEqual(TEKSTY.strefy_g13, ["szczyt przedpołudniowy", "szczyt popołudniowy", "pozostałe godziny doby"]);
-  // Bez zmian w 0.1.5 (19.29): wybór jednej ceny zostaje przy taryfie „inna”.
+  // Bez zmian w 0.1.5: wybór jednej ceny zostaje przy taryfie „inna”.
   assert.equal(TEKSTY.faktura_cena_jedna, "jedna cena dla wszystkich stref");
   assert.equal(TEKSTY.faktura_cena_strefy, "osobna cena w każdej strefie");
   assert.equal(TEKSTY.faktura_cena_kilka, "Jeśli na fakturze jest kilka cen, wpisz ostatnią.");
@@ -212,7 +212,11 @@ const TEKSTY_0_2_0 = {
   wysylka_przycisk: "Wyślij zgłoszenie",
   wysylka_trwa: "Wysyłanie…",
   wysylka_zapasowa_pokaz: "Wolę zapisać plik i wysłać go sam",
-  wysylka_za_duzy: "To zgłoszenie jest za duże, żeby wysłać je przez stronę. Zapisz plik i wyślij go sam.",
+  wysylka_za_duzy: "Przygotowany plik zgłoszenia jest za duży, żeby wysłać go przez stronę. Zapisz plik i wyślij go sam.",
+  wysylka_czekanie: "Czekamy na odpowiedź, jeszcze najwyżej {sekundy} s.",
+  zip_blad: "Nie udało się przygotować plików zgłoszenia. Wybierz „Wstecz”, a potem „Dalej”, żeby spróbować jeszcze raz.",
+  sprawdzenie_dalej: "Wybranie „Dalej” jeszcze niczego nie wysyła. W następnym kroku podasz adres e-mail i wyślesz zgłoszenie.",
+  faktura_ceny_kolejnosc: "Te ceny wyglądają na zamienione. Sprawdź, czy każda jest we właściwym polu. Zwykle najwyższa cena jest w polu „{najdrozsza}”, a najniższa w polu „{najtansza}”.",
   wysylka_blad_sieci: "Nie udało się wysłać zgłoszenia. Sprawdź połączenie z internetem i spróbuj jeszcze raz albo zapisz plik i wyślij go sam.",
   wysylka_blad_limit: "Z tego urządzenia albo na ten adres wysłano już dziś kilka zgłoszeń. Spróbuj później albo zapisz plik i wyślij go sam.",
   wysylka_blad_serwera: "Nie udało się przyjąć zgłoszenia. Spróbuj za kilka minut albo zapisz plik i wyślij go sam.",
@@ -223,7 +227,7 @@ const TEKSTY_0_2_0 = {
   wyslane_numer: "Numer zgłoszenia",
   wyslane_numer_pomoc: "Zapisz go. Przyda się, gdy zechcesz zapytać o swoje dane albo wycofać zgodę.",
   wyslane_potwierdzenie: "Potwierdzenie wysłaliśmy na adres {adres}. Na ten sam adres przyjdzie raport, w ciągu 10 dni roboczych.",
-  wyslane_bez_potwierdzenia: "Zgłoszenie do nas dotarło, ale nie udało się wysłać potwierdzenia na adres {adres}. Raport wyślemy na ten adres w ciągu 10 dni roboczych. Jeśli adres jest błędny, popraw go i wyślij zgłoszenie jeszcze raz.",
+  wyslane_bez_potwierdzenia: "Zgłoszenie do nas dotarło, ale nie udało się wysłać potwierdzenia na adres {adres}. Raport spróbujemy wysłać na ten adres w ciągu 10 dni roboczych. Jeśli adres jest błędny, popraw go i wyślij zgłoszenie jeszcze raz.",
   wyslane_brak: "Nie widzisz potwierdzenia po kilku minutach? Sprawdź folder ze spamem. Jeśli go tam nie ma, adres mógł być błędny: popraw go i wyślij zgłoszenie jeszcze raz. Liczy się ostatnie.",
   wyslane_brak_odnosnik: "popraw go i wyślij zgłoszenie jeszcze raz",
   wyslane_pytanie: "Masz pytanie? Napisz na raporty@prosumentlab.pl i podaj numer zgłoszenia.",
@@ -233,7 +237,7 @@ const TEKSTY_0_2_0 = {
 };
 
 test("kreator i wysyłka przez stronę w wersji 0.2.0: teksty zatwierdzone przez właściciela, słowo w słowo", () => {
-  assert.equal(Object.keys(TEKSTY_0_2_0).length, 53, "wszystkie klucze tabeli");
+  assert.equal(Object.keys(TEKSTY_0_2_0).length, 57, "wszystkie klucze tabeli");
   for (const [klucz, tekst] of Object.entries(TEKSTY_0_2_0)) assert.deepEqual(TEKSTY[klucz], tekst, klucz);
   // Nazwa pola mocy przed rozbudową do komunikatów kreator_popraw i zapis_popraw.
   assert.equal(TEKSTY.pola_nazwy.moc_przed_kwp, "moc przed rozbudową");
@@ -255,6 +259,8 @@ test("wersja 0.2.0: teksty, z których strona robi odnośniki i wyróżnienia, m
   for (const k of ["wyslane_potwierdzenie", "wyslane_bez_potwierdzenia"]) assert.equal(TEKSTY[k].split("{adres}").length, 2, k);
   assert.equal(TEKSTY.kreator_krok.split("{n}").length, 2);
   assert.equal(TEKSTY.wyslane_pytanie.split(ADRES).length, 2, "adres zgłoszeń w wyslane_pytanie");
+  // Ostrzeżenie o kolejności cen: nazwa najdroższej i najtańszej strefy, każda raz.
+  for (const w of ["{najdrozsza}", "{najtansza}"]) assert.equal(TEKSTY.faktura_ceny_kolejnosc.split(w).length, 2, w);
 });
 
 test("kopiowanie adresu osobnym przyciskiem znika: bez tekstów kopiuj_adres", () => {

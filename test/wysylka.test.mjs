@@ -1,12 +1,12 @@
 // Wysyłka zgłoszenia przez stronę (app/lib/wysylka.js): sprawdzenie adresu e-mail przed
 // wysłaniem, miejsca, w których wysyłka jest dostępna, limit rozmiaru ZIP-a i zamiana odpowiedzi
-// skryptu przyjmującego na klucz tekstu. Adresy tylko w domenie example.invalid albo budowane
-// w kodzie.
+// skryptu przyjmującego na klucz tekstu, odliczanie sekund do końca limitu czasu. Adresy tylko
+// w domenie example.invalid albo budowane w kodzie.
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { sprawdzAdres, wysylkaDostepna, zipZaDuzy, wynikWysylki, LIMIT_ZIP, CZAS_WYSYLKI_MS } from "../app/lib/wysylka.js";
+import { sprawdzAdres, wysylkaDostepna, zipZaDuzy, wynikWysylki, sekundyCzekania, LIMIT_ZIP, CZAS_WYSYLKI_MS, CZEKANIE_OD_MS } from "../app/lib/wysylka.js";
 import { rozmiarDoWyswietlenia } from "../app/lib/odmiana.js";
 import { TEKSTY } from "../app/teksty.js";
 
@@ -77,8 +77,34 @@ test("limit ZIP-a: 5 242 880 bajtów, większy jest za duży", () => {
   assert.equal(zipZaDuzy(1000), false);
 });
 
-test("limit czasu wysyłki: 120 s", () => {
-  assert.equal(CZAS_WYSYLKI_MS, 120000);
+// Limit 60 s chroni przed wiszącym połączeniem; dłuższe czekanie bez odpowiedzi byłoby dla
+// klienta za długie, a krótsze grozi błędem, choć serwer zgłoszenie przyjął.
+test("limit czasu wysyłki: 60 s", () => {
+  assert.equal(CZAS_WYSYLKI_MS, 60000);
+});
+
+test("odliczanie: bez linii przez pierwsze 5 s, potem sekundy do końca limitu, zaokrąglone w górę", () => {
+  assert.equal(CZEKANIE_OD_MS, 5000);
+  for (const ms of [0, 1, 999, 4000, 4999]) assert.equal(sekundyCzekania(ms), null, String(ms));
+  assert.equal(sekundyCzekania(5000), 55);
+  assert.equal(sekundyCzekania(5001), 55, "część sekundy liczy się jako cała");
+  assert.equal(sekundyCzekania(5999), 55);
+  assert.equal(sekundyCzekania(6000), 54);
+  assert.equal(sekundyCzekania(30500), 30);
+  assert.equal(sekundyCzekania(58999), 2);
+  assert.equal(sekundyCzekania(59000), 1);
+  assert.equal(sekundyCzekania(59999), 1, "do końca limitu nigdy zero sekund");
+  // Po limicie odpowiedź już nie przyjdzie: linia znika razem z komunikatem o błędzie.
+  for (const ms of [60000, 60001, 120000]) assert.equal(sekundyCzekania(ms), null, String(ms));
+  // Wartości spoza zakresu (zegar cofnięty, nie liczba): bez linii.
+  for (const ms of [-1, Number.NaN, undefined, "6000"]) assert.equal(sekundyCzekania(ms), null, String(ms));
+});
+
+test("odliczanie: liczba sekund malejąca co sekundę od 55 do 1", () => {
+  const sekundy = [];
+  for (let ms = CZEKANIE_OD_MS; ms < CZAS_WYSYLKI_MS; ms += 1000) sekundy.push(sekundyCzekania(ms));
+  assert.equal(sekundy.length, 55);
+  sekundy.forEach((s, i) => assert.equal(s, 55 - i));
 });
 
 test("odpowiedź 200 przyjete: zgłoszenie wysłane, z potwierdzeniem albo bez", () => {
@@ -116,6 +142,10 @@ test("brak odpowiedzi (błąd sieci, przekroczony czas): błąd sieci", () => {
 
 test("każdy klucz z mapowania odpowiedzi ma tekst", () => {
   for (const k of ["wysylka_adres_blad", "wysylka_za_duzy", "wysylka_blad_limit", "wysylka_blad_serwera", "wysylka_blad_sieci"]) assert.ok(k in TEKSTY, k);
+});
+
+test("tekst odliczania ma wstawkę z liczbą sekund dokładnie raz", () => {
+  assert.equal(TEKSTY.wysylka_czekanie.split("{sekundy}").length, 2);
 });
 
 test("rozmiar zgłoszenia do wyświetlenia: KB w górę do pełnych, od 1 MB z jednym miejscem po przecinku", () => {

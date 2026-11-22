@@ -48,16 +48,26 @@ function wzgledna(sciezka) {
   return relative(KORZEN, sciezka).split(sep).join("/");
 }
 
-// Skrót szesnastkowy 40 znaków (commit) albo 64 znaki (SHA-256) z co najmniej jedną literą a–f,
-// bez litery ani cyfry obok. Ciąg samych cyfr nie jest skrótem i zostaje do sprawdzenia.
-const SKROT = /(?<![\p{L}\p{N}])(?=[0-9]*[a-f])(?:[0-9a-f]{64}|[0-9a-f]{40})(?![\p{L}\p{N}])/gu;
-
 // Treść pliku do szukania numerów: null dla pliku binarnego, w pozostałych tekst z UTF-8
 // (odczyt jako latin1 zamieniał bajty znaków typograficznych w litery, więc numer przed „””
-// albo „–” przechodził) bez skrótów szesnastkowych.
+// albo „–” przechodził). Skróty szesnastkowe zostają w treści, tak jak w skanie gitleaks:
+// skrót z 12 cyframi pod rząd zapisuje się w częściach, a reguła 8–11 cyfr i tak nie trafia
+// w cyfry skrótu, bo w skrócie przy każdym ciągu cyfr stoi litera a–f.
 export function trescDoSkanu(sciezka, bajty) {
   if (BINARNE.test(sciezka)) return null;
-  return new TextDecoder("utf-8").decode(bajty).replace(SKROT, " ");
+  return new TextDecoder("utf-8").decode(bajty);
+}
+
+// Ciąg 12 i więcej cyfr: ta sama reguła co ciag-12-cyfr w .gitleaks.toml, także wewnątrz skrótu
+// szesnastkowego. Poza dwoma PPE pomijany jest tylko plik sum kontrolnych (app/SHA256SUMS):
+// skróty SHA-256 plików z app/ zmieniają się z każdą zmianą i mogą mieć dowolny ciąg cyfr.
+// Gitleaks pomija go w tej regule tak samo (wyjątek paths); pozostałe reguły obejmują go w obu
+// strażach.
+export const POMIJANE_12 = /(^|\/)SHA256SUMS$/;
+
+export function trafienia12(sciezka, tresc) {
+  if (POMIJANE_12.test(sciezka)) return [];
+  return [...tresc.matchAll(/\d{12,}/g)].map((m) => m[0]).filter((c) => !DOZWOLONE_PPE.has(c));
 }
 
 // Pliki do skanu: [ścieżka względna, treść], bez plików binarnych.
@@ -74,11 +84,33 @@ export function trafienia8do11(tresc) {
 test("w repozytorium nie ma ciągów 12 i więcej cyfr poza dwoma fikcyjnymi PPE", () => {
   const trafienia = [];
   for (const [sciezka, tresc] of plikiDoSkanu()) {
-    for (const m of tresc.matchAll(/\d{12,}/g)) {
-      if (!DOZWOLONE_PPE.has(m[0])) trafienia.push(`${sciezka}: ciąg ${m[0].length} cyfr`);
-    }
+    for (const ciag of trafienia12(sciezka, tresc)) trafienia.push(`${sciezka}: ciąg ${ciag.length} cyfr`);
   }
   assert.deepEqual(trafienia, []);
+});
+
+test("reguła 12 i więcej cyfr trafia też w skrót szesnastkowy, poza plikiem sum kontrolnych", () => {
+  // Przykłady budowane w kodzie, żeby sam test nie zawierał ciągów, które reguła łapie.
+  const dwanascie = "7".repeat(12);
+  const sha = `ab${dwanascie}cd${"e".repeat(48)}`;
+  assert.equal(sha.length, 64);
+  assert.deepEqual(trafienia12("test/x.test.mjs", `const SKROT = "${sha}";`), [dwanascie], "skrót SHA-256 w teście");
+  assert.deepEqual(trafienia12("x.md", `commit f${dwanascie}${"a".repeat(27)}`), [dwanascie], "skrót commitu");
+  assert.deepEqual(trafienia12("x.md", `"${"7".repeat(11)}" + "${"7".repeat(11)}"`), [], "skrót zapisany w dwóch częściach");
+  assert.deepEqual(trafienia12("x.md", "590000000000000010"), [], "fikcyjny PPE");
+  assert.deepEqual(trafienia12("app/SHA256SUMS", `${sha}  main.js\n`), [], "plik sum kontrolnych");
+  assert.deepEqual(trafienia12("app/SHA256SUMS.txt", sha), [dwanascie], "tylko plik o dokładnie tej nazwie");
+});
+
+test(".gitleaks.toml ma regułę 12 i więcej cyfr z tymi samymi wyjątkami", () => {
+  const toml = readFileSync(join(KORZEN, ".gitleaks.toml"), "utf8");
+  const regula = /\[\[rules\]\]\nid = "ciag-12-cyfr"\n[\s\S]*?(?=\n\[\[rules\]\]|$)/.exec(toml)?.[0];
+  assert.ok(regula, "reguła ciag-12-cyfr");
+  assert.match(regula, /^regex = '{3}\\d\{12,\}'{3}$/m);
+  const wyjatki = /regexes = \['{3}\^\(([0-9|]+)\)\$'{3}\]/.exec(regula)?.[1].split("|");
+  assert.deepEqual(wyjatki, [...DOZWOLONE_PPE]);
+  const sciezki = [...(/paths = \[(.*)\]/.exec(regula)?.[1] ?? "").matchAll(/'{3}(.*?)'{3}/g)].map((m) => m[1]);
+  assert.deepEqual(sciezki, [POMIJANE_12.source.replaceAll("\\/", "/")]);
 });
 
 test("reguła 8–11 cyfr trafia w numery i nie trafia w skróty szesnastkowe ani dłuższe ciągi", () => {
@@ -175,6 +207,7 @@ test("skan numerów: UTF-8, znaki typograficzne obok numeru, skróty szesnastkow
   assert.deepEqual(skan(`${osiem}${"0".repeat(56)}`), [], "64 cyfry to nie 8–11 cyfr");
   assert.match(trescDoSkanu("x.md", new TextEncoder().encode("1".repeat(40))), /\d{40}/, "40 samych cyfr zostaje do sprawdzenia");
   assert.deepEqual(skan(`${sha}x ${osiem}`), [osiem], "65 znaków to nie skrót");
+  assert.equal(trescDoSkanu("x.md", new TextEncoder().encode(`${sha}  index.html\n`)), `${sha}  index.html\n`, "skrót zostaje w treści");
   // Pliki binarne pomijane w każdym skanie, katalog proby/ poza skanem.
   assert.equal(trescDoSkanu("test/wzorce/n20.zip", new TextEncoder().encode(osiem)), null);
   assert.ok(POMIJANE.has("proby"));
@@ -185,4 +218,46 @@ test("CI: limit czasu w każdym zadaniu", () => {
   const zadania = [...ci.slice(ci.indexOf("\njobs:\n")).matchAll(/^ {2}([a-z-]+):\n((?: {4}.*\n|\n)*)/gm)];
   assert.deepEqual(zadania.map((m) => m[1]), ["testy", "gitleaks"]);
   for (const [, nazwa, tresc] of zadania) assert.match(tresc, /^ {4}timeout-minutes: \d+$/m, nazwa);
+});
+
+// README jest publiczny i opisuje narzędzie z wysyłką przez stronę (wersja 0.2.0). Lista nagłówków
+// pilnuje, żeby żadna część nie zniknęła po cichu; dawne zdania o tym, że narzędzie niczego nie
+// wysyła, nie mogą wrócić.
+test("README: nagłówki w ustalonej kolejności, bez zdań o narzędziu, które niczego nie wysyła", () => {
+  const readme = readFileSync(join(KORZEN, "README.md"), "utf8");
+  const naglowki = readme.split("\n").filter((l) => /^#{1,2} /.test(l));
+  assert.deepEqual(naglowki, [
+    "# prosumentlab-przygotowanie-pliku",
+    "## Co robi",
+    "## Kreator",
+    "## Wysyłka zgłoszenia",
+    "## Droga zapasowa: zapis pliku i wiadomość",
+    "## Kompresja ZIP-a",
+    "## Narzędzie a AI",
+    "## Jak uruchomić lokalnie",
+    "## Atrapa przyjmowania zgłoszeń",
+    "## Nagłówki serwera",
+    "## Próba w przeglądarce na komputerze",
+    "## Odbiór na telefonie",
+    "## Jak sprawdzić kopię na stronie",
+    "## Licencja",
+  ]);
+  assert.doesNotMatch(readme, /niczego nie wysyła/);
+  assert.doesNotMatch(readme, /nie używa `fetch`/);
+  assert.doesNotMatch(readme, /connect-src 'none'/);
+  for (const fraza of ["/zgloszenie/", "--zgloszenie", "deflate", "Wyślij zgłoszenie"]) assert.ok(readme.includes(fraza), fraza);
+});
+
+// README mówi tyle, ile daje mechanizm: podgląd pokazuje pliki pomiarów w skrócie, test statyczny
+// jest strażą przed przypadkowym dopisaniem wysyłki (nie dowodem), strona pobiera też własne
+// pliki, a ekran po przyjęciu mówi, czy potwierdzenie zostało wysłane.
+test("README: podgląd, test statyczny i ekran po przyjęciu opisane tak, jak działają", () => {
+  const readme = readFileSync(join(KORZEN, "README.md"), "utf8").replace(/\s*\n\s*/g, " ");
+  assert.doesNotMatch(readme, /podgląd wszystkiego/);
+  assert.doesNotMatch(readme, /na który przyjdzie potwierdzenie/);
+  assert.doesNotMatch(readme, /To jedyne miejsce, w którym narzędzie łączy się z siecią/);
+  for (const fraza of [
+    "pliki pomiarów w skrócie", "własne pliki", "dokładnie jedno wywołanie `fetch`", "odrzuca znane inne sposoby wysyłania",
+    "nie dowód", "czy potwierdzenie zostało wysłane",
+  ]) assert.ok(readme.includes(fraza), fraza);
 });

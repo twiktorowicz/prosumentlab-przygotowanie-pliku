@@ -7,7 +7,8 @@
 // - bledy: pola, których nie da się odczytać albo nie przechodzą kontroli; takie pole nie trafia
 //   do danych i blokuje zapis, dopóki klient go nie poprawi albo nie wyczyści;
 // - brakujace: puste pola obowiązkowe grupy R; to tylko informacja, bez blokady;
-// - uwagi: nietypowe wartości (cena energii, długość okresu); tylko informacja, bez blokady;
+// - uwagi: nietypowe wartości (cena energii, kolejność cen w strefach, długość okresu); tylko
+//   informacja, bez blokady;
 // - wpisane: wartości z pól wpisanych ręcznie, które trafiają do danych, w tej samej postaci co
 //   w danych, z nazwą pola jak w `bledy` (wiersz opłaty z numerem wiersza na stronie). Tylko dla
 //   strony: na nich szuka pola, które wywołało blokadę bezpiecznika plików JSON. Wybory z list
@@ -68,6 +69,31 @@ const nietypowaCena = (cena) => {
   const c = cenaWMilionowych(cena);
   return c < CENA_TYPOWA_OD || c > CENA_TYPOWA_DO;
 };
+
+// Kolejność cen w strefach przy cenie stałej, z taryf grup G: w G12 strefa dzienna, a w G12w
+// szczytowa jest droższa niż druga strefa; w G13 najdroższy jest szczyt popołudniowy, potem
+// przedpołudniowy, a najtańsze pozostałe godziny doby. Ceny w odwrotnej kolejności to zwykle
+// pomyłka przy przepisywaniu, ale oferta może mieć inny układ, więc to tylko uwaga
+// (FAKTURA_CENY_KOLEJNOSC), bez błędu. Równe ceny są dozwolone (jedna cena we wszystkich strefach).
+// Indeksy stref najdroższej i najtańszej to kolejność pól na stronie; strona wstawia ich nazwy
+// do tekstu uwagi. Taryfy „inna” nie sprawdzamy, bo nie znamy jej stref.
+export const STREFY_KOLEJNOSC = {
+  g12: { najdrozsza: 0, najtansza: 1 },
+  g12w: { najdrozsza: 0, najtansza: 1 },
+  g13: { najdrozsza: 1, najtansza: 2 },
+};
+
+// Ceny stref (z czytajCene) w odwrotnej kolejności. Porównanie milionowych części złotego, na
+// liczbach całkowitych z cyfr.
+function cenyZamienione(taryfa, ceny) {
+  const c = ceny.map(cenaWMilionowych);
+  if (taryfa === "g12" || taryfa === "g12w") return c[0] < c[1];
+  if (taryfa === "g13") {
+    const [przedpoludniowy, popoludniowy, pozostale] = c;
+    return popoludniowy < przedpoludniowy || pozostale > przedpoludniowy || pozostale > popoludniowy;
+  }
+  return false;
+}
 
 const doba = (tekst) => {
   const [rok, miesiac, dzien] = tekst.split("-").map(liczbaZCyfr);
@@ -243,6 +269,12 @@ function czytajFakture(f, bledy, brakujace, uwagi, wpisane, { operator, dzisiaj 
   }
   const ceny = r.cena_energii_netto_zl_kwh === undefined ? [] : [r.cena_energii_netto_zl_kwh].flat();
   if (ceny.some(nietypowaCena)) uwagi.push({ kod: "FAKTURA_CENA_NIETYPOWA" });
+  // Ceny w strefach są w danych tylko przy cenie innej niż dynamiczna i tylko wtedy, gdy wszystkie
+  // są poprawne, a ich liczba zgadza się z taryfą.
+  const cenyStref = r.cena_energii_netto_zl_kwh;
+  if (Array.isArray(cenyStref) && Object.hasOwn(STREFY_KOLEJNOSC, r.taryfa ?? "") && cenyZamienione(r.taryfa, cenyStref)) {
+    uwagi.push({ kod: "FAKTURA_CENY_KOLEJNOSC" });
+  }
 
   const wymagane = [...OBOWIAZKOWE_R];
   if (r.sprzedawca === "inny") wymagane.splice(wymagane.indexOf("sprzedawca") + 1, 0, "sprzedawca_nazwa");

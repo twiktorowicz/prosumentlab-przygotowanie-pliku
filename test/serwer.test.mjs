@@ -329,7 +329,7 @@ test("atrapa zgłoszeń: brak odpowiedzi, połączenie wisi; serwer obsługuje d
 });
 
 test("atrapa zgłoszeń: brak odpowiedzi kończy się zamknięciem połączenia po czasie dłuższym niż limit narzędzia", async () => {
-  // Domyślnie 150 s: dłużej niż limit czasu wysyłki w narzędziu (120 s), więc narzędzie samo
+  // Domyślnie 150 s: dłużej niż limit czasu wysyłki w narzędziu (60 s), więc narzędzie samo
   // przerywa czekanie, a połączenie nie wisi bez końca.
   assert.equal(CZAS_BRAKU_ODPOWIEDZI_MS, 150 * 1000);
   assert.ok(CZAS_BRAKU_ODPOWIEDZI_MS > CZAS_WYSYLKI_MS);

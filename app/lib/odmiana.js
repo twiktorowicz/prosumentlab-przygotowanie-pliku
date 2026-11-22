@@ -3,7 +3,7 @@
 
 import { liczbaZCyfr } from "./kwoty.js";
 
-export const WSTAWKI = new Set(["n", "m", "od", "do", "numer", "plik", "nazwa", "wiersz", "kolumna", "data", "pola", "kolumny", "wersja", "rozmiar", "adres"]);
+export const WSTAWKI = new Set(["n", "m", "od", "do", "numer", "plik", "nazwa", "wiersz", "kolumna", "data", "pola", "kolumny", "wersja", "rozmiar", "adres", "sekundy", "najdrozsza", "najtansza"]);
 
 // Pełna reguła polska: 1 miesiąc; 2–4 miesiące (także 22–24, 32–34…, ale nie 12–14);
 // pozostałe: miesięcy.

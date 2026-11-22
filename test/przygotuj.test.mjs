@@ -138,7 +138,8 @@ test("formularz o złej budowie: kod 2 z nazwą klucza, bez wartości", () => {
     [{ instalacja: { zmiany: [{ rodzaj: "rozbudowa_pv", miesiac: "2025-06", moc_przed_kwp: 2.5 }] } }, "instalacja.zmiany[0].moc_przed_kwp"],
     [{ zgoda: "true" }, "zgoda"],
     [{ zgoda: 1 }, "zgoda"],
-    // Pola, których strona już nie ma: operatora wpisuje narzędzie, pytanie o pierwsze oddanie zniknęło.
+    // Pola, których strona już nie ma: operatora wpisuje narzędzie, pytanie o pierwsze oddanie
+    // zniknęło.
     [{ faktura: { operator_dystrybucyjny: "tauron_dystrybucja" } }, "faktura.operator_dystrybucyjny"],
     [{ instalacja: { pierwsze_oddanie: "nie_wiem" } }, "instalacja.pierwsze_oddanie"],
   ];

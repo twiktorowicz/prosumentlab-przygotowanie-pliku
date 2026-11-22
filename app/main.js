@@ -10,14 +10,16 @@ import { tekst, znacznikPolski, dataPolska, miesiacZRokiem, kwhDoWyswietlenia, r
 import { przygotujPliki, zlozZgloszenie, utworzZipZgloszenia, odnosnikMailto, nazwaZip, WERSJA, ADRES, MAKS_PLIKOW } from "./lib/zgloszenie.js";
 import { losowyNumer } from "./lib/numer.js";
 import { LIMIT_BAJTOW } from "./lib/dekodowanie.js";
-import { liczbaZCyfr, czytajCene } from "./lib/kwoty.js";
+import { liczbaZCyfr, czytajCene, zeroPrzedPrzecinkiem } from "./lib/kwoty.js";
 import { ROK_MIN } from "./lib/kalendarz.js";
-import { okresMiesiaca, sprzedawcaZListy } from "./lib/formularz.js";
-import { sprawdzAdres, wysylkaDostepna, zipZaDuzy, wynikWysylki, CZAS_WYSYLKI_MS } from "./lib/wysylka.js";
+import { okresMiesiaca, sprzedawcaZListy, STREFY_KOLEJNOSC } from "./lib/formularz.js";
+import { sprawdzAdres, wysylkaDostepna, zipZaDuzy, wynikWysylki, sekundyCzekania, CZAS_WYSYLKI_MS } from "./lib/wysylka.js";
 
 const t = (klucz, wstawki) => tekst(TEKSTY, klucz, wstawki);
-const $ = (wybor, w = document) => w.querySelector(wybor);
-const $$ = (wybor, w = document) => [...w.querySelectorAll(wybor)];
+// Bez drugiego argumentu szukają w całym dokumencie. Obiekt dokumentu nie trafia do parametru,
+// bo test statyczny zakazuje go pod inną nazwą.
+const $ = (wybor, w) => (w === undefined ? document.querySelector(wybor) : w.querySelector(wybor));
+const $$ = (wybor, w) => [...(w === undefined ? document.querySelectorAll(wybor) : w.querySelectorAll(wybor))];
 
 function el(nazwa, atrybuty = {}, ...dzieci) {
   const e = document.createElement(nazwa);
@@ -65,7 +67,7 @@ const WYSYLKA_DOSTEPNA = wysylkaDostepna(location.protocol, location.hostname);
 // kliknięcie nie czeka na kompresję.
 let zip = null;
 let budowanyDla = null; // zgłoszenie, dla którego trwa kompresja
-// Zgłoszenie, dla którego budowa ZIP-a się nie udała (żadną metodą): krok 6 pokazuje blad_nieznany,
+// Zgłoszenie, dla którego budowa ZIP-a się nie udała (żadną metodą): krok 6 pokazuje zip_blad,
 // a kolejne wejście na krok 5 albo 6 ponawia próbę.
 let bladZipu = null;
 // Zgłoszenie z tym ZIP-em zostało zapisane albo wysłane: bez pytania przed opuszczeniem strony.
@@ -575,6 +577,15 @@ function pokazPola() {
   pokaz($("#faktura-poza-zakresem"), wynik.uwagi.some((u) => u.kod === "FAKTURA_R_POZA_ZAKRESEM"));
   pokaz($("#faktura-okres-dlugi"), wynik.uwagi.some((u) => u.kod === "FAKTURA_OKRES_DLUGI"));
   pokaz($("#faktura-cena-nietypowa"), wynik.uwagi.some((u) => u.kod === "FAKTURA_CENA_NIETYPOWA"));
+  // Ceny w strefach w odwrotnej kolejności: tylko uwaga, z nazwami strefy zwykle najdroższej
+  // i najtańszej w tej taryfie.
+  const kolejnosc = wynik.uwagi.some((u) => u.kod === "FAKTURA_CENY_KOLEJNOSC") && STREFY_KOLEJNOSC[wybrane("taryfa")];
+  const kolejnoscEl = $("#faktura-ceny-kolejnosc");
+  if (kolejnosc) {
+    const nazwy = nazwyStref(wybrane("taryfa"));
+    kolejnoscEl.textContent = t("faktura_ceny_kolejnosc", { najdrozsza: nazwy[kolejnosc.najdrozsza], najtansza: nazwy[kolejnosc.najtansza] });
+  } else kolejnoscEl.textContent = "";
+  pokaz(kolejnoscEl, Boolean(kolejnosc));
   // Sprzedawca z listy wpisany w polu „inny”: tylko podpowiedź, bez blokady i bez wpisu do plików.
   pokaz($("#sprzedawca-na-liscie"), wybrane("sprzedawca") === "inny" && sprzedawcaZListy(wartoscPola("sprzedawca_nazwa")));
   // Pojemność magazynu nie jest obowiązkowa: przy „tak” i pustym polu tylko uwaga, bez blokady.
@@ -706,17 +717,27 @@ function wKolejnosci(lista) {
   return [...lista].sort((a, b) => (a.kontener === b.kontener ? 0 : a.kontener.compareDocumentPosition(b.kontener) & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : 1));
 }
 
+const widoczne = (e) => !e.disabled && e.getClientRects().length > 0;
+
 // Element, który dostaje fokus przy błędzie: konkretne pole ceny w strefie albo część opłaty, gdy
 // moduł je wskazuje, w pozostałych przypadkach pierwsze widoczne pole w kontenerze. Pole
-// w zwiniętej części (opłaty stałe) najpierw ją rozwija.
+// w zwiniętej części (opłaty stałe) najpierw ją rozwija. Błąd całego pola ceny (format jednej
+// ceny, liczba stref) wskazuje pierwsze puste pole ceny, a gdy pustego nie ma, pierwsze pole
+// ceny: przełącznik jednej ceny i cen w strefach przy taryfie „inna” stoi w tym samym polu
+// przed polami cen i nie jest błędny.
 function poleDoFokusu({ pole, kontener }) {
   const zwiniete = kontener.closest("details");
   if (zwiniete && !zwiniete.open) zwiniete.open = true;
+  if (pole === "cena_energii_netto_zl_kwh") {
+    const ceny = $$("#cena-pola input").filter(widoczne);
+    const cena = ceny.find((e) => !e.value.trim()) ?? ceny[0];
+    if (cena) return cena;
+  }
   const strefa = /^cena_energii_netto_zl_kwh\[(\d+)\]$/.exec(pole);
   const czesc = /\.(nazwa|kwota_zl_mies)$/.exec(pole);
   const wskazane = strefa ? $(`#p-cena-${strefa[1]}`) : czesc ? $(`[data-czesc="${czesc[1] === "nazwa" ? "nazwa" : "kwota"}"]`, kontener) : null;
   if (wskazane) return wskazane;
-  return $$("input, select", kontener).find((e) => !e.disabled && e.getClientRects().length > 0) ?? kontener;
+  return $$("input, select", kontener).find(widoczne) ?? kontener;
 }
 
 // Tekst blokady z plików taki sam jak pod listą plików.
@@ -812,7 +833,7 @@ function uniewaznijZip() {
 // Kompresja jest asynchroniczna. Gotowy ZIP trafia do pamięci tylko wtedy, gdy dane się w tym
 // czasie nie zmieniły (to samo zgłoszenie i żadna zmiana nie czeka na przeliczenie). Nieudana
 // kompresja daje ZIP metodą 0 (zip.js); gdy i to się nie uda, obietnica jest odrzucona: krok 6
-// pokazuje blad_nieznany, a następne wywołanie (wejście na krok 5 albo 6) próbuje od nowa.
+// pokazuje zip_blad, a następne wywołanie (wejście na krok 5 albo 6) próbuje od nowa.
 function zbudujZip() {
   if (!wynik?.moznaZapisac || zip?.wynik === wynik || budowanyDla === wynik) return;
   const budowany = wynik;
@@ -863,7 +884,7 @@ function pokazWysylke() {
   else if (wynik.powod === "blokada" && wynik.blokady.some((b) => b.kod === BLOKADA_POL)) tresc = t(BLOKADA_POL);
   else if (wynik.powod === "blokada") tresc = t("zapis_blokada");
   else if (wynik.powod === "bledy_pol") tresc = t("zapis_popraw", { pola: nazwyPol(wynik.bledyPol).join(", ") });
-  else if (bladZipu === wynik) tresc = t("blad_nieznany");
+  else if (bladZipu === wynik) tresc = t("zip_blad");
   powod.textContent = tresc;
   pokaz(powod, Boolean(tresc) && widok6 !== "wyslane");
 
@@ -891,6 +912,23 @@ function pokazWysylke() {
   $("#zapisz").disabled = !gotowy;
   // W trakcie wysyłki dane zgłoszenia zostają takie, jakie wysłano.
   $("#kreator-wstecz").disabled = wysylkaTrwa;
+}
+
+// Komunikat po nieudanej wysyłce znika, gdy klient zmienia adres albo znów wybiera przycisk
+// wysyłki: nie stoi obok tekstu o błędnym adresie i nie opisuje próby, która jeszcze się nie
+// odbyła.
+function schowajBladWysylki() {
+  if (!bladWysylki) return;
+  bladWysylki = null;
+  pokazWysylke();
+}
+
+// Linia pod przyciskiem wysyłki: po 5 s bez odpowiedzi liczba sekund do końca limitu czasu,
+// odświeżana co sekundę. null chowa linię.
+function pokazCzekanie(sekundy) {
+  const e = $("#wysylka-czekanie");
+  e.textContent = sekundy === null ? "" : t("wysylka_czekanie", { sekundy });
+  pokaz(e, sekundy !== null);
 }
 
 function pokazBladAdresu(widoczny) {
@@ -935,11 +973,13 @@ function pokazWyslane() {
 }
 
 // Wysyłka: najpierw sprawdzenie, czy wysyłka przez stronę jest tu dostępna (ukrycie pola
-// i przycisku nie jest jedynym zabezpieczeniem), potem adres sprawdzony przed żądaniem (zły adres:
-// tekst przy polu, bez żądania), potem jedno żądanie z gotowym ZIP-em, z limitem czasu. Przed
-// żądaniem nie ma czekania na kompresję. Odpowiedź zamienia na tekst moduł wysylka.js.
+// i przycisku nie jest jedynym zabezpieczeniem), potem zniknięcie komunikatu poprzedniej próby,
+// potem adres sprawdzony przed żądaniem (zły adres: tekst przy polu, bez żądania), potem jedno
+// żądanie z gotowym ZIP-em, z limitem czasu i odliczaniem pod przyciskiem. Przed żądaniem nie ma
+// czekania na kompresję. Odpowiedź zamienia na tekst moduł wysylka.js.
 async function wyslij() {
   if (!wysylkaDostepna(location.protocol, location.hostname)) return;
+  schowajBladWysylki();
   if (czekaPrzeliczenie) przelicz();
   const gotowy = aktualnyZip();
   const adres = sprawdzAdres($("#p-adres").value);
@@ -955,6 +995,8 @@ async function wyslij() {
   pokazWysylke();
   const kontroler = new AbortController();
   const limit = setTimeout(() => kontroler.abort(), CZAS_WYSYLKI_MS);
+  const poczatek = performance.now();
+  const odliczanie = setInterval(() => pokazCzekanie(sekundyCzekania(performance.now() - poczatek)), 1000);
   let odpowiedz = null;
   try {
     const o = await fetch("/zgloszenie/", {
@@ -972,6 +1014,8 @@ async function wyslij() {
     odpowiedz = null;
   } finally {
     clearTimeout(limit);
+    clearInterval(odliczanie);
+    pokazCzekanie(null);
   }
   wysylkaTrwa = false;
   const w = wynikWysylki(odpowiedz);
@@ -1083,6 +1127,13 @@ function wpiszDatyZMiesiaca() {
   doDnia.value = okres.do;
 }
 
+// Liczba wpisana od przecinka („,3”) po wyjściu z pola dostaje zero na początku („0,3”); klient
+// widzi poprawioną wartość. Moduły dalej przyjmują tylko pełny zapis.
+function uzupelnijZero(pole) {
+  const z = zeroPrzedPrzecinkiem(pole.value);
+  if (z !== pole.value) pole.value = z;
+}
+
 // Cena po wyjściu z pola: poprawna wartość w postaci z co najmniej dwoma miejscami i przecinkiem
 // („1” -> „1,00”); błędna zostaje tak, jak ją wpisano, przy niej stoi komunikat.
 function uzupelnijCene(pole) {
@@ -1099,6 +1150,7 @@ function zmianaPola(z) {
   // niczego nie kasuje.
   if (pole.name === "sprzedawca" && pole.value === "pstryk") $('input[name="rodzaj_ceny"][value="dynamiczna"]').checked = true;
   if (pole.id === "p-okres-inny" && pole.checked) wpiszDatyZMiesiaca();
+  if (pole.matches('input[inputmode="decimal"]')) uzupelnijZero(pole);
   if (pole.matches("#p-cena, [data-strefa]")) uzupelnijCene(pole);
   if (["taryfa", "cena_tryb", "rodzaj_ceny", "sprzedawca"].includes(pole.name)) zbudujPolaCen();
   przelicz();
@@ -1177,9 +1229,12 @@ function start() {
   $("#wyslij").addEventListener("click", wyslij);
   $("#zapasowa-pokaz").addEventListener("click", pokazZapasowa);
   $("#zapasowa-wroc").addEventListener("click", wrocZZapasowej);
-  // Adres e-mail: poprawianie chowa komunikat przy polu. Wysyłkę zaczyna tylko przycisk; Enter
-  // w polu niczego nie wysyła (pole nie leży w formularzu HTML).
-  $("#p-adres").addEventListener("input", () => pokazBladAdresu(false));
+  // Adres e-mail: poprawianie chowa komunikat przy polu i komunikat po nieudanej wysyłce. Wysyłkę
+  // zaczyna tylko przycisk; Enter w polu niczego nie wysyła (pole nie leży w formularzu HTML).
+  $("#p-adres").addEventListener("input", () => {
+    pokazBladAdresu(false);
+    schowajBladWysylki();
+  });
   przelicz();
   pokazKrok(1, { fokus: false });
 }

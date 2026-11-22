@@ -17,11 +17,16 @@
 // niedostępna pod inną nazwą serwera niż 127.0.0.1 i localhost (także kliknięcie ukrytego przycisku
 // nie wysyła żądania), ciało wysłanego żądania równe zapisanemu plikowi ZIP, podwójne kliknięcie
 // „Wyślij zgłoszenie” z jednym żądaniem, ZIP ponad limit wysyłki (przeglądarka bez
-// CompressionStream), nieudana kompresja (ZIP metodą 0) i nieudana budowa ZIP-a (blad_nieznany,
+// CompressionStream), nieudana kompresja (ZIP metodą 0) i nieudana budowa ZIP-a (zip_blad,
 // ponowienie przy kolejnym wejściu na krok), formularz (opusty, ceny, okres, magazyn), blokady
 // (także blokada z pól wpisanych ręcznie, która zatrzymuje „Dalej” w kroku z polem) i lista
-// plików, zmiany z wersji 0.1.4 i 0.1.5 w obu wariantach. Na końcu: karta ze stroną nie wysyła żadnego zapytania poza 127.0.0.1 i poza własne
-// pliki oraz POST pod /zgloszenie/, nie pisze w konsoli błędów i nie zostawia niczego w przeglądarce.
+// plików, zmiany z wersji 0.1.4 i 0.1.5 w obu wariantach. Także w obu wariantach: odliczanie pod
+// przyciskiem wysyłki po 5 s bez odpowiedzi, znikanie komunikatu po nieudanej wysyłce przy
+// zmianie adresu i przy kolejnym kliknięciu, zero przed liczbą wpisaną od przecinka, zdanie
+// sprawdzenie_dalej na końcu kroku 5, uwaga o kolejności cen w strefach i fokus na polu ceny
+// przy błędzie ceny w taryfie „inna”.
+// Na końcu: karta ze stroną nie wysyła żadnego zapytania poza 127.0.0.1 i poza własne pliki oraz
+// POST pod /zgloszenie/, nie pisze w konsoli błędów i nie zostawia niczego w przeglądarce.
 //
 // Wszystko, co skrypt tworzy, leży w jednym katalogu tymczasowym (pliki wejściowe, profil
 // przeglądarki, pobrany ZIP, zrzuty). Katalog jest usuwany, a przeglądarka i serwer zamykane
@@ -29,8 +34,8 @@
 // zostaje do obejrzenia. Opcja --blad-probny rzuca wyjątek w trakcie próby, żeby sprawdzić
 // sprzątanie.
 //
-// Kod wyjścia: 0 wszystko w porządku, 1 co najmniej jedno sprawdzenie nie przeszło, 2 złe wywołanie,
-// 3 próba przerwana wyjątkiem.
+// Kod wyjścia: 0 wszystko w porządku, 1 co najmniej jedno sprawdzenie nie przeszło, 2 złe
+// wywołanie, 3 próba przerwana wyjątkiem.
 
 import { spawn } from "node:child_process";
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, readdirSync, rmSync } from "node:fs";
@@ -217,11 +222,13 @@ async function proba() {
   const strona = (m, p) => cdp(m, p, sessionId);
   for (const d of ["Page", "Runtime", "Log", "Network", "DOM"]) await strona(`${d}.enable`);
   await cdp("Browser.setDownloadBehavior", { behavior: "allow", downloadPath: join(PRACA, "pobrane"), eventsEnabled: true });
-  // Limit czasu wysyłki (120 s) skrócony w próbie do 2 s, żeby odpowiedź „brak-odpowiedzi” nie
-  // trzymała próby dwie minuty. Podmiana dotyczy tylko tej jednej wartości i działa przed skryptami
-  // strony; kod strony zostaje bez zmian.
+  // Limit czasu wysyłki (60 s) skrócony w próbie do 2 s, żeby odpowiedź „brak-odpowiedzi” nie
+  // trzymała próby minuty. Próba odliczania ustawia na chwilę window.__probaLimitWysylki (dłużej
+  // niż 5 s, po których pojawia się linia z odliczaniem). Podmiana dotyczy tylko tej jednej
+  // wartości i działa przed skryptami strony; kod strony zostaje bez zmian, więc odliczanie liczy
+  // sekundy do końca prawdziwego limitu.
   await strona("Page.addScriptToEvaluateOnNewDocument", { source: `(() => { const st = window.setTimeout;
-    window.setTimeout = function (f, ms, ...a) { return st.call(window, f, ms === ${CZAS_WYSYLKI_MS} ? 2000 : ms, ...a); }; })()` });
+    window.setTimeout = function (f, ms, ...a) { return st.call(window, f, ms === ${CZAS_WYSYLKI_MS} ? (window.__probaLimitWysylki ?? 2000) : ms, ...a); }; })()` });
 
   const czekaj = (ms) => new Promise((ok) => setTimeout(ok, ms));
   async function js(wyrazenie) {
@@ -314,8 +321,8 @@ async function proba() {
   const zgloszenia = () => zdarzenia.filter((z) => z.method === "Network.requestWillBeSent" && z.params.request.url === ZGLOSZENIE).map((z) => z.params.request);
   // Żądania pod ścieżkę /zgloszenie/ pod każdą nazwą serwera (także proba.invalid).
   const zgloszeniaWszedzie = () => zdarzenia.filter((z) => z.method === "Network.requestWillBeSent" && new URL(z.params.request.url).pathname === "/zgloszenie/").length;
-  // Ciało żądania jako bajty: z wpisów zdarzenia albo, gdy ich nie ma, z Network.getRequestPostData.
-  // null, gdy przeglądarka nie poda ciała bez utraty bajtów.
+  // Ciało żądania jako bajty: z wpisów zdarzenia albo, gdy ich nie ma, z
+  // Network.getRequestPostData. null, gdy przeglądarka nie poda ciała bez utraty bajtów.
   async function cialoZadania(z) {
     const wpisy = z.params.request.postDataEntries;
     if (wpisy?.length && wpisy.every((w) => typeof w.bytes === "string")) return Buffer.concat(wpisy.map((w) => Buffer.from(w.bytes, "base64")));
@@ -334,7 +341,8 @@ async function proba() {
       przycisk: b.textContent, aktywny: !b.disabled, wroc: widac('#zapasowa-wroc'), pokazZapasowa: widac('#zapasowa-pokaz'),
       wstecz: widac('#kreator-wstecz'), wsteczAktywny: !document.querySelector('#kreator-wstecz').disabled, dalej: widac('#kreator-dalej'),
       przyciski: widac('#kreator-przyciski'), tytul: widac('#wysylka-tytul'), adres: document.querySelector('#p-adres').value,
-      fokus: document.activeElement?.id ?? '', zapisz: !document.querySelector('#zapisz').disabled }; })()`);
+      fokus: document.activeElement?.id ?? '', zapisz: !document.querySelector('#zapisz').disabled,
+      czekanie: widac('#wysylka-czekanie') && document.querySelector('#wysylka-czekanie').textContent }; })()`);
   async function wyslijZAdresem(adres, ms = 800) {
     await wpisz("#p-adres", adres, "input");
     const przed = zgloszenia().length;
@@ -358,7 +366,7 @@ async function proba() {
   const SIEC = "Nie udało się wysłać zgłoszenia. Sprawdź połączenie z internetem i spróbuj jeszcze raz albo zapisz plik i wyślij go sam.";
   const SERWER = "Nie udało się przyjąć zgłoszenia. Spróbuj za kilka minut albo zapisz plik i wyślij go sam.";
   const LIMIT = "Z tego urządzenia albo na ten adres wysłano już dziś kilka zgłoszeń. Spróbuj później albo zapisz plik i wyślij go sam.";
-  const ZA_DUZY = "To zgłoszenie jest za duże, żeby wysłać je przez stronę. Zapisz plik i wyślij go sam.";
+  const ZA_DUZY = "Przygotowany plik zgłoszenia jest za duży, żeby wysłać go przez stronę. Zapisz plik i wyślij go sam.";
   const ADRES_BLAD = `Wpisz adres e-mail w postaci nazwa${"@"}domena.pl.`;
 
   // 1. Pusta strona (raz, 1280 px).
@@ -374,12 +382,13 @@ async function proba() {
   sprawdz("powód w kroku 6: brak plików", (await tekstEl("#zapis-powod")) === "Najpierw wybierz plik godzinowy.");
   sprawdz("bez uwagi o brakujących polach na pustej stronie", await js("document.querySelector('#faktura-brak').hidden"));
   const odnosniki = await js("[...document.querySelectorAll('#plik-instrukcja a, #zgoda-wiecej a, #wersja a')].map(a => [a.getAttribute('href'), a.target, a.rel])");
+  sprawdz("odnośnik do repozytorium prowadzi do wydania v0.2.0", odnosniki[2]?.[0]?.endsWith("/releases/tag/v0.2.0"), String(odnosniki[2]?.[0]));
   sprawdz("odnośniki instrukcji, zgody i repozytorium w nowej karcie", odnosniki.length === 3 && odnosniki.every(([, t, r]) => t === "_blank" && r === "noopener noreferrer"), JSON.stringify(odnosniki));
   sprawdz("krok 1: „jak go pobrać z eLicznika” prowadzi do /jak-pobrac-dane-z-elicznika/", await js(`(() => { const p = document.querySelector('#plik-instrukcja'); const a = p.querySelector('a');
     return p.previousElementSibling.dataset.tekst === 'pliki_wybor' && p.textContent === 'Nie masz jeszcze pliku? Zobacz, jak go pobrać z eLicznika.' && a.textContent === 'jak go pobrać z eLicznika' && a.getAttribute('href') === '/jak-pobrac-dane-z-elicznika/'; })()`));
   sprawdz("odnośnik zgody poza etykietą pola", await js("!document.querySelector('#zgoda-etykieta a') && document.querySelector('#zgoda-wiecej a').getAttribute('href') === '/prywatnosc/'"));
   sprawdz("zakres przed dodaniem pliku: zakres_pusty", (await tekstEl("#zakres")) === "Zakres pojawi się tu po dodaniu pliku.");
-  sprawdz("stopka: tekst wersji 0.2.0 z numerem 0.1.5", (await tekstEl("#wersja")) === "To jest wersja 0.1.5. Kod tej wersji jest publiczny na GitHubie. Narzędzie wysyła tylko zgłoszenie i dopiero po wybraniu „Wyślij zgłoszenie”. Nie wysyła niczego do usług AI.");
+  sprawdz("stopka: tekst wersji z numerem 0.2.0", (await tekstEl("#wersja")) === "To jest wersja 0.2.0. Kod tej wersji jest publiczny na GitHubie. Narzędzie wysyła tylko zgłoszenie i dopiero po wybraniu „Wyślij zgłoszenie”. Nie wysyła niczego do usług AI.");
   const panel = await js(`(() => { const d = document.querySelector('#krok-pliki details.panel');
     return { otwarty: d.open, napis: d.querySelector('summary').textContent, trafia: [...d.querySelectorAll('ul')][1].children.length, ostatni: [...d.querySelectorAll('ul')][1].lastElementChild.textContent }; })()`);
   sprawdz("krok 1: „Co zostaje u Ciebie, a co trafia do nas?” zwinięte, adres e-mail na liście „Trafia do nas”",
@@ -630,6 +639,13 @@ async function proba() {
     await czekaj(500);
     sprawdz(w("zgoda zmienia ZIP: podgląd „Zgoda zaznaczona”, rozmiar znów widoczny po kompresji"),
       (await tekstEl("#podglad")).includes("Zgoda zaznaczona") && /^Rozmiar zgłoszenia: \d+ KB\.$/.test(await tekstEl("#podglad-rozmiar")) && !(await js("document.querySelector('#podglad-rozmiar').hidden")));
+    const ostatniaLinia = await js(`(() => { const s = document.querySelector('#krok-sprawdzenie'); const p = s.lastElementChild;
+      const pr = p.getBoundingClientRect(), pn = document.querySelector('#numer').getBoundingClientRect(), pp = document.querySelector('#kreator-przyciski').getBoundingClientRect();
+      return { tekst: p.textContent, klasa: p.className, widac: !p.hidden && p.getClientRects().length > 0,
+        podNumerem: pr.top >= pn.bottom, nadPrzyciskami: pr.bottom <= pp.top, krojPodpowiedzi: getComputedStyle(p).fontSize === getComputedStyle(document.querySelector('[data-tekst="zgoda_bez"]')).fontSize }; })()`);
+    sprawdz(w("krok 5: ostatnia linia sprawdzenie_dalej krojem podpowiedzi, pod numerem, tuż nad przyciskami"),
+      ostatniaLinia.tekst === "Wybranie „Dalej” jeszcze niczego nie wysyła. W następnym kroku podasz adres e-mail i wyślesz zgłoszenie." &&
+      ostatniaLinia.klasa === "podpowiedz" && ostatniaLinia.widac && ostatniaLinia.podNumerem && ostatniaLinia.nadPrzyciskami && ostatniaLinia.krojPodpowiedzi, JSON.stringify(ostatniaLinia));
     sprawdz(w(`krok 5, ${px} px: bez poziomego przewijania`), await bezPrzewijaniaWPoziomie(px));
     await zrzut(`${wariant}-5-sprawdzenie`);
     await dalej();
@@ -687,11 +703,61 @@ async function proba() {
     await js("document.querySelector('#wyslij').click()");
     await czekaj(200);
     s6 = await stan6();
-    sprawdz(w("w trakcie wysyłki: przycisk nieaktywny z napisem wysylka_trwa, „Wstecz” nieaktywne"), !s6.aktywny && s6.przycisk === "Wysyłanie…" && !s6.wsteczAktywny, JSON.stringify(s6));
+    sprawdz(w("w trakcie wysyłki: przycisk nieaktywny z napisem wysylka_trwa, „Wstecz” nieaktywne, przed upływem 5 s bez odliczania"), !s6.aktywny && s6.przycisk === "Wysyłanie…" && !s6.wsteczAktywny && s6.czekanie === false, JSON.stringify(s6));
     await czekaj(2600);
     s6 = await stan6();
-    sprawdz(w("brak odpowiedzi do końca limitu czasu: wysylka_blad_sieci, przycisk znów aktywny"), zgloszenia().length - przedBrakiem === 1 && s6.komunikat === SIEC && s6.aktywny && s6.przycisk === "Wyślij zgłoszenie" && s6.wsteczAktywny, JSON.stringify(s6));
+    sprawdz(w("brak odpowiedzi do końca limitu czasu: wysylka_blad_sieci, przycisk znów aktywny, bez odliczania"), zgloszenia().length - przedBrakiem === 1 && s6.komunikat === SIEC && s6.aktywny && s6.przycisk === "Wyślij zgłoszenie" && s6.wsteczAktywny && s6.czekanie === false, JSON.stringify(s6));
     sprawdz(w("po nieudanych wysyłkach strona dalej pyta przed opuszczeniem"), await pytaPrzedWyjsciem());
+
+    // Komunikat po nieudanej wysyłce znika, gdy klient zmienia adres, i gdy znów wybiera przycisk,
+    // także z błędnym adresem: błąd adresu i błąd poprzedniej próby nie stoją obok siebie.
+    await wpisz("#p-adres", "jan@", "input");
+    s6 = await stan6();
+    sprawdz(w("po nieudanej wysyłce zmiana adresu: komunikat poprzedniej próby znika"), s6.komunikat === false && s6.adresBlad === false && s6.aktywny, JSON.stringify(s6));
+    n = await wyslijZAdresem(`limit@${D}`);
+    sprawdz(w("kolejna nieudana próba: wysylka_blad_limit"), n === 1 && (await stan6()).komunikat === LIMIT);
+    await js("document.querySelector('#p-adres').value = 'jan'");
+    await js("document.querySelector('#wyslij').click()");
+    await czekaj(300);
+    s6 = await stan6();
+    sprawdz(w("„Wyślij zgłoszenie” z błędnym adresem po nieudanej próbie: tylko wysylka_adres_blad, bez komunikatu poprzedniej próby, bez żądania"),
+      s6.adresBlad === ADRES_BLAD && s6.komunikat === false && zgloszenia().length - przedBrakiem === 2, JSON.stringify(s6));
+    n = await wyslijZAdresem(`niedostepne@${D}`);
+    s6 = await stan6();
+    sprawdz(w("poprawny adres po błędnym: tekst przy polu znika, nowa próba ma własny komunikat"), n === 1 && s6.adresBlad === false && s6.komunikat === SERWER, JSON.stringify(s6));
+    await wpisz("#p-adres", `zly-adres@${D}`, "input");
+    const przedKliknieciem = zgloszenia().length;
+    await js("document.querySelector('#wyslij').click()");
+    const zaraz = await stan6();
+    await czekaj(800);
+    s6 = await stan6();
+    sprawdz(w("kliknięcie z poprawnym adresem po nieudanej próbie: komunikat znika od razu, odpowiedź zly_adres tylko przy polu"),
+      zaraz.komunikat === false && zgloszenia().length - przedKliknieciem === 1 && s6.adresBlad === ADRES_BLAD && s6.komunikat === false, JSON.stringify({ zaraz, s6 }));
+
+    // Odliczanie: limit w próbie wydłużony do 7,5 s, żeby linia zdążyła się pojawić po 5 s.
+    await wpisz("#p-adres", `brak-odpowiedzi@${D}`, "input");
+    await js("window.__probaLimitWysylki = 7500");
+    const przedOdliczaniem = zgloszenia().length;
+    const t0 = Date.now();
+    await js("document.querySelector('#wyslij').click()");
+    await czekaj(3000);
+    const po3 = await stan6();
+    await czekaj(Math.max(0, 5700 - (Date.now() - t0)));
+    const po57 = await stan6();
+    const polozenie = await js("document.querySelector('#wyslij').nextElementSibling?.id === 'wysylka-czekanie'");
+    await czekaj(Math.max(0, 6900 - (Date.now() - t0)));
+    const po69 = await stan6();
+    await zrzut(`${wariant}-6a-odliczanie`);
+    await czekaj(Math.max(0, 8800 - (Date.now() - t0)));
+    const poLimicie = await stan6();
+    await js("window.__probaLimitWysylki = undefined");
+    const sekundy = (s) => Number(/^Czekamy na odpowiedź, jeszcze najwyżej (\d+) s\.$/.exec(s.czekanie || "")?.[1] ?? NaN);
+    sprawdz(w("odliczanie: przez pierwsze 5 s bez linii"), po3.czekanie === false && !po3.aktywny, JSON.stringify(po3));
+    sprawdz(w("odliczanie: po 5 s linia wysylka_czekanie pod przyciskiem z liczbą sekund do końca limitu 60 s"),
+      polozenie && sekundy(po57) >= 53 && sekundy(po57) <= 55 && po57.komunikat === false, String(po57.czekanie));
+    sprawdz(w("odliczanie: liczba sekund maleje co sekundę"), sekundy(po69) === sekundy(po57) - 1, `${po57.czekanie} -> ${po69.czekanie}`);
+    sprawdz(w("odliczanie: po limicie linia znika razem z wysylka_blad_sieci, jedno żądanie"),
+      poLimicie.czekanie === false && poLimicie.komunikat === SIEC && poLimicie.aktywny && zgloszenia().length - przedOdliczaniem === 1, JSON.stringify(poLimicie));
 
     n = await wyslijZAdresem(`bez-potwierdzenia@${D}`);
     s6 = await stan6();
@@ -703,7 +769,7 @@ async function proba() {
       fokus: document.activeElement?.id, napis: document.querySelector('#kreator-krok').textContent }))()`);
     sprawdz(w("200 bez potwierdzenia: ekran po wysłaniu z wyslane_bez_potwierdzenia i adresem, bez przycisków kreatora, fokus na tytule, nad paskiem „Gotowe”"),
       n === 1 && s6.wyslane && !s6.wysylka && !s6.tytul && !s6.przyciski && wyslane.tytul === "Zgłoszenie wysłane" && wyslane.fokus === "wyslane-tytul" && wyslane.napis === "Gotowe" &&
-      wyslane.potwierdzenie === `Zgłoszenie do nas dotarło, ale nie udało się wysłać potwierdzenia na adres bez-potwierdzenia@${D}. Raport wyślemy na ten adres w ciągu 10 dni roboczych. Jeśli adres jest błędny, popraw go i wyślij zgłoszenie jeszcze raz.` &&
+      wyslane.potwierdzenie === `Zgłoszenie do nas dotarło, ale nie udało się wysłać potwierdzenia na adres bez-potwierdzenia@${D}. Raport spróbujemy wysłać na ten adres w ciągu 10 dni roboczych. Jeśli adres jest błędny, popraw go i wyślij zgłoszenie jeszcze raz.` &&
       wyslane.adres === `bez-potwierdzenia@${D}`, JSON.stringify({ s6, wyslane }));
     sprawdz(w("ekran po wysłaniu: numer dużym krojem o stałej szerokości, ramka z przyciskiem poprawy, pytanie, przycisk na stronę w nowej karcie"),
       wyslane.numer === numer && /Mono/.test(wyslane.numerCzcionka) && wyslane.brak === "Nie widzisz potwierdzenia po kilku minutach? Sprawdź folder ze spamem. Jeśli go tam nie ma, adres mógł być błędny: popraw go i wyślij zgłoszenie jeszcze raz. Liczy się ostatnie." &&
@@ -759,7 +825,7 @@ async function proba() {
         JSON.stringify(zawartosc.map((p) => [p.nazwa, p.metoda, p.skompresowany, p.rozmiar])));
       sprawdz(w("rozmiar w podglądzie równy rozmiarowi zapisanego ZIP-a"), (await tekstEl("#podglad-rozmiar")) === `Rozmiar zgłoszenia: ${rozmiarDoWyswietlenia(bajty.length)}.`, `${await tekstEl("#podglad-rozmiar")} / ${bajty.length} B`);
       const z = JSON.parse(new TextDecoder().decode(zawartosc[0].bajty));
-      sprawdz(w("zgloszenie.json: numer, zgoda niezaznaczona po drugiej zmianie, klasyfikacja, wersja 0.1.5"), z.numer === numer && z.zgoda_przypadek_testowy === false && z.zakres.klasyfikacja === "raport" && z.narzedzie === "0.1.5", JSON.stringify(z).slice(0, 200));
+      sprawdz(w("zgloszenie.json: numer, zgoda niezaznaczona po drugiej zmianie, klasyfikacja, wersja 0.2.0"), z.numer === numer && z.zgoda_przypadek_testowy === false && z.zakres.klasyfikacja === "raport" && z.narzedzie === "0.2.0", JSON.stringify(z).slice(0, 200));
       const tekstZip = bajty.toString("latin1");
       sprawdz(w("w ZIP-ie nie ma numerów PPE ani płatnika ani nazw plików ani adresu e-mail"), !tekstZip.includes(PPE_FIKCYJNE[0]) && !tekstZip.includes(PLATNICY_FIKCYJNI[0]) && !tekstZip.includes("eLicznik") && !tekstZip.includes(D));
       const fak = JSON.parse(new TextDecoder().decode(zawartosc[1].bajty));
@@ -920,7 +986,7 @@ async function proba() {
   await strona("Page.removeScriptToEvaluateOnNewDocument", { identifier: zlaKompresja });
 
   // 4b. Budowa ZIP-a nie udaje się żadną metodą (zapis nagłówków zgłasza błąd): krok 6 pokazuje
-  // blad_nieznany, przyciski nieaktywne; kolejne wejście na krok ponawia próbę.
+  // zip_blad, przyciski nieaktywne; kolejne wejście na krok ponawia próbę.
   await otworz();
   await ustawPliki([plikStyczen]);
   sprawdz("nieudana budowa ZIP-a: do kroku 4", await naKrok(4));
@@ -930,9 +996,9 @@ async function proba() {
   await dalej();
   await czekaj(800);
   s6 = await stan6();
-  const NIEZNANY = "Narzędzie nie odczytało tego pliku. Wybierz plik CSV pobrany z eLicznika.";
-  sprawdz("nieudana budowa ZIP-a: krok 6 z blad_nieznany, wysyłka i zapis nieaktywne, bez rozmiaru",
-    (await krok()) === 6 && (await tekstEl("#zapis-powod")) === NIEZNANY && (await widoczny("#zapis-powod")) && !s6.aktywny && !s6.zapisz &&
+  const ZIP_BLAD = "Nie udało się przygotować plików zgłoszenia. Wybierz „Wstecz”, a potem „Dalej”, żeby spróbować jeszcze raz.";
+  sprawdz("nieudana budowa ZIP-a: krok 6 z zip_blad, wysyłka i zapis nieaktywne, bez rozmiaru",
+    (await krok()) === 6 && (await tekstEl("#zapis-powod")) === ZIP_BLAD && (await widoczny("#zapis-powod")) && !s6.aktywny && !s6.zapisz &&
     (await js("document.querySelector('#podglad-rozmiar').hidden")), JSON.stringify({ powod: await tekstEl("#zapis-powod"), s6 }));
   await js("DataView.prototype.setUint32 = window.__probaSetUint32");
   await wstecz();
@@ -1140,7 +1206,8 @@ async function proba() {
   await wpisz("#p-taryfa_nazwa", "Taryfa X", "input");
   await czekaj(600);
   sprawdz("po poprawie pola blokada znika, także komunikat kroku", !(await tekstEl("#zapis-powod")).includes(POLA) && (await zapisMozliwy()) && (await stanKreatora()).komunikat === false);
-  // Pole w zwiniętych opłatach stałych, w drugim wierszu: „Dalej” rozwija opłaty i daje fokus nazwie.
+  // Pole w zwiniętych opłatach stałych, w drugim wierszu: „Dalej” rozwija opłaty i daje fokus
+  // nazwie.
   await js("document.querySelector('details.oplaty').open = false; document.querySelector('#dodaj-oplate').click();");
   await js(`(() => { const wpisz = (s, v) => { const e = document.querySelector(s); e.value = v; e.dispatchEvent(new Event("input", { bubbles: true })); };
     wpisz('#p-oplata-1-nazwa', 'Opłata PPE'); wpisz('#p-oplata-1-kwota', '1,00'); })()`);
@@ -1255,6 +1322,38 @@ async function proba() {
     await wpiszCene("0,62");
     sprawdz(w("cena „0,62”: bez błędu, zapis możliwy"), (await tekstEl('[data-pole="cena_energii_netto_zl_kwh"] > .blad')) === "" && (await zapisMozliwy()));
 
+    // Liczba wpisana od przecinka: po wyjściu z pola zero na początku, w każdym polu z liczbą.
+    const wpiszJakKlient = async (wybor, tekst) => {
+      await js(`(() => { const e = document.querySelector(${JSON.stringify(wybor)}); e.focus(); e.select(); })()`);
+      await strona("Input.insertText", { text: tekst });
+      await js(`document.querySelector(${JSON.stringify(wybor)}).blur()`);
+      await czekaj(400);
+    };
+    const wartoscPola = (wybor) => js(`document.querySelector(${JSON.stringify(wybor)}).value`);
+    await wpiszCene(",3");
+    sprawdz(w("cena „,3” po wyjściu z pola: „0,30” (zero na początku i dwa miejsca), bez błędu, w faktury.json \"0.30\""),
+      (await wartoscPola("#p-cena")) === "0,30" && (await tekstEl('[data-pole="cena_energii_netto_zl_kwh"] > .blad')) === "" &&
+      (await tekstEl("#podglad")).includes('"cena_energii_netto_zl_kwh": "0.30"'), await wartoscPola("#p-cena"));
+    await js("document.querySelector('details.oplaty').open = true");
+    await wpiszJakKlient("#p-oplata_mocowa_zl_mies", ",5");
+    sprawdz(w("opłata stała „,5” po wyjściu z pola: „0,5”, bez błędu, w faktury.json \"0.50\""),
+      (await wartoscPola("#p-oplata_mocowa_zl_mies")) === "0,5" && (await tekstEl('[data-pole="oplata_mocowa_zl_mies"] .blad')) === "" &&
+      (await tekstEl("#podglad")).includes('"oplata_mocowa_zl_mies": "0.50"'), await wartoscPola("#p-oplata_mocowa_zl_mies"));
+    await wpiszJakKlient("#p-oplata_mocowa_zl_mies", ",5x");
+    sprawdz(w("opłata „,5x”: wartość bez zmian, błąd formatu przy polu"),
+      (await wartoscPola("#p-oplata_mocowa_zl_mies")) === ",5x" && (await tekstEl('[data-pole="oplata_mocowa_zl_mies"] .blad')).includes("na przykład 12,34"), await wartoscPola("#p-oplata_mocowa_zl_mies"));
+    await wpiszJakKlient("#p-oplata_mocowa_zl_mies", "12,34");
+    await naKrok(4);
+    await wpiszJakKlient("#p-moc_pv_kwp", ",75");
+    sprawdz(w("moc instalacji „,75” po wyjściu z pola: „0,75”, w instalacja.json \"0.75\""),
+      (await wartoscPola("#p-moc_pv_kwp")) === "0,75" && (await tekstEl("#podglad")).includes('"moc_pv_kwp": "0.75"'), await wartoscPola("#p-moc_pv_kwp"));
+    await klik('input[name="magazyn"][value="tak"]');
+    await wpiszJakKlient("#p-magazyn_pojemnosc_kwh", ",5");
+    sprawdz(w("pojemność magazynu „,5” po wyjściu z pola: „0,5”"), (await wartoscPola("#p-magazyn_pojemnosc_kwh")) === "0,5" &&
+      (await tekstEl("#podglad")).includes('"magazyn_pojemnosc_kwh": "0.50"'), await wartoscPola("#p-magazyn_pojemnosc_kwh"));
+    await naKrok(3);
+    await wpiszCene("0,62");
+
     // Dwa pliki o tych samych wartościach z różnym PPE: blokada, nie duplikat.
     await ustawPliki([plikStyczenInnyPpe]);
     const plakietki = await js("[...document.querySelectorAll('.plakietka')].map(e => e.textContent)");
@@ -1339,6 +1438,70 @@ async function proba() {
     await czekaj(500);
     sprawdz(w("G12, ta sama cena w obu polach: bez błędu, zapis możliwy, dwie ceny w faktury.json"),
       (await bladCeny()) === "" && (await zapisMozliwy()) && /"cena_energii_netto_zl_kwh": \[\s*"0\.60",\s*"0\.60"\s*\]/.test(await tekstEl("#podglad")), await bladCeny());
+
+    // Kolejność cen w strefach: ceny zamienione dają uwagę pod polami cen z nazwami stref i kod
+    // w zgloszenie.json, bez błędu i bez zatrzymania „Dalej”. Równe ceny bez uwagi.
+    const kolejnosc = () => js(`(() => { const u = document.querySelector('#faktura-ceny-kolejnosc');
+      return { widac: !u.hidden && u.getClientRects().length > 0 && u.textContent, klasa: u.className,
+        wZgloszeniu: (document.querySelector('#podglad details[data-plik="zgloszenie.json"] pre')?.textContent ?? '').includes('"kod": "FAKTURA_CENY_KOLEJNOSC"') }; })()`);
+    const ZAMIENIONE = (drozsza, tansza) => `Te ceny wyglądają na zamienione. Sprawdź, czy każda jest we właściwym polu. Zwykle najwyższa cena jest w polu „${drozsza}”, a najniższa w polu „${tansza}”.`;
+    sprawdz(w("G12, równe ceny: bez uwagi o kolejności cen"), JSON.stringify(await kolejnosc()) === JSON.stringify({ widac: false, klasa: "uwaga", wZgloszeniu: false }), JSON.stringify(await kolejnosc()));
+    for (const [taryfa, ceny, drozsza, tansza] of [
+      ["g12", ["0,40", "0,70"], "strefa dzienna", "strefa nocna"],
+      ["g12w", ["0,40", "0,70"], "strefa szczytowa", "strefa pozaszczytowa"],
+      ["g13", ["0,60", "0,70", "0,80"], "szczyt popołudniowy", "pozostałe godziny doby"],
+    ]) {
+      await klik(`input[name="taryfa"][value="${taryfa}"]`);
+      for (const [i, c] of ceny.entries()) await wpisz(`#p-cena-${i}`, c, "input");
+      await czekaj(500);
+      const k = await kolejnosc();
+      sprawdz(w(`${taryfa}, ceny ${ceny.join(" / ")}: uwaga o kolejności z nazwami „${drozsza}” i „${tansza}”, kod w zgloszenie.json, zapis możliwy`),
+        k.widac === ZAMIENIONE(drozsza, tansza) && k.klasa === "uwaga" && k.wZgloszeniu && (await bladCeny()) === "" && (await zapisMozliwy()), JSON.stringify(k));
+    }
+    await dalej();
+    sprawdz(w("uwaga o kolejności cen nie zatrzymuje „Dalej”"), (await krok()) === 4 && (await stanKreatora()).komunikat === false);
+    await wstecz();
+    for (const [i, c] of ["0,60", "0,70", "0,40"].entries()) await wpisz(`#p-cena-${i}`, c, "input");
+    await czekaj(500);
+    sprawdz(w("G13, ceny w zwykłej kolejności: uwaga znika"), (await kolejnosc()).widac === false && !(await kolejnosc()).wZgloszeniu);
+    await klik('input[name="taryfa"][value="inna"]');
+    await klik('input[name="cena_tryb"][value="strefy"]');
+    await klik("#dodaj-strefe");
+    await wpisz("#p-cena-0", "0,40", "input");
+    await wpisz("#p-cena-1", "0,70", "input");
+    await czekaj(500);
+    sprawdz(w("taryfa „inna”, ceny rosnące: bez sprawdzenia kolejności"), (await kolejnosc()).widac === false && !(await kolejnosc()).wZgloszeniu, JSON.stringify(await kolejnosc()));
+    // Taryfa „inna”: błąd ceny zatrzymuje „Dalej”, a fokus dostaje pole ceny, nie przełącznik
+    // jednej ceny i cen w strefach, który stoi w tym samym polu przed polami cen.
+    const KOMUNIKAT_CENY = "Popraw zaznaczone pole, aby przejść dalej: cena energii.";
+    await klik("#dodaj-strefe");
+    await wpisz("#p-cena-1", "", "input");
+    await wpisz("#p-cena-2", "0,80", "input");
+    await czekaj(500);
+    await dalej();
+    let st = await stanKreatora();
+    sprawdz(w("taryfa „inna”, puste pole w środku stref i „Dalej”: krok 3 zostaje, błąd liczby stref, fokus na pustym polu „strefa 2”"),
+      st.krok === 3 && st.komunikat === KOMUNIKAT_CENY && st.fokus === "p-cena-1" && (await bladCeny()) === "Wpisz wartość w każdej strefie albo wyczyść te pola.", JSON.stringify(st));
+    await wpisz("#p-cena-1", "51", "input");
+    await czekaj(500);
+    await dalej();
+    st = await stanKreatora();
+    sprawdz(w("taryfa „inna”, cena „51” w strefie 2 i „Dalej”: krok 3 zostaje, fokus na polu „strefa 2”"),
+      st.krok === 3 && st.komunikat === KOMUNIKAT_CENY && st.fokus === "p-cena-1", JSON.stringify(st));
+    await klik('input[name="cena_tryb"][value="jedna"]');
+    await wpisz("#p-cena", "51", "input");
+    await czekaj(500);
+    await dalej();
+    st = await stanKreatora();
+    sprawdz(w("taryfa „inna”, jedna cena „51” i „Dalej”: krok 3 zostaje, fokus na polu ceny, nie na przełączniku"),
+      st.krok === 3 && st.komunikat === KOMUNIKAT_CENY && st.fokus === "p-cena", JSON.stringify(st));
+    await wpisz("#p-cena", "", "input");
+    await czekaj(500);
+    await klik('input[name="cena_tryb"][value="jedna"]');
+    await klik('input[name="taryfa"][value="g12"]');
+    await wpisz("#p-cena-0", "0,60", "input");
+    await wpisz("#p-cena-1", "0,60", "input");
+    await czekaj(500);
     await klik('input[name="rodzaj_ceny"][value="dynamiczna"]');
     sprawdz(w("G12 przy cenie dynamicznej: jedno pole, bez wyboru i podpowiedzi, pomoc z tabelą Taurona"),
       JSON.stringify(await stanCen()) === JSON.stringify({ wybor: false, podpowiedz: false, etykiety: ["Średnia cena energii z faktury, netto, zł/kWh"] }) &&

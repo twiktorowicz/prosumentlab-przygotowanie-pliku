@@ -16,7 +16,7 @@
 //   niczego na dysku, nie wypisuje treści żądania ani adresu i niczego nie wysyła; ciało żądania
 //   odczytuje tylko po to, żeby policzyć bajty, i przestaje czytać po przekroczeniu limitu
 //   z zapasem (413 i zamknięcie połączenia). Odpowiedź „brak odpowiedzi” zamyka połączenie po
-//   150 s, dłużej niż limit czasu wysyłki w narzędziu (120 s). Bez opcji ścieżka /zgloszenie/
+//   150 s, dłużej niż limit czasu wysyłki w narzędziu (60 s). Bez opcji ścieżka /zgloszenie/
 //   daje 404.
 //
 // Użycie: node narzedzia/serwer.mjs [--port 8000] [--host 127.0.0.1] [--zgloszenie]
@@ -80,7 +80,7 @@ const LIMIT_ZGLOSZENIA = 5 * 1024 * 1024; // jak na stronie: ZIP najwyżej 5 MiB
 // Ciało do 64 KiB ponad limit atrapa czyta do końca i odpowiada 413 po odczycie; przy większym
 // przestaje czytać od razu, odpowiada 413 i zamyka połączenie.
 const ZAPAS_ODCZYTU = 64 * 1024;
-// Połączenie bez odpowiedzi zamykane po 150 s: dłużej niż limit czasu wysyłki w narzędziu (120 s),
+// Połączenie bez odpowiedzi zamykane po 150 s: dłużej niż limit czasu wysyłki w narzędziu (60 s),
 // więc narzędzie samo przerywa czekanie, a atrapa nie trzyma połączeń bez końca.
 export const CZAS_BRAKU_ODPOWIEDZI_MS = 150 * 1000;
 const NUMER = /^[0-9A-HJKMNP-TV-Z]{4}-[0-9A-HJKMNP-TV-Z]{4}$/;
@@ -117,8 +117,8 @@ function atrapaZgloszenia(zadanie, odpowiedz, naglowki, { czasBrakuOdpowiedziMs 
   const liczBajty = (czesc) => {
     bajty += czesc.length;
     if (bajty <= LIMIT_ZGLOSZENIA + ZAPAS_ODCZYTU) return;
-    // Za dużo: bez czytania reszty. Po wysłaniu odpowiedzi połączenie jest zamykane, bo nieodczytane
-    // ciało zostałoby w nim.
+    // Za dużo: bez czytania reszty. Po wysłaniu odpowiedzi połączenie jest zamykane, bo
+    // nieodczytane ciało zostałoby w nim.
     zadanie.off("data", liczBajty);
     zadanie.off("end", poOdczycie);
     zadanie.pause();
@@ -135,7 +135,8 @@ function atrapaZgloszenia(zadanie, odpowiedz, naglowki, { czasBrakuOdpowiedziMs 
     const lokalna = adres.includes("@") ? adres.slice(0, adres.lastIndexOf("@")) : "";
     const wybor = Object.hasOwn(ODPOWIEDZI_ATRAPY, lokalna) ? ODPOWIEDZI_ATRAPY[lokalna] : ODPOWIEDZI_ATRAPY.przyjete;
     if (wybor.kod === null) {
-      // Brak odpowiedzi: połączenie zostaje otwarte do zamknięcia przez klienta albo do upływu czasu.
+      // Brak odpowiedzi: połączenie zostaje otwarte do zamknięcia przez klienta albo do upływu
+      // czasu.
       const zamknij = setTimeout(() => zadanie.socket?.destroy(), czasBrakuOdpowiedziMs);
       zamknij.unref();
       odpowiedz.on("close", () => clearTimeout(zamknij));
@@ -161,7 +162,8 @@ function sciezkaZadania(adres) {
 // `katalog`: katalog strony (domyślnie app/; testy podają tymczasowy). Separator na końcu jest
 // dopisywany, gdy go brak, żeby porównanie początku ścieżki nie przepuściło katalogu obok
 // o tym samym początku nazwy (app2 obok app). `zgloszenie`: włącza atrapę POST /zgloszenie/.
-// `czasBrakuOdpowiedziMs`: po jakim czasie atrapa zamyka połączenie bez odpowiedzi (testy skracają).
+// `czasBrakuOdpowiedziMs`: po jakim czasie atrapa zamyka połączenie bez odpowiedzi (testy
+// skracają).
 export function utworzSerwer(katalog = APP, { zgloszenie = false, czasBrakuOdpowiedziMs = CZAS_BRAKU_ODPOWIEDZI_MS } = {}) {
   if (!katalog.endsWith(sep)) katalog += sep;
   return createServer(async (zadanie, odpowiedz) => {

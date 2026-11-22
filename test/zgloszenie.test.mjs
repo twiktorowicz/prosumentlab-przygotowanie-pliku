@@ -277,6 +277,52 @@ test("uwagi o nietypowej cenie i długim okresie trafiają do zgloszenie.json i 
   ]);
 });
 
+test("uwaga o kolejności cen w strefach trafia do zgloszenie.json i nie blokuje zapisu", async () => {
+  // G13 z ceną w pozostałych godzinach wyższą niż w szczytach (ceny zmyślone).
+  const w = await przygotujZgloszenie({
+    pliki: [generuj(N1).surowy],
+    formularz: { faktura: { ...FAKTURA, cena_energii_netto_zl_kwh: ["0,60000", "0,70000", "0,80000"] } },
+    numer: NUMER,
+    utworzono: DATA,
+  });
+  assert.equal(w.moznaZapisac, true);
+  assert.ok(w.zip, "ZIP powstaje");
+  assert.deepEqual(w.bledyPol, []);
+  assert.deepEqual(jsonPliku(w, "zgloszenie.json").uwagi, [
+    { kod: "ZAKRES_NIEPELNY", gdzie: "zakres" },
+    { kod: "FAKTURA_CENY_KOLEJNOSC", gdzie: "raport" },
+  ]);
+  assert.deepEqual(jsonPliku(w, "faktury.json").raport.cena_energii_netto_zl_kwh, ["0.60000", "0.70000", "0.80000"], "ceny bez zmian");
+  // Ta sama faktura z cenami w zwykłej kolejności: bez tej uwagi.
+  const dobra = await przygotujZgloszenie({ pliki: [generuj(N1).surowy], formularz: { faktura: FAKTURA }, numer: NUMER, utworzono: DATA });
+  assert.equal(dobra.uwagi.some((u) => u.kod === "FAKTURA_CENY_KOLEJNOSC"), false);
+});
+
+// Skrypt przyjmujący odrzuca zgłoszenie z narzędzia starszego niż 0.2.0 (najniższa wersja z jego
+// konfiguracji). Porównanie wersji x.y.z liczba po liczbie, z cyfr.
+const czescWersji = (w) => {
+  assert.match(w, /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/, `wersja ${w} w postaci x.y.z`);
+  return w.split(".").map((c) => [...c].reduce((n, z) => n * 10 + (z.charCodeAt(0) - 48), 0));
+};
+const nieStarsza = (w, min) => {
+  const [a, b] = [czescWersji(w), czescWersji(min)];
+  for (let i = 0; i < 3; i++) if (a[i] !== b[i]) return a[i] > b[i];
+  return true;
+};
+
+test("wersja narzędzia w zgloszenie.json: postać x.y.z, nie starsza niż 0.2.0", async () => {
+  assert.equal(nieStarsza("0.2.0", "0.2.0"), true);
+  assert.equal(nieStarsza("0.10.0", "0.2.0"), true, "liczby, nie tekst");
+  assert.equal(nieStarsza("1.0.0", "0.2.0"), true);
+  assert.equal(nieStarsza("0.1.5", "0.2.0"), false);
+  assert.equal(nieStarsza("0.1.10", "0.2.0"), false);
+  const w = await przygotujZgloszenie({ pliki: [generuj(N1).surowy], formularz: {}, numer: NUMER, utworzono: DATA });
+  const narzedzie = jsonPliku(w, "zgloszenie.json").narzedzie;
+  assert.equal(narzedzie, WERSJA);
+  assert.ok(nieStarsza(narzedzie, "0.2.0"), `wersja ${narzedzie}`);
+  assert.equal(WERSJA, "0.2.0");
+});
+
 test("okres z przyszłości względem dnia utworzenia: błąd pola, zapis zablokowany", async () => {
   const w = await przygotujZgloszenie({
     pliki: [generuj(N1).surowy],
@@ -335,7 +381,13 @@ test("podgląd: pierwsze 5 wierszy danych dokładnie jak w pliku wyjściowym, su
 // Przeliczony po zmianie instalacja.json na wersję formatu 2 (różnią się tylko cyfra wersji
 // formatu w instalacja.json i jego CRC w nagłówku lokalnym i we wpisie katalogu; sprawdzone
 // porównaniem bajtów z ZIP-em z kodu 0.1.5).
-const SKROT_SCENARIUSZA = "79390071140f2b96345c65807c503e25ed7b3099232c9318dc3a44d422e07878";
+// Przeliczony po zmianie wersji narzędzia na 0.2.0: różnią się tylko dwie cyfry wersji
+// w zgloszenie.json i CRC tego pliku w nagłówku lokalnym i we wpisie katalogu (10 bajtów);
+// sprawdzone cofnięciem wersji i CRC w nowym ZIP-ie, które dało poprzedni skrót. Ceny scenariusza
+// są w zwykłej kolejności stref, więc nowa uwaga o kolejności cen się nie pojawia.
+// Skrót jest zapisany w dwóch częściach, bo ma 15 cyfr pod rząd, a straże repozytorium
+// (test/repo.test.mjs i gitleaks) nie przepuszczają ciągu 12 i więcej cyfr.
+const SKROT_SCENARIUSZA = "bed486953999" + "228092d369577cddba9dfb758c42e180fb88aee5cacbbf05a60f";
 function scenariuszPelny() {
   return {
     pliki: [
@@ -581,7 +633,8 @@ test("plik surowy, ten sam bez numerów, ten sam z innym PPE: drugi to duplikat,
 });
 
 test("nieistniejąca godzina 03:00 ostatniej niedzieli marca na początku i na końcu pliku nie wyznacza pierwszej ani ostatniej godziny", async () => {
-  // Doba 2026-03-29 ma wiersze 01:00, 02:00, 04:00, …; wiersz 03:00 (godzina 2:00–3:00) nie istnieje.
+  // Doba 2026-03-29 ma wiersze 01:00, 02:00, 04:00, …; wiersz 03:00 (godzina 2:00–3:00)
+  // nie istnieje.
   const naPoczatku = generuj({
     od: "2026-03-29", do: "2026-03-30", ziarno: 3, obetnijPoczatek: 1,
     podmien: ["oddanie", "pobor"].map((seria) => ({ znacznik: "2026-03-29 02:00", seria, pole: "znacznik", tekst: "2026-03-29 03:00" })),

@@ -172,7 +172,8 @@ test("„Dalej”: sprawdza tylko bieżący krok, „Wstecz” niczego nie spraw
   const wstecz = funkcja("wstecz");
   assert.equal(wstecz.trim(), "pokazKrok(aktualnyKrok - 1);");
   const blad = funkcja("bladKroku");
-  // Krok 1: przyjęty plik i brak blokad plików; kroki 2–4: błędy pól w tym kroku; krok 5 bez warunków.
+  // Krok 1: przyjęty plik i brak blokad plików; kroki 2–4: błędy pól w tym kroku; krok 5 bez
+  // warunków.
   assert.match(blad, /t\("kreator_pliki_brak"\)/);
   assert.match(blad, /t\("kreator_popraw", \{ pola: /);
   assert.match(blad, /if \(n >= 2 && n <= 4\)/);
@@ -427,7 +428,9 @@ test("krok 5: podgląd z rozmiarem zgłoszenia, zgoda, numer", () => {
     '<p class="podglad-rozmiar" id="podglad-rozmiar" aria-live="polite" hidden></p>',
     '<div class="zgoda">',
   ]));
-  assert.match(HTML, /<span id="zgoda-wiecej"><\/span>\s*<\/div>\s*<p class="podpowiedz" data-tekst="zgoda_bez"><\/p>\s*<p class="numer" id="numer"><\/p>\s*<\/section>/);
+  // Ostatnia linia kroku, tuż nad przyciskami kreatora, krojem podpowiedzi: „Dalej” jeszcze
+  // niczego nie wysyła (sprawdzenie_dalej).
+  assert.match(HTML, /<span id="zgoda-wiecej"><\/span>\s*<\/div>\s*<p class="podpowiedz" data-tekst="zgoda_bez"><\/p>\s*<p class="numer" id="numer"><\/p>\s*<p class="podpowiedz" data-tekst="sprawdzenie_dalej"><\/p>\s*<\/section>/);
   assert.match(funkcja("pokazRozmiar"), /t\("podglad_rozmiar", \{ rozmiar: rozmiarDoWyswietlenia\(gotowy\.bajty\.length\) \}\)/);
 });
 
@@ -447,6 +450,7 @@ test("krok 6: tytuł, powód blokady, wysyłka z polem adresu, ramką, przyciski
     '<p class="ramka" id="wysylka-co"></p>',
     '<p class="uwaga" id="wysylka-komunikat" role="alert" hidden></p>',
     '<button type="button" class="przycisk" id="wyslij" data-tekst="wysylka_przycisk"></button>',
+    '<p class="podpowiedz" id="wysylka-czekanie" hidden></p>',
     "</div>",
     '<button type="button" class="przycisk-tekstowy" id="zapasowa-pokaz" data-tekst="wysylka_zapasowa_pokaz"></button>',
     "</div>",
@@ -458,7 +462,7 @@ test("krok 6: tytuł, powód blokady, wysyłka z polem adresu, ramką, przyciski
   assert.match(funkcja("wstawTeksty"), /\$\("#wysylka-co"\)\.replaceChildren\(\.\.\.zdanieZNumerem\("wysylka_co"\)\);/);
 });
 
-test("krok 6: żądanie dokładnie w ustalonej postaci, z limitem czasu 120 s", () => {
+test("krok 6: żądanie dokładnie w ustalonej postaci, z limitem czasu CZAS_WYSYLKI_MS (60 s, test wysylka.test.mjs)", () => {
   const wysylka = funkcja("wyslij");
   assert.match(wysylka, /fetch\("\/zgloszenie\/", \{\n\s*method: "POST",\n\s*body: gotowy\.bajty,\n\s*headers: \{ "Content-Type": "application\/zip", "X-Numer": NUMER, "X-Adres": adres\.adres \},\n\s*credentials: "omit",\n\s*cache: "no-store",\n\s*redirect: "error",\n\s*signal: kontroler\.signal,\n\s*\}\)/);
   assert.match(wysylka, /const kontroler = new AbortController\(\);/);
@@ -667,7 +671,7 @@ test("zapis: pytanie przed opuszczeniem strony zdjęte przed kliknięciem odnoś
   assert.equal((zapis.match(/ustawOstrzezenie\(\);/g) ?? []).length, 1);
 });
 
-test("nieudana budowa ZIP-a: krok 6 pokazuje blad_nieznany, kolejne wejście na krok ponawia próbę", () => {
+test("nieudana budowa ZIP-a: krok 6 pokazuje zip_blad, kolejne wejście na krok ponawia próbę", () => {
   const budowa = funkcja("zbudujZip");
   // Odrzucona obietnica: koniec budowy dla tego zgłoszenia i zapamiętany błąd, jeśli dane się nie
   // zmieniły; potem odświeżenie kroku 6.
@@ -682,7 +686,9 @@ test("nieudana budowa ZIP-a: krok 6 pokazuje blad_nieznany, kolejne wejście na 
   // Wejście na krok 5 albo 6 woła zbudujZip, a ten nie zaczyna od nowa tylko wtedy, gdy ZIP jest
   // gotowy albo w budowie.
   assert.match(budowa, /if \(!wynik\?\.moznaZapisac \|\| zip\?\.wynik === wynik \|\| budowanyDla === wynik\) return;/);
-  assert.match(funkcja("pokazWysylke"), /else if \(bladZipu === wynik\) tresc = t\("blad_nieznany"\);/);
+  // zip_blad zamiast blad_nieznany, który mówi o odczycie pliku z eLicznika.
+  assert.match(funkcja("pokazWysylke"), /else if \(bladZipu === wynik\) tresc = t\("zip_blad"\);/);
+  assert.doesNotMatch(funkcja("pokazWysylke"), /blad_nieznany/);
 });
 
 test("ekran po wysłaniu: napis kreator_gotowe zamiast numeru kroku; powrót do wysyłki przywraca numer", () => {
@@ -691,6 +697,18 @@ test("ekran po wysłaniu: napis kreator_gotowe zamiast numeru kroku; powrót do 
   // Nagłówek kroku dostaje fokus po przejściu; ekran po wysłaniu ma własny fokus (pokazWyslane).
   assert.doesNotMatch(MAIN, /function naglowekKroku/);
   assert.match(funkcja("pokazKrok"), /\$\("h1", sekcjaKroku\(n\)\)\.focus\(\{ preventScroll: true \}\);/);
+});
+
+test("fokus przy błędzie całego pola ceny: pole ceny, nie przełącznik jednej ceny i cen w strefach", () => {
+  // Przy taryfie „inna” przełącznik (#cena-tryb) stoi w polu ceny przed polami cen, więc
+  // „pierwsze widoczne pole w kontenerze” trafiałoby w przełącznik. Błąd całego pola (format
+  // jednej ceny, liczba stref) daje fokus pierwszemu pustemu polu ceny, a gdy pustego nie ma,
+  // pierwszemu polu ceny. Błąd ceny w konkretnej strefie wskazuje to pole (#p-cena-N).
+  assert.ok(HTML.indexOf('id="cena-tryb"') < HTML.indexOf('id="cena-pola"'), "przełącznik przed polami cen");
+  const f = funkcja("poleDoFokusu");
+  assert.match(f, /\n  if \(pole === "cena_energii_netto_zl_kwh"\) \{\n    const ceny = \$\$\("#cena-pola input"\)\.filter\(widoczne\);\n    const cena = ceny\.find\(\(e\) => !e\.value\.trim\(\)\) \?\? ceny\[0\];\n    if \(cena\) return cena;\n  \}\n/);
+  assert.match(f, /const strefa = \/\^cena_energii_netto_zl_kwh\\\[\(\\d\+\)\\\]\$\/\.exec\(pole\);/);
+  assert.ok(f.indexOf('pole === "cena_energii_netto_zl_kwh"') < f.indexOf('$$("input, select", kontener)'), "przed ogólnym wyborem pola");
 });
 
 test("nazwy pól w komunikatach z pola_nazwy, bez nazw zastępczych", () => {
@@ -707,4 +725,62 @@ test("blokada z pól wpisanych ręcznie zatrzymuje „Dalej” w kroku z polem, 
   assert.match(blad, /fokus: poleDoFokusu\(wKolejnosci\(\[\.\.\.bledne, \.\.\.blokada\]\)\[0\]\)/);
   // Pole, którego nie ma w żadnym kroku, nie zatrzymuje: blokada zostaje w kroku 6.
   assert.match(funkcja("pokazWysylke"), /wynik\.blokady\.some\(\(b\) => b\.kod === BLOKADA_POL\)\) tresc = t\(BLOKADA_POL\);/);
+});
+
+test("odliczanie pod przyciskiem wysyłki: liczenie w wysylka.js, linia odświeżana co sekundę, znika z odpowiedzią albo błędem", () => {
+  assert.match(KOD, /import \{[^}]*\bsekundyCzekania\b[^}]*\} from "\.\/lib\/wysylka\.js"/);
+  const wysylka = funkcja("wyslij");
+  // Odliczanie startuje razem z żądaniem i co sekundę pyta moduł o liczbę sekund (null: bez linii).
+  assert.match(wysylka, /const poczatek = performance\.now\(\);/);
+  assert.match(wysylka, /const odliczanie = setInterval\(\(\) => pokazCzekanie\(sekundyCzekania\(performance\.now\(\) - poczatek\)\), 1000\);/);
+  assert.ok(wysylka.indexOf("setInterval(") < wysylka.indexOf("fetch("), "odliczanie przed żądaniem");
+  // Koniec czekania (odpowiedź, błąd sieci, przekroczony czas): odliczanie zatrzymane, linia
+  // schowana.
+  const koniec = wysylka.slice(wysylka.indexOf("} finally {"));
+  assert.match(koniec, /clearInterval\(odliczanie\);/);
+  assert.match(koniec, /pokazCzekanie\(null\);/);
+  const czekanie = funkcja("pokazCzekanie");
+  assert.match(czekanie, /t\("wysylka_czekanie", \{ sekundy \}\)/);
+  assert.match(czekanie, /pokaz\(e, sekundy !== null\);/);
+  assert.equal((KOD.match(/\bsetInterval\(/g) ?? []).length, 1, "jedno odliczanie w kodzie strony");
+});
+
+test("komunikat po nieudanej wysyłce znika przy zmianie adresu i przy wyborze „Wyślij zgłoszenie”, także z błędnym adresem", () => {
+  // Zmiana adresu: tekst przy polu i komunikat poprzedniej próby znikają razem.
+  assert.match(KOD, /\$\("#p-adres"\)\.addEventListener\("input", \(\) => \{\n\s*pokazBladAdresu\(false\);\n\s*schowajBladWysylki\(\);\n\s*\}\);/);
+  const schowaj = funkcja("schowajBladWysylki");
+  assert.match(schowaj, /bladWysylki = null;/);
+  assert.match(schowaj, /pokazWysylke\(\);/);
+  // Przycisk: komunikat poprzedniej próby znika, zanim narzędzie sprawdzi adres, więc przy błędnym
+  // adresie zostaje sam tekst przy polu.
+  const wysylka = funkcja("wyslij");
+  const czyszczenie = wysylka.indexOf("schowajBladWysylki();");
+  assert.ok(czyszczenie > 0 && czyszczenie < wysylka.indexOf("sprawdzAdres("), "przed sprawdzeniem adresu");
+  assert.ok(wysylka.indexOf("wysylkaDostepna(") < czyszczenie, "po sprawdzeniu, czy wysyłka jest dostępna");
+});
+
+test("liczba wpisana od przecinka: po wyjściu z pola zero na początku we wszystkich polach z liczbą", () => {
+  assert.match(KOD, /import \{[^}]*\bzeroPrzedPrzecinkiem\b[^}]*\} from "\.\/lib\/kwoty\.js"/);
+  const zmiana = funkcja("zmianaPola");
+  assert.match(zmiana, /if \(pole\.matches\('input\[inputmode="decimal"\]'\)\) uzupelnijZero\(pole\);/);
+  // Zero przed uzupełnieniem ceny: „,3” w polu ceny staje się „0,3”, a potem „0,30”.
+  assert.ok(zmiana.indexOf("uzupelnijZero(pole)") < zmiana.indexOf("uzupelnijCene(pole)"));
+  assert.match(funkcja("uzupelnijZero"), /const z = zeroPrzedPrzecinkiem\(pole\.value\);\n\s*if \(z !== pole\.value\) pole\.value = z;/);
+  // Każde pole na liczbę z przecinkiem ma inputmode="decimal": w index.html i w polach budowanych
+  // w kodzie (ceny, kwota opłaty, moc przed rozbudową).
+  for (const id of ["p-oplata_mocowa_zl_mies", "p-oplata_abonamentowa_zl_mies", "p-oplata_stala_sieciowa_zl_mies", "p-oplata_przejsciowa_zl_mies", "p-moc_pv_kwp", "p-magazyn_pojemnosc_kwh"]) {
+    assert.match(HTML, new RegExp(`<input type="text" id="${id}" inputmode="decimal"`), id);
+  }
+  assert.equal((MAIN.match(/inputmode: "decimal"/g) ?? []).length, 4, "strefa, jedna cena, kwota opłaty, moc przed rozbudową");
+});
+
+test("kolejność cen w strefach: uwaga pod polami cen z nazwami stref, bez blokady", () => {
+  assert.match(blokPola("cena_energii_netto_zl_kwh"), /<p class="uwaga" id="faktura-cena-nietypowa" data-tekst="faktura_cena_nietypowa" hidden><\/p>\s*<p class="uwaga" id="faktura-ceny-kolejnosc" hidden><\/p>\s*<p class="blad" hidden><\/p>/);
+  const pola = funkcja("pokazPola");
+  assert.match(pola, /const kolejnosc = wynik\.uwagi\.some\(\(u\) => u\.kod === "FAKTURA_CENY_KOLEJNOSC"\) && STREFY_KOLEJNOSC\[wybrane\("taryfa"\)\];/);
+  assert.match(pola, /t\("faktura_ceny_kolejnosc", \{ najdrozsza: nazwy\[kolejnosc\.najdrozsza\], najtansza: nazwy\[kolejnosc\.najtansza\] \}\)/);
+  assert.match(pola, /const nazwy = nazwyStref\(wybrane\("taryfa"\)\);/);
+  assert.match(KOD, /import \{[^}]*\bSTREFY_KOLEJNOSC\b[^}]*\} from "\.\/lib\/formularz\.js"/);
+  // Uwaga nie zatrzymuje „Dalej”: bladKroku patrzy tylko na błędy pól i blokadę.
+  assert.doesNotMatch(funkcja("bladKroku"), /KOLEJNOSC|uwagi/);
 });

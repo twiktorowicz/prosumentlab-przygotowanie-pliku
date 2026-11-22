@@ -7,12 +7,18 @@
 // - Miejsca, w których wysyłka działa: strona pod https: oraz serwer próbny pod http: na
 //   127.0.0.1 albo localhost. Gdzie indziej (plik otwarty lokalnie, serwer próbny w sieci domowej,
 //   inna strona po HTTP) zostaje tylko zapis pliku.
-// - Limit rozmiaru ZIP-a i limit czasu żądania.
+// - Limit rozmiaru ZIP-a, limit czasu żądania i odliczanie sekund do jego końca.
 // - Zamiana odpowiedzi skryptu przyjmującego na klucz tekstu z app/teksty.js.
 
 // ZIP najwyżej 5 MiB: większy skrypt przyjmujący odrzuca, zanim go odczyta.
 export const LIMIT_ZIP = 5 * 1024 * 1024;
-export const CZAS_WYSYLKI_MS = 120 * 1000;
+// Limit czasu żądania chroni przed wiszącym połączeniem. Krótszy groziłby błędem na stronie, choć
+// skrypt zgłoszenie przyjął; typowe zgłoszenie po kompresji ma poniżej 1 MB, więc 60 s zostawia
+// zapas także na wolnym łączu.
+export const CZAS_WYSYLKI_MS = 60 * 1000;
+// Po tylu milisekundach bez odpowiedzi strona pokazuje pod przyciskiem, ile sekund zostało do
+// końca limitu czasu.
+export const CZEKANIE_OD_MS = 5 * 1000;
 
 const MAKS_DLUGOSC_ADRESU = 254;
 // Znaki odrzucane przez skrypt przyjmujący: cudzysłów, nawiasy, przecinek, dwukropek, średnik,
@@ -46,6 +52,17 @@ export function wysylkaDostepna(protokol, host) {
 
 export const zipZaDuzy = (bajty) => bajty > LIMIT_ZIP;
 
+/**
+ * Liczba sekund do końca limitu czasu do linii z odliczaniem, zaokrąglona w górę (do końca limitu
+ * nigdy zero). Przez pierwsze CZEKANIE_OD_MS i po końcu limitu linii nie ma.
+ * @param {number} uplynelo milisekundy od wysłania żądania
+ * @returns {number | null} null: bez linii
+ */
+export function sekundyCzekania(uplynelo) {
+  if (typeof uplynelo !== "number" || !(uplynelo >= CZEKANIE_OD_MS) || uplynelo >= CZAS_WYSYLKI_MS) return null;
+  return Math.ceil((CZAS_WYSYLKI_MS - uplynelo) / 1000);
+}
+
 const blad = (klucz, przyPolu = false) => ({ wyslane: false, klucz, przyPolu });
 const obiekt = (w) => w !== null && typeof w === "object" && !Array.isArray(w);
 
@@ -54,7 +71,8 @@ const obiekt = (w) => w !== null && typeof w === "object" && !Array.isArray(w);
  * @param {{ status: number, json: unknown } | null | undefined} odpowiedz kod i treść odczytana
  *   jako JSON (null, gdy treść nie jest JSON-em); null albo brak, gdy odpowiedzi nie było (błąd
  *   sieci, przekroczony czas, przekierowanie)
- * @returns {{ wyslane: true, potwierdzenie: boolean } | { wyslane: false, klucz: string, przyPolu: boolean }}
+ * @returns {{ wyslane: true, potwierdzenie: boolean }
+ *   | { wyslane: false, klucz: string, przyPolu: boolean }}
  */
 export function wynikWysylki(odpowiedz) {
   if (!odpowiedz) return blad("wysylka_blad_sieci");

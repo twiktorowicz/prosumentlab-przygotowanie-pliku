@@ -66,6 +66,16 @@ export function czytajDziesietna(tekst, { miejsc, calkowitych = 15, dodatnia = f
   return { ok: true, wartosc: miejsc > 0 ? `${c.calkowite}.${uzupelniony}` : c.calkowite };
 }
 
+// Liczba wpisana od przecinka albo kropki („,3”) z zerem na początku („0,3”). Tylko dla strony:
+// po wyjściu z pola z liczbą wpisuje w pole tę postać, a klient ją widzi. Funkcje odczytu wyżej
+// zostają ścisłe i „,3” dalej odrzucają. Inny tekst (także pusty i z niewidocznymi znakami)
+// zostaje bez zmian, co do znaku.
+export function zeroPrzedPrzecinkiem(tekst) {
+  if (typeof tekst !== "string") return tekst;
+  const t = tekst.trim();
+  return /^[.,]\d+$/.test(t) ? `0${t}` : tekst;
+}
+
 // Pole na dowolny tekst (nazwa sprzedawcy, taryfy, opłaty): najwyżej 60 znaków. Dozwolone są
 // tylko litery, cyfry ASCII, spacja i znaki . , - / ( ) + & ' %. Lista dozwolonych zamiast
 // zakazanych zamyka drogę numerom z niewidocznymi znakami, cyframi pełnej szerokości albo

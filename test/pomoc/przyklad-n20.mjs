@@ -1,5 +1,5 @@
-// Przykład do testu N20: pełna struktura faktury i zgłoszenia (z sekcją weryfikacji), wartości zmyślone,
-// plik pomiarów z generatora. Osobny moduł, żeby wzorzec test/wzorce/n20.zip dało się
+// Przykład do testu N20: pełna struktura faktury i zgłoszenia (z sekcją weryfikacji), wartości
+// zmyślone, plik pomiarów z generatora. Osobny moduł, żeby wzorzec test/wzorce/n20.zip dało się
 // odtworzyć poza testem. ZIP powstaje asynchronicznie (obietnica); wzorzec to wariant bez
 // kompresji, czyli wynik w środowisku bez CompressionStream("deflate-raw").
 
