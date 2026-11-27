@@ -97,16 +97,6 @@ test("N22: opcje list wyboru mają tekst dla każdej wartości z formularza", as
   assert.equal(TEKSTY.miesiace_dopelniacz.length, 12);
 });
 
-test("teksty usunięte razem z polami, których strona już nie ma", () => {
-  for (const k of [
-    "faktura_operator", "faktura_operator_podpowiedz", "opcje_operator", "faktura_rodzaj", "opcje_rodzaj_faktury",
-    "instalacja_pierwsze_oddanie", "opcje_pierwsze_oddanie",
-  ]) assert.equal(k in TEKSTY, false, k);
-  assert.equal("operator_dystrybucyjny" in TEKSTY.pola_nazwy, false);
-  assert.equal("rodzaj_faktury" in TEKSTY.pola_nazwy, false);
-  for (const k of ["podglad_plik", "podglad_lista_zip", "podglad_z_pliku"]) assert.equal(k in TEKSTY, false, k);
-});
-
 test("wysyłka i zapis w wersji 0.1.2: teksty zatwierdzone przez właściciela, słowo w słowo", () => {
   // Teksty z 0.1.2, których 0.1.3 nie zmienia; zmienione są w teście wersji 0.1.3. zapis_gdzie,
   // podglad_tytul i podglad_wstep zmienia wersja 0.2.0 (test wersji 0.2.0).
@@ -251,16 +241,6 @@ test("miesiąc faktury z listy miesięcy z pliku w wersji 0.2.0: teksty zatwierd
   assert.equal(TEKSTY.faktura_miesiac, "Miesiąc, za który jest faktura");
 });
 
-test("wersja 0.2.0: znikają teksty udostępniania, schowka, panelu z uwagą, dawnych tytułów kroków i nagłówków grup", () => {
-  const ZNIKAJA = [
-    "panel_uwaga", "droga_zapis_pokaz", "krok_zapis", "krok_zakres", "krok_instalacja", "krok_zgoda",
-    // Kreator już ich nie pokazuje: tytuł wstępu i nagłówki grup zastępują tytuły kroków.
-    "wstep_tytul", "faktura_grupa_faktura", "faktura_grupa_cena",
-  ];
-  for (const k of ZNIKAJA) assert.equal(k in TEKSTY, false, k);
-  assert.deepEqual(Object.keys(TEKSTY).filter((k) => k.startsWith("udostepnij_")), [], "udostepnij_*");
-});
-
 test("wersja 0.2.0: teksty, z których strona robi odnośniki i wyróżnienia, mają frazę albo wstawkę dokładnie raz", () => {
   assert.equal(TEKSTY.wyslane_brak.split(TEKSTY.wyslane_brak_odnosnik).length, 2, "odnośnik w wyslane_brak");
   assert.equal(TEKSTY.wysylka_co.split("{numer}").length, 2, "numer w wysylka_co");
@@ -269,10 +249,6 @@ test("wersja 0.2.0: teksty, z których strona robi odnośniki i wyróżnienia, m
   assert.equal(TEKSTY.wyslane_pytanie.split(ADRES).length, 2, "adres zgłoszeń w wyslane_pytanie");
   // Ostrzeżenie o kolejności cen: nazwa najdroższej i najtańszej strefy, każda raz.
   for (const w of ["{najdrozsza}", "{najtansza}"]) assert.equal(TEKSTY.faktura_ceny_kolejnosc.split(w).length, 2, w);
-});
-
-test("kopiowanie adresu osobnym przyciskiem znika: bez tekstów kopiuj_adres", () => {
-  for (const k of ["kopiuj_adres", "kopiuj_adres_gotowe"]) assert.equal(k in TEKSTY, false, k);
 });
 
 test("po zapisie: strona robi odnośnik z adresu, który jest w tekście dokładnie raz", () => {
@@ -290,6 +266,19 @@ test("N22: każdy klucz użyty na stronie istnieje", () => {
   assert.ok(uzyte.size > 0, "znaleziono klucze na stronie");
   const brak = [...uzyte].filter((k) => !(k in TEKSTY));
   assert.deepEqual(brak, []);
+});
+
+test("N22: klucze plakietek stanu pliku to pełne klucze w main.js i wszystkie istnieją", () => {
+  const zrodlo = readFileSync(join(APP, "main.js"), "utf8");
+  const uzyte = new Set([...zrodlo.matchAll(/"(plik_stan_[a-z0-9_]+)"/g)].map((m) => m[1]));
+  assert.deepEqual([...uzyte].sort(), ["plik_stan_odrzucony", "plik_stan_przyjety", "plik_stan_uwaga"]);
+  assert.deepEqual([...uzyte].filter((k) => !(k in TEKSTY)), []);
+});
+
+test("N22: main.js nie składa kluczy tekstów z kawałków (bez szablonu z ${ w t(...) i tekst(...))", () => {
+  const zrodlo = readFileSync(join(APP, "main.js"), "utf8");
+  const wywolania = [...zrodlo.matchAll(/\b(?:tekst|t)\(\s*`[^`]*`/g)].map((m) => m[0]);
+  assert.deepEqual(wywolania.filter((w) => w.includes("${")), []);
 });
 
 test("N22: <title> i <noscript> w index.html równe tekstom", () => {

@@ -27,11 +27,11 @@ import {
   numerMiesiaca,
   miesiacZNumeru,
   istniejeGodzina,
+  dwie,
 } from "./kalendarz.js";
 
 const AKTYWNE = ["oddanie", "pobor"];
 
-const dwie = (n) => String(n).padStart(2, "0");
 const tekstMiesiaca = ({ rok, miesiac }) => `${rok}-${dwie(miesiac)}`;
 
 function godzinyMiesiaca(nrMiesiaca) {

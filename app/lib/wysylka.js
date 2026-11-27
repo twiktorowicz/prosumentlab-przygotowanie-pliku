@@ -10,6 +10,8 @@
 // - Limit rozmiaru ZIP-a, limit czasu żądania i odliczanie sekund do jego końca.
 // - Zamiana odpowiedzi skryptu przyjmującego na klucz tekstu z app/teksty.js.
 
+import { obiekt } from "./json.js";
+
 // ZIP najwyżej 5 MiB: większy skrypt przyjmujący odrzuca, zanim go odczyta.
 export const LIMIT_ZIP = 5 * 1024 * 1024;
 // Limit czasu żądania chroni przed wiszącym połączeniem. Krótszy groziłby błędem na stronie, choć
@@ -64,7 +66,6 @@ export function sekundyCzekania(uplynelo) {
 }
 
 const blad = (klucz, przyPolu = false) => ({ wyslane: false, klucz, przyPolu });
-const obiekt = (w) => w !== null && typeof w === "object" && !Array.isArray(w);
 
 /**
  * Odpowiedź skryptu przyjmującego jako wynik dla strony.

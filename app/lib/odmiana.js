@@ -2,6 +2,7 @@
 // Same teksty są w app/teksty.js; tu jest tylko mechanika.
 
 import { liczbaZCyfr } from "./kwoty.js";
+import { dwie } from "./kalendarz.js";
 
 export const WSTAWKI = new Set(["n", "m", "od", "do", "numer", "plik", "nazwa", "wiersz", "kolumna", "data", "pola", "kolumny", "wersja", "rozmiar", "adres", "sekundy", "najdrozsza", "najtansza"]);
 
@@ -33,8 +34,6 @@ export function tekst(TEKSTY, klucz, wstawki = {}) {
   if (typeof wstawki.n !== "number") throw new Error(`tekst ${klucz} wymaga liczby {n}`);
   return wypelnij(wpis[formaLiczby(wstawki.n)], wstawki);
 }
-
-const dwie = (n) => String(n).padStart(2, "0");
 
 // „19.11.2022 r.”, „1.07.2024 r.”
 export function dataPolska({ rok, miesiac, dzien }) {

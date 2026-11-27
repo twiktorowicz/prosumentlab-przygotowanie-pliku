@@ -5,6 +5,7 @@
 
 import { zawartoscZip } from "../../app/lib/zgloszenie.js";
 import { utworzZip } from "../../app/lib/zip.js";
+import { crc32 } from "../../app/lib/crc32.js";
 import { generuj } from "../../narzedzia/generator.mjs";
 
 const N1 = { od: "2025-06-06", do: "2025-06-07", taryfa: "G13", ziarno: 1 };
@@ -74,6 +75,8 @@ export async function przykladN20() {
     }],
     stan_depozytu: [{ stan_na: "2025-04-15", ostatnia_faktura_za: "2025-03", suma: "1234.56" }],
   };
-  return utworzZip(zawartoscZip({ zgloszenie, faktury, instalacja: null, pomiary: [pomiary] }));
+  const bajtyPomiarow = new TextEncoder().encode(pomiary);
+  const pomiar = { bajty: bajtyPomiarow, crc: crc32(bajtyPomiarow) };
+  return utworzZip(zawartoscZip({ zgloszenie, faktury, instalacja: null, pomiary: [pomiar] }));
 }
 

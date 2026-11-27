@@ -22,7 +22,7 @@ import { dekoduj } from "./dekodowanie.js";
 import { czytajTauron } from "./tauron.js";
 import { analizujZakres, okresWPelnychDobach } from "./zakres.js";
 import { czytajFormularz } from "./formularz.js";
-import { numerMiesiaca } from "./kalendarz.js";
+import { numerMiesiaca, dobaZTekstu } from "./kalendarz.js";
 import { liczbaZCyfr } from "./kwoty.js";
 import { doJson } from "./json.js";
 import { utworzZip } from "./zip.js";
@@ -50,25 +50,20 @@ export function odnosnikMailto(temat, tresc) {
 }
 
 // Pliki w kolejności: zgloszenie.json, faktury.json (gdy są pola z faktury), instalacja.json
-// (gdy są odpowiedzi), pomiary_1.csv, pomiary_2.csv, … Pomiar to tekst albo gotowe bajty
-// z sumą CRC ({ bajty, crc }).
+// (gdy są odpowiedzi), pomiary_1.csv, pomiary_2.csv, … Pomiar to gotowe bajty z sumą CRC
+// ({ bajty, crc }).
 export function zawartoscZip({ zgloszenie, faktury, instalacja, pomiary }) {
   const pliki = [{ nazwa: "zgloszenie.json", bajty: utf8(doJson(zgloszenie)) }];
   if (faktury) pliki.push({ nazwa: "faktury.json", bajty: utf8(doJson(faktury)) });
   if (instalacja) pliki.push({ nazwa: "instalacja.json", bajty: utf8(doJson(instalacja)) });
   pomiary.forEach((p, i) => {
     const nazwa = `pomiary_${i + 1}.csv`;
-    pliki.push(typeof p === "string" ? { nazwa, bajty: utf8(p) } : { nazwa, bajty: p.bajty, crc: p.crc });
+    pliki.push({ nazwa, bajty: p.bajty, crc: p.crc });
   });
   return pliki;
 }
 
 const PLIKI_JSON = new Set(["zgloszenie.json", "faktury.json", "instalacja.json"]);
-
-const doba = (tekst) => {
-  const [rok, miesiac, dzien] = tekst.split("-").map(liczbaZCyfr);
-  return { rok, miesiac, dzien };
-};
 
 const teSameNumery = (a, b) => a.length === b.length && a.every((w, i) => w === b[i]);
 
@@ -191,7 +186,7 @@ export function zlozZgloszenie({ przygotowane, formularz, numer, utworzono }) {
   });
   if (analiza) for (const u of analiza.uwagi) uwagi.push({ ...u, gdzie: "zakres" });
   const r = form.raport;
-  if (analiza && r.okres_od && r.okres_do && !okresWPelnychDobach(analiza, doba(r.okres_od), doba(r.okres_do))) {
+  if (analiza && r.okres_od && r.okres_do && !okresWPelnychDobach(analiza, dobaZTekstu(r.okres_od), dobaZTekstu(r.okres_do))) {
     uwagi.push({ kod: "FAKTURA_R_POZA_ZAKRESEM", gdzie: "raport" });
   }
   for (const u of form.uwagi) uwagi.push({ ...u, gdzie: "raport" });

@@ -29,3 +29,18 @@ export function dekoduj(bajty) {
     return { ok: true, tekst: new TextDecoder("iso-8859-2").decode(bajty), kodowanie: "iso-8859-2" };
   }
 }
+
+// Podział tekstu na linie po „\n”, z odcięciem znaków CR stojących przed każdym „\n”. Wynik jest
+// taki sam jak dla split(/\r*\n/): ostatnia linia (bez „\n” po niej) zostaje nietknięta.
+// Wyrażenia nie używamy, bo przy długim ciągu znaków CR bez „\n” ma czas kwadratowy (każdy CR
+// zaczyna nowe przeszukanie do końca ciągu), a plik do 10 MB zamroziłby kartę. Tu każdy znak jest
+// oglądany raz.
+export function podzielNaLinie(tekst) {
+  const linie = tekst.split("\n");
+  for (let i = 0; i < linie.length - 1; i++) {
+    let koniec = linie[i].length;
+    while (koniec > 0 && linie[i].charCodeAt(koniec - 1) === 13) koniec--;
+    if (koniec < linie[i].length) linie[i] = linie[i].slice(0, koniec);
+  }
+  return linie;
+}

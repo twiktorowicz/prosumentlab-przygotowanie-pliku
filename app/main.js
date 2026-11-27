@@ -11,8 +11,8 @@ import { przygotujPliki, zlozZgloszenie, utworzZipZgloszenia, odnosnikMailto, na
 import { losowyNumer } from "./lib/numer.js";
 import { LIMIT_BAJTOW } from "./lib/dekodowanie.js";
 import { liczbaZCyfr, czytajCene, zeroPrzedPrzecinkiem } from "./lib/kwoty.js";
-import { ROK_MIN } from "./lib/kalendarz.js";
-import { okresMiesiaca, sprzedawcaZListy, STREFY_KOLEJNOSC } from "./lib/formularz.js";
+import { ROK_MIN, dwie } from "./lib/kalendarz.js";
+import { okresMiesiaca, sprzedawcaZListy, STREFY_KOLEJNOSC, STREFY } from "./lib/formularz.js";
 import { miesiaceFaktury } from "./lib/zakres.js";
 import { sprawdzAdres, wysylkaDostepna, zipZaDuzy, wynikWysylki, sekundyCzekania, CZAS_WYSYLKI_MS } from "./lib/wysylka.js";
 
@@ -84,7 +84,6 @@ let zapisanoRozne = false;
 
 function dzisiaj() {
   const d = new Date();
-  const dwie = (n) => String(n).padStart(2, "0");
   return `${d.getFullYear()}-${dwie(d.getMonth() + 1)}-${dwie(d.getDate())}`;
 }
 
@@ -191,7 +190,7 @@ function wartoscPola(nazwa) {
 function listyMiesiacaIRoku(nazwa, rokOd = ROK_MIN) {
   const rokBiezacy = liczbaZCyfr(dzisiaj().slice(0, 4));
   const miesiac = el("select", { "aria-label": t("instalacja_miesiac"), "data-czesc": "miesiac" }, el("option", { value: "", tekst: t("instalacja_miesiac") }),
-    ...TEKSTY.miesiace_mianownik.map((m, i) => el("option", { value: String(i + 1).padStart(2, "0"), tekst: m })));
+    ...TEKSTY.miesiace_mianownik.map((m, i) => el("option", { value: dwie(i + 1), tekst: m })));
   const lata = [];
   for (let r = rokBiezacy; r >= rokOd; r--) lata.push(el("option", { value: String(r), tekst: String(r) }));
   const rok = el("select", { "aria-label": t("instalacja_rok"), "data-czesc": "rok" }, el("option", { value: "", tekst: t("instalacja_rok") }), ...lata);
@@ -250,7 +249,7 @@ function ustawDwieListy(kontener, wartosc) {
 //   obowiązywały, a klient nie wybrał miesiąca.
 function zbudujListeMiesiecy() {
   const lista = $("#p-okres-lista");
-  const dwie = $('[data-miesiac="okres_miesiac"]');
+  const polaMiesiaca = $('[data-miesiac="okres_miesiac"]');
   const byla = miesiaceZPliku.length > 0;
   const poprzedni = byla ? lista.value : "";
   const zListy = poprzedni !== INNY_MIESIAC ? poprzedni : "";
@@ -258,20 +257,19 @@ function zbudujListeMiesiecy() {
   miesiaceZPliku = miesiaceFaktury(przygotowane.analiza, { odRoku: ROK_FAKTURY_OD, doRoku: rokBiezacy });
   const jest = miesiaceZPliku.length > 0;
   const naLiscie = miesiaceZPliku.some((m) => m.wartosc === zListy);
-  if (zListy && !naLiscie) ustawDwieListy(dwie, zListy);
-  if (byla && !jest && poprzedni === "") ustawDwieListy(dwie, "");
+  if (zListy && !naLiscie) ustawDwieListy(polaMiesiaca, zListy);
+  if (byla && !jest && poprzedni === "") ustawDwieListy(polaMiesiaca, "");
   lista.replaceChildren(
     el("option", { value: "", tekst: t("faktura_miesiac_wybierz") }),
     ...miesiaceZPliku.map((m) => el("option", { value: m.wartosc, tekst: miesiacSlownie(m.rok, m.miesiac) })),
     el("option", { value: INNY_MIESIAC, tekst: t("faktura_miesiac_inny") }),
   );
   if (!jest) lista.value = "";
-  else if (!byla) lista.value = wartoscMiesiaca(dwie, { niepelny: true }) ? INNY_MIESIAC : "";
+  else if (!byla) lista.value = wartoscMiesiaca(polaMiesiaca, { niepelny: true }) ? INNY_MIESIAC : "";
   else if (naLiscie) lista.value = zListy;
   else lista.value = poprzedni === "" ? "" : INNY_MIESIAC;
 }
 
-const STREFY = { g11: 1, g12: 2, g12w: 2, g13: 3 };
 let strefInnej = 1;
 const wartosciCen = { jedna: "", strefy: [] };
 
@@ -529,12 +527,23 @@ function tekstKodu(kod, wstawki = {}) {
   return kod in TEKSTY ? t(kod, wstawki) : t("blad_nieznany");
 }
 
+// Tekst plakietki przy pliku, według stanu pozycji. Pełne klucze, żeby test sprawdził, że każdy
+// istnieje w tekstach.
+const KLUCZ_STANU_PLIKU = {
+  przyjety: "plik_stan_przyjety",
+  uwaga: "plik_stan_uwaga",
+  odrzucony: "plik_stan_odrzucony",
+};
+
 // Stan pozycji, która nie trafiła do modułów.
 function wynikBezOdczytu(plik, i) {
   if (i >= MAKS_PLIKOW) return { stan: "odrzucony", kod: "blad_za_duzo_plikow" };
   if (plik.stan === "za_duzy") return { stan: "odrzucony", kod: "blad_za_duzy" };
   return { stan: "odrzucony", kod: "blad_nieznany" };
 }
+
+// Uwagi o zakresie, których tekst ma wstawki „od” i „do” (data początku i końca).
+const UWAGI_ZAKRESU_Z_DATAMI = new Set(["ZAKRES_NIEPELNY", "ZAKRES_PRZERWA", "ZAKRES_LUKA"]);
 
 function pokazPliki() {
   // Wynik z modułów ma tylko pozycja wczytana z pierwszej dziesiątki; pozostałe mają stan z listy.
@@ -556,7 +565,7 @@ function pokazPliki() {
     return el("li", { klasa: `plik plik-${stan}` },
       el("div", { klasa: "plik-naglowek" },
         el("span", { klasa: "plik-nazwa", tekst: plik.nazwa }),
-        el("span", { klasa: `plakietka plakietka-${stan}`, tekst: t(`plik_stan_${stan}`) }),
+        el("span", { klasa: `plakietka plakietka-${stan}`, tekst: t(KLUCZ_STANU_PLIKU[stan]) }),
         usun),
       ...tresc);
   }));
@@ -589,7 +598,7 @@ function pokazZakres() {
   for (const u of wynik.uwagi.filter((x) => x.gdzie === "zakres")) {
     if (u.kod === "ZAKRES_TARYFA") {
       elementy.push(komunikat("uwaga", t("zakres_taryfa", { od: miesiacZRokiem(u.od.rok, u.od.miesiac, TEKSTY.miesiace_dopelniacz) })));
-    } else if (u.kod in { ZAKRES_NIEPELNY: 1, ZAKRES_PRZERWA: 1, ZAKRES_LUKA: 1 }) {
+    } else if (UWAGI_ZAKRESU_Z_DATAMI.has(u.kod)) {
       elementy.push(komunikat("uwaga", t(u.kod.toLowerCase(), { od: dataPolska(u.od), do: dataPolska(u.do) })));
     }
   }

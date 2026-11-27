@@ -6,7 +6,6 @@ import {
   rozbierzZnacznik,
   godzinaZZnacznika,
   godzinyDoby,
-  godzinMiesiaca,
   numerDnia,
   dobaZNumeru,
   ostatniaNiedziela,
@@ -64,14 +63,6 @@ test("godziny doby: 23, 24 i 25", () => {
   assert.equal(istniejeGodzina({ rok: 2025, miesiac: 10, dzien: 27 }, 2, 2), false);
 });
 
-test("N13: liczba godzin miesiąca", () => {
-  assert.equal(godzinMiesiaca(2025, 3), 743);
-  assert.equal(godzinMiesiaca(2025, 10), 745);
-  assert.equal(godzinMiesiaca(2025, 4), 720);
-  assert.equal(godzinMiesiaca(2024, 2), 696);
-  assert.equal(godzinMiesiaca(2025, 1), 744);
-});
-
 test("numer dnia i doba z numeru, także dla lat przestępnych", () => {
   assert.equal(numerDnia({ rok: 1970, miesiac: 1, dzien: 1 }), 0);
   for (const doba of [
@@ -94,8 +85,8 @@ test("porządek godzin: kolejność w dobie 25-godzinnej i powrót z porządku",
 test("wynik nie zależy od strefy czasowej procesu", async () => {
   const { execFileSync } = await import("node:child_process");
   const skrypt = `
-    import { godzinMiesiaca, ostatniaNiedziela, numerDnia } from ${JSON.stringify(new URL("../app/lib/kalendarz.js", import.meta.url).href)};
-    console.log(JSON.stringify([godzinMiesiaca(2025, 3), godzinMiesiaca(2025, 10), ostatniaNiedziela(2026, 3), numerDnia({ rok: 2026, miesiac: 3, dzien: 29 })]));
+    import { godzinyDoby, ostatniaNiedziela, numerDnia } from ${JSON.stringify(new URL("../app/lib/kalendarz.js", import.meta.url).href)};
+    console.log(JSON.stringify([godzinyDoby({ rok: 2025, miesiac: 10, dzien: 26 }).length, godzinyDoby({ rok: 2025, miesiac: 3, dzien: 30 }).length, ostatniaNiedziela(2026, 3), ostatniaNiedziela(2026, 10), numerDnia({ rok: 2026, miesiac: 3, dzien: 29 })]));
   `;
   const wyniki = ["Pacific/Auckland", "America/New_York", "UTC"].map((tz) =>
     execFileSync(process.execPath, ["--input-type=module", "-e", skrypt], { env: { ...process.env, TZ: tz }, encoding: "utf8" }),

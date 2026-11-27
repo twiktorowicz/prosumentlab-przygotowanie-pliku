@@ -24,7 +24,8 @@
 // formularza w narzedzia/przygotuj.mjs).
 
 import { czytajKwote, czytajCene, czytajDziesietna, czytajTekstWolny, liczbaZCyfr } from "./kwoty.js";
-import { poprawnaDoba, rokWZakresie, numerDnia, dniMiesiaca } from "./kalendarz.js";
+import { poprawnaDoba, rokWZakresie, numerDnia, dniMiesiaca, dobaZTekstu, dwie } from "./kalendarz.js";
+import { obiekt } from "./json.js";
 
 const LISTY = {
   sprzedawca: ["tauron_sprzedaz", "pge_obrot", "enea", "energa_obrot", "eon", "pstryk", "inny"],
@@ -37,7 +38,7 @@ const LISTY = {
 };
 
 // Liczba stref taryfy; taryfa „inna” ma od 1 do 4 stref.
-const STREFY = { g11: 1, g12: 2, g12w: 2, g13: 3 };
+export const STREFY = { g11: 1, g12: 2, g12w: 2, g13: 3 };
 const MAKS_STREF_INNA = 4;
 
 // W kolejności pytań na ekranie (tak je wymienia komunikat o brakujących polach). Opłaty stałe są
@@ -95,11 +96,6 @@ function cenyZamienione(taryfa, ceny) {
   return false;
 }
 
-const doba = (tekst) => {
-  const [rok, miesiac, dzien] = tekst.split("-").map(liczbaZCyfr);
-  return { rok, miesiac, dzien };
-};
-
 const pusty = (w) => w === undefined || w === null || (typeof w === "string" && w.trim() === "");
 
 function czytajDate(tekst) {
@@ -126,7 +122,7 @@ export function okresMiesiaca(tekst) {
   const m = typeof tekst === "string" ? czytajMiesiac(tekst) : { ok: false };
   if (!m.ok) return null;
   const [rok, miesiac] = m.wartosc.split("-").map(liczbaZCyfr);
-  return { od: `${m.wartosc}-01`, do: `${m.wartosc}-${String(dniMiesiaca(rok, miesiac)).padStart(2, "0")}` };
+  return { od: `${m.wartosc}-01`, do: `${m.wartosc}-${dwie(dniMiesiaca(rok, miesiac))}` };
 }
 
 // Sprzedawca z listy wpisany w polu „inny”: nazwa po ujednoliceniu (małe litery, bez polskich
@@ -264,7 +260,7 @@ function czytajFakture(f, bledy, brakujace, uwagi, wpisane, { operator, dzisiaj 
   });
   if (inne.length > 0) r.oplaty_stale_inne = inne;
 
-  if (r.okres_od && r.okres_do && numerDnia(doba(r.okres_do)) - numerDnia(doba(r.okres_od)) + 1 > OKRES_DLUGI_DNI) {
+  if (r.okres_od && r.okres_do && numerDnia(dobaZTekstu(r.okres_do)) - numerDnia(dobaZTekstu(r.okres_od)) + 1 > OKRES_DLUGI_DNI) {
     uwagi.push({ kod: "FAKTURA_OKRES_DLUGI" });
   }
   const ceny = r.cena_energii_netto_zl_kwh === undefined ? [] : [r.cena_energii_netto_zl_kwh].flat();
@@ -391,8 +387,6 @@ const BUDOWA = {
   },
   zgoda: "logiczna",
 };
-
-const obiekt = (w) => w !== null && typeof w === "object" && !Array.isArray(w);
 
 function sprawdzBudowe(wartosc, wzor, sciezka) {
   if (wzor === TEKST) return typeof wartosc === "string" ? null : sciezka;

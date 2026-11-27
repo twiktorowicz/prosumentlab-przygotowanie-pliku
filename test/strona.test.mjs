@@ -424,13 +424,13 @@ test("miesiąc faktury: zmiana listy plików nie gubi wyboru", () => {
   const budowa = funkcja("zbudujListeMiesiecy");
   // Miesiąc z listy, którego na nowej liście nie ma (albo listy już nie ma): te same miesiąc i rok
   // w dwóch listach, na liście pozycja „inny miesiąc”.
-  assert.match(budowa, /if \(zListy && !naLiscie\) ustawDwieListy\(dwie, zListy\);/);
+  assert.match(budowa, /if \(zListy && !naLiscie\) ustawDwieListy\(polaMiesiaca, zListy\);/);
   assert.match(budowa, /else if \(naLiscie\) lista\.value = zListy;/);
   assert.match(budowa, /else lista\.value = poprzedni === "" \? "" : INNY_MIESIAC;/);
   // Lista pojawia się po wyborze w dwóch listach: wybór zostaje jako „inny miesiąc”.
-  assert.match(budowa, /else if \(!byla\) lista\.value = wartoscMiesiaca\(dwie, \{ niepelny: true \}\) \? INNY_MIESIAC : "";/);
+  assert.match(budowa, /else if \(!byla\) lista\.value = wartoscMiesiaca\(polaMiesiaca, \{ niepelny: true \}\) \? INNY_MIESIAC : "";/);
   // Lista znika przy pustej pozycji: dwie listy też bez wyboru (schowane wartości nie obowiązywały).
-  assert.match(budowa, /if \(byla && !jest && poprzedni === ""\) ustawDwieListy\(dwie, ""\);/);
+  assert.match(budowa, /if \(byla && !jest && poprzedni === ""\) ustawDwieListy\(polaMiesiaca, ""\);/);
   const ustaw = funkcja("ustawDwieListy");
   assert.match(ustaw, /\$\('\[data-czesc="miesiac"\]', kontener\)\.value = m;/);
   assert.match(ustaw, /\$\('\[data-czesc="rok"\]', kontener\)\.value = r;/);

@@ -6,7 +6,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
-import { dekoduj, LIMIT_BAJTOW } from "../app/lib/dekodowanie.js";
+import { dekoduj, podzielNaLinie, LIMIT_BAJTOW } from "../app/lib/dekodowanie.js";
 import { czytajTauron, LIMIT_WIERSZY, NAGLOWEK_BEZ_NUMEROW } from "../app/lib/tauron.js";
 import { sprawdzBezpiecznik } from "../app/lib/bezpiecznik.js";
 import { generuj, PPE_FIKCYJNE, PLATNICY_FIKCYJNI } from "../narzedzia/generator.mjs";
@@ -514,4 +514,45 @@ test("pierwsza i ostatnia godzina pliku pomijają nieistniejącą godzinę 03:00
   assert.equal(koniec.pierwszyZnacznik, "2026-03-28 01:00");
   assert.equal(koniec.ostatniZnacznik, "2026-03-29 02:00");
   assert.ok(koniec.ostatniPorzadek < poczatek.pierwszyPorzadek, "porządek z godzin istniejących");
+});
+
+test("podział na linie: ten sam wynik co split(/\\r*\\n/) dla wejść granicznych", () => {
+  assert.deepEqual(podzielNaLinie("a\r\r\nb"), ["a", "b"]);
+  assert.deepEqual(podzielNaLinie("a\rb\n"), ["a\rb", ""]);
+  assert.deepEqual(podzielNaLinie("x\r"), ["x\r"], "ostatnia linia bez \\n po niej zostaje nietknięta");
+  assert.deepEqual(podzielNaLinie("\r".repeat(1000) + "\n"), ["", ""]);
+  assert.deepEqual(podzielNaLinie(""), [""]);
+  assert.deepEqual(podzielNaLinie("a\n\r\n"), ["a", "", ""]);
+});
+
+test("podział na linie: wszystkie ciągi z {a, CR, LF} o długości 0–8 dają to samo co split(/\\r*\\n/)", () => {
+  const alfabet = ["a", "\r", "\n"];
+  let ciagi = [""];
+  let razem = 0;
+  for (let dlugosc = 0; dlugosc <= 8; dlugosc++) {
+    for (const tekst of ciagi) assert.deepEqual(podzielNaLinie(tekst), tekst.split(/\r*\n/), JSON.stringify(tekst));
+    razem += ciagi.length;
+    if (dlugosc < 8) ciagi = ciagi.flatMap((tekst) => alfabet.map((znak) => tekst + znak));
+  }
+  assert.equal(razem, 9841);
+});
+
+test("ciąg 200 tys. CR bez LF po nagłówku: odczyt w limicie czasu (stare wyrażenie potrzebowało na to kilkunastu sekund)", () => {
+  const t0 = performance.now();
+  const wynik = czytajTauron(`${NAGLOWEK_BEZ_NUMEROW}\r\n${"\r".repeat(200_000)}`);
+  const czas = performance.now() - t0;
+  assert.ok(czas < 2000, `odczyt trwał ${czas.toFixed(0)} ms`);
+  assert.equal(wynik.ok, false);
+});
+
+test("długi ciąg CR bez LF po nagłówku: odczyt w limicie czasu (bez czasu kwadratowego)", () => {
+  // Cały plik pod limitem 10 MB. Timeout z node:test nie przerywa kodu synchronicznego, więc czas
+  // mierzy sam test.
+  const tekst = `${NAGLOWEK_BEZ_NUMEROW}\r\n${"\r".repeat(9_900_000)}`;
+  assert.ok(tekst.length < LIMIT_BAJTOW);
+  const t0 = performance.now();
+  const wynik = czytajTauron(tekst);
+  const czas = performance.now() - t0;
+  assert.ok(czas < 2000, `odczyt trwał ${czas.toFixed(0)} ms`);
+  assert.equal(wynik.ok, false);
 });

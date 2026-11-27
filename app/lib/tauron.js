@@ -17,6 +17,7 @@
 import { rozbierzZnacznik, godzinaZZnacznika, porzadek, dobaZmianyNaZimowy, numerDnia, istniejeGodzina } from "./kalendarz.js";
 import { liczbaZCyfr } from "./kwoty.js";
 import { sprawdzBezpiecznik } from "./bezpiecznik.js";
+import { podzielNaLinie } from "./dekodowanie.js";
 
 export const NAGLOWEK_SUROWY =
   "Nr platnika;Nr punktu poboru energii;Rodzaj energii;Data i godzina;Strefa;Wartosc[kWh/kvar];Kompletnosc[%]";
@@ -107,7 +108,7 @@ function przypiszWystapienia(seria) {
 }
 
 export function czytajTauron(tekst) {
-  const linie = tekst.split(/\r*\n/);
+  const linie = podzielNaLinie(tekst);
   let i = linie.findIndex((l) => l.trim() !== "");
   // Pusty plik (zero bajtów albo same puste linie) to plik, którego narzędzie nie odczytało.
   if (i < 0) return blad("blad_nieznany");

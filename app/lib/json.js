@@ -20,6 +20,9 @@ function sprawdz(wartosc, sciezka) {
   throw new Error(`${sciezka}: niedozwolona wartość w JSON`);
 }
 
+// Obiekt JSON: nie null i nie lista.
+export const obiekt = (w) => w !== null && typeof w === "object" && !Array.isArray(w);
+
 export function doJson(obiekt) {
   sprawdz(obiekt, "$");
   return `${JSON.stringify(obiekt, null, 2)}\n`;

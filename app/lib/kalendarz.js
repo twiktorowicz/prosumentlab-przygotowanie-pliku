@@ -27,6 +27,15 @@ export function dniMiesiaca(rok, miesiac) {
   return [4, 6, 9, 11].includes(miesiac) ? 30 : 31;
 }
 
+// Liczba z co najmniej dwóch cyfr: „7” -> „07”.
+export const dwie = (n) => String(n).padStart(2, "0");
+
+// Doba z tekstu "RRRR-MM-DD" (po sprawdzeniu postaci przez wywołującego).
+export function dobaZTekstu(tekst) {
+  const [rok, miesiac, dzien] = tekst.split("-").map(liczbaZCyfr);
+  return { rok, miesiac, dzien };
+}
+
 export function poprawnaDoba(rok, miesiac, dzien) {
   return rok >= 1970 && rok <= 9999 && miesiac >= 1 && miesiac <= 12 && dzien >= 1 && dzien <= dniMiesiaca(rok, miesiac);
 }
@@ -97,12 +106,6 @@ export function istniejeGodzina(doba, godzina, wystapienie) {
   if (godzina === 2 && zmianaNaLetni(doba)) return false;
   if (wystapienie === 2) return godzina === 2 && zmianaNaZimowy(doba);
   return wystapienie === 1 && godzina >= 0 && godzina <= 23;
-}
-
-export function godzinMiesiaca(rok, miesiac) {
-  let suma = 0;
-  for (let dzien = 1; dzien <= dniMiesiaca(rok, miesiac); dzien++) suma += godzinyDoby({ rok, miesiac, dzien }).length;
-  return suma;
 }
 
 // Liczba porządkowa godziny: rośnie z czasem, także w dobie 25-godzinnej. Służy jako klucz
