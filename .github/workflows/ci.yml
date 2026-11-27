@@ -23,6 +23,21 @@ jobs:
       - name: Sumy kontrolne app/
         run: node narzedzia/sumy.mjs --sprawdz
 
+  proba-przegladarki:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "26.13.1"
+      - name: Wersja przeglądarki
+        run: google-chrome --version
+      - name: Próba w przeglądarce
+        run: node narzedzia/proba-przegladarki.mjs --chrome "$(command -v google-chrome)"
+
   gitleaks:
     runs-on: ubuntu-24.04
     timeout-minutes: 10

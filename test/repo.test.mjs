@@ -216,8 +216,21 @@ test("skan numerów: UTF-8, znaki typograficzne obok numeru, skróty szesnastkow
 test("CI: limit czasu w każdym zadaniu", () => {
   const ci = readFileSync(join(KORZEN, ".github", "workflows", "ci.yml"), "utf8");
   const zadania = [...ci.slice(ci.indexOf("\njobs:\n")).matchAll(/^ {2}([a-z-]+):\n((?: {4}.*\n|\n)*)/gm)];
-  assert.deepEqual(zadania.map((m) => m[1]), ["testy", "gitleaks"]);
+  assert.deepEqual(zadania.map((m) => m[1]), ["testy", "proba-przegladarki", "gitleaks"]);
   for (const [, nazwa, tresc] of zadania) assert.match(tresc, /^ {4}timeout-minutes: \d+$/m, nazwa);
+});
+
+// Zadania CI nie zostawiają tokena w repozytorium po pobraniu kodu, a przeglądarka próby działa
+// z piaskownicą: ani workflow, ani skrypt próby nie dają Chrome flagi --no-sandbox.
+test("CI: każde actions/checkout z persist-credentials: false, bez --no-sandbox w CI i w próbie", () => {
+  const ci = readFileSync(join(KORZEN, ".github", "workflows", "ci.yml"), "utf8");
+  const proba = readFileSync(join(KORZEN, "narzedzia", "proba-przegladarki.mjs"), "utf8");
+  const pobrania = [...ci.matchAll(/^( *)- uses: actions\/checkout@.*\n((?:\1 {2}.*\n)*)/gm)];
+  assert.ok(pobrania.length >= 3, "każde zadanie pobiera kod");
+  for (const [, , ciag] of pobrania) assert.match(ciag, /^ *persist-credentials: false$/m);
+  assert.equal(pobrania.length, (ci.match(/actions\/checkout@/g) ?? []).length, "wszystkie pobrania rozpoznane");
+  assert.doesNotMatch(ci, /--no-sandbox/);
+  assert.doesNotMatch(proba.replace(/^[ \t]*\/\/.*\n/gm, ""), /--no-sandbox/, "w kodzie próby");
 });
 
 // README jest publiczny i opisuje narzędzie z wysyłką przez stronę (wersja 0.2.0). Lista nagłówków

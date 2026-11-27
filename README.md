@@ -179,10 +179,11 @@ z atrapą przyjmowania zgłoszeń, a potem przechodzi kreator na plikach z gener
 1280 px i 390 px (z ekranem dotykowym): sześć kroków, „Dalej” zatrzymane błędem i niezatrzymane
 brakiem danych, „Wstecz” bez utraty danych, rozmiar ZIP-a po kompresji, wysyłkę z każdą
 odpowiedzią atrapy (także odliczanie przy braku odpowiedzi), drogę zapasową z zapisem ZIP-a,
-pytanie przed opuszczeniem strony, blokady i pola formularza. Sprawdza też, że strona nie wysyła
-żadnego zapytania poza własne pliki i `POST` pod `/zgloszenie/`, nie pisze błędów w konsoli
-i niczego nie zostawia w przeglądarce. Nie należy do `node --test` ani do CI, bo wymaga
-zainstalowanej przeglądarki.
+pytanie przed opuszczeniem strony, blokady, pola formularza i kolejność pól, zdań i uwag na
+stronie. Sprawdza też, że strona nie wysyła żadnego zapytania poza własne pliki i `POST` pod
+`/zgloszenie/`, nie pisze błędów w konsoli i niczego nie zostawia w przeglądarce. Nie należy do
+`node --test`, bo wymaga zainstalowanej przeglądarki, ale w CI biegnie jako osobne zadanie
+`proba-przegladarki` (Chrome z obrazu runnera, bez `--no-sandbox`).
 
 ```sh
 CHROME="/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" \

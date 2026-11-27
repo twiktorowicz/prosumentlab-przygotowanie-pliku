@@ -1,7 +1,9 @@
 #!/usr/bin/env node
 // Próba narzędzia w prawdziwej przeglądarce (Chrome albo Chromium bez okna), sterowanej przez
 // protokół DevTools, bez bibliotek. Pliki wejściowe powstają z generatora danych syntetycznych.
-// Nie wchodzi do `node --test` ani do CI: wymaga zainstalowanej przeglądarki.
+// Nie wchodzi do `node --test`: wymaga zainstalowanej przeglądarki. W CI biegnie jako osobne
+// zadanie `proba-przegladarki` (Chrome z obrazu runnera, bez --no-sandbox); kod wyjścia inny
+// niż 0 daje czerwone zadanie.
 //
 // Użycie:
 //   node narzedzia/proba-przegladarki.mjs --chrome "/ścieżka/do/chrome" [--zostaw] [--blad-probny]
@@ -26,6 +28,12 @@
 // sprawdzenie_dalej na końcu kroku 5, uwaga o kolejności cen w strefach, fokus na polu ceny
 // przy błędzie ceny w taryfie „inna” i miesiąc faktury z listy pełnych miesięcy z plików (wybór
 // z listy i z dwóch list, zmiana listy plików po wyborze, plik bez pełnego miesiąca).
+// Do tego sprawdzenia, które zastąpiły testy statyczne strony: struktura strony w DOM (kolejność
+// i atrybuty pól, zdań i uwag, numery przy polach, „Co to znaczy?”, rozwijane części, ekran po
+// wysłaniu), odczyt pliku w toku, zakres lat pól dat, zapis i wysyłka w tym samym zadaniu co
+// kliknięcie, kolejność zdjęcia pytania przed opuszczeniem strony i pobrania pliku, wpisy w historii
+// przeglądarki, stan wiadomości przed i po zapisie, zapis_ponownie po zmianie danych i to, że zmiana
+// pola nie czyta plików z licznika od nowa.
 // Na końcu: karta ze stroną nie wysyła żadnego zapytania poza 127.0.0.1 i poza własne pliki oraz
 // POST pod /zgloszenie/, nie pisze w konsoli błędów i nie zostawia niczego w przeglądarce.
 //
@@ -33,7 +41,8 @@
 // przeglądarki, pobrany ZIP, zrzuty). Katalog jest usuwany, a przeglądarka i serwer zamykane
 // zawsze: po próbie, po wyjątku, po przekroczeniu czasu i po Ctrl+C. Z opcją --zostaw katalog
 // zostaje do obejrzenia. Opcja --blad-probny rzuca wyjątek w trakcie próby, żeby sprawdzić
-// sprzątanie.
+// sprzątanie. Skrypt nie zakłada niczego poza tym katalogiem, ale sama przeglądarka może na
+// Linuksie założyć własne pliki w katalogu domowym (na przykład ~/.pki); ich skrypt nie usuwa.
 //
 // Kod wyjścia: 0 wszystko w porządku, 1 co najmniej jedno sprawdzenie nie przeszło, 2 złe
 // wywołanie, 3 próba przerwana wyjątkiem.
@@ -49,6 +58,7 @@ import { generuj, PPE_FIKCYJNE, PLATNICY_FIKCYJNI } from "./generator.mjs";
 import { czytajZip } from "../test/pomoc/czytnik-zip.mjs";
 import { CZAS_WYSYLKI_MS } from "../app/lib/wysylka.js";
 import { rozmiarDoWyswietlenia } from "../app/lib/odmiana.js";
+import { ROK_MIN, ROK_MAKS } from "../app/lib/kalendarz.js";
 
 const { values } = parseArgs({
   options: { chrome: { type: "string" }, zostaw: { type: "boolean", default: false }, "blad-probny": { type: "boolean", default: false } },
@@ -112,6 +122,100 @@ for (const sygnal of ["SIGINT", "SIGTERM"]) {
 
 const wyniki = [];
 const sprawdz = (opis, warunek, szczegoly = "") => wyniki.push(`${warunek ? "OK  " : "BŁĄD"} ${opis}${szczegoly ? ` (${szczegoly})` : ""}`);
+
+// Struktura strony w DOM: kolejność i atrybuty elementów, od których zależy to, co widzi klient
+// i co czyta czytnik ekranu (kolejność pól i zdań, podpisy, opisy, numery przy polach, rozwijane
+// części). Funkcja działa w karcie przeglądarki (wysyła ją `js`), więc nie używa niczego
+// z Node'a; sprawdza także kroki schowane na starcie. Zwraca nazwy elementów, które nie
+// pasują do wzoru.
+function strukturaStrony() {
+  const bledy = [];
+  const q = (s, w = document) => w.querySelector(s);
+  // Ciągły fragment dzieci rodzica pasuje do kolejnych selektorów (między nimi nic nie stoi).
+  const ciag = (nazwa, rodzic, selektory) => {
+    const dzieci = rodzic ? [...rodzic.children] : [];
+    if (!dzieci.some((_, i) => selektory.every((s, j) => dzieci[i + j]?.matches(s)))) bledy.push(nazwa);
+  };
+
+  // Sześć kroków w main, każdy z nagłówkiem h1 dostępnym dla fokusu.
+  const kroki = [...document.querySelectorAll("main > section.krok")].map((s) => `${s.dataset.krok}:${q(":scope > h1[tabindex='-1']", s)?.dataset.tekst}`).join(",");
+  if (kroki !== "1:krok_pliki,2:krok_faktura,3:krok_cena,4:krok_dodatkowe,5:krok_sprawdzenie,6:krok_wysylka") bledy.push(`kroki: ${kroki}`);
+  // Komunikat kreatora tuż pod nagłówkiem kroków 1–4, w krokach 5 i 6 go nie ma.
+  for (const id of ["krok-pliki", "krok-faktura", "krok-cena", "krok-dodatkowe"]) {
+    ciag(`komunikat kreatora w kroku ${id}`, q(`#${id}`), ["h1", "p.blad.kreator-komunikat[role='alert']"]);
+  }
+  if (q("#krok-sprawdzenie .kreator-komunikat, #krok-wysylka .kreator-komunikat")) bledy.push("komunikat kreatora w kroku 5 albo 6");
+
+  // Krok 1: panel „Co zostaje u Ciebie…” w rozwijanej części.
+  ciag("krok 1: wstęp i akapit o operatorze", q("#krok-pliki"), ["p.wstep[data-tekst='wstep_opis']", "p.drobny[data-tekst='wstep_operator']", "details.panel"]);
+  // Krok 2: wstęp, rozwijany rysunek, pierwsze pole.
+  ciag("krok 2: wstęp, rysunek, system rozliczenia", q("#krok-faktura"), ["p[data-tekst='faktura_wstep']", "details.rysunek-pokaz", "fieldset[data-pole='system_rozliczenia']"]);
+  ciag("krok 2: rysunek rozwijany (napis, rysunek)", q("#krok-faktura details.rysunek-pokaz"), ["summary[data-tekst='faktura_rysunek_pokaz']", "figure.rysunek"]);
+  // Okres faktury: lista z pliku, dwie listy, podpowiedź, błąd; potem daty i pole „inny okres”.
+  ciag("okres: lista z pliku, dwie listy, podpowiedź, błąd", q("fieldset[data-pole='okres_miesiac']"), ["legend", "select#p-okres-lista", "div[data-miesiac='okres_miesiac']", "p#faktura-miesiac-pomoc", "p.blad"]);
+  ciag("okres: pole miesiąca, daty, pole „inny okres”", q("#faktura-pola"), ["fieldset[data-pole='okres_miesiac']", "#okres-daty", "label.opcja:has(#p-okres-inny)"]);
+  ciag("sprzedawca_nazwa: etykieta, pole, podpowiedź, uwaga, błąd", q("[data-pole='sprzedawca_nazwa']"), ["label[for='p-sprzedawca_nazwa']", "input#p-sprzedawca_nazwa", "p.podpowiedz", "p#sprzedawca-na-liscie.uwaga", "p.blad"]);
+  ciag("taryfa: opcje, zdanie przy cenie stałej i dynamicznej, błąd", q("[data-pole='taryfa']"), ["div.opcje", "p.podpowiedz[data-warunek='rodzaj_ceny=stala']", "p.podpowiedz[data-warunek='rodzaj_ceny=dynamiczna']", "p.blad"]);
+  // Cena: pola stref i zdanie pod nimi; uwagi pod polami cen.
+  ciag("cena: pola stref, zdanie cena_strefy_jedna", q("[data-pole='cena_energii_netto_zl_kwh']"), ["#cena-pola", "#cena-strefy-jedna"]);
+  ciag("cena: uwaga o nietypowej cenie, o kolejności cen, błąd", q("[data-pole='cena_energii_netto_zl_kwh']"), ["p#faktura-cena-nietypowa.uwaga", "p#faktura-ceny-kolejnosc.uwaga", "p.blad"]);
+  // Przy opustach pole „rodzaj ceny” stoi wewnątrz kontenera z warunkiem, uwaga o braku pól na końcu kroku 3.
+  ciag("krok 3: zdanie o opustach, pola z warunkiem, uwaga o brakujących polach", q("#krok-cena"), ["p.uwaga[data-warunek='system_rozliczenia=opusty']", "#cena-kontener[data-warunek='system_rozliczenia!=opusty']", "p#faktura-brak:last-child"]);
+  // Korekta i opłaty stałe.
+  if (!q("[data-pole='rodzaj_faktury'] input#p-korekta[type='checkbox']") || !q("[data-pole='rodzaj_faktury'] [data-tekst='faktura_korekta_pole']")) bledy.push("korekta jako pole wyboru");
+  const oplaty = [...document.querySelectorAll("details.oplaty")];
+  if (oplaty.length !== 1 || oplaty[0].open) bledy.push("opłaty stałe: jedno zwinięte details");
+  else {
+    ciag("opłaty stałe: napis i wstęp", oplaty[0], ["summary[data-tekst='faktura_oplaty']", "p[data-tekst='faktura_oplaty_wstep']"]);
+    for (const p of ["oplata_mocowa_zl_mies", "oplata_abonamentowa_zl_mies", "oplata_stala_sieciowa_zl_mies", "oplata_przejsciowa_zl_mies", "oplaty_stale_inne"]) {
+      if (!q(`[data-pole='${p}']`, oplaty[0])) bledy.push(`opłaty stałe: pole ${p} poza details`);
+    }
+  }
+  if ([...document.querySelectorAll("details")].some((d) => d.open)) bledy.push("rozwijana część otwarta na starcie");
+  // „Co to znaczy?”: pięć części, pod etykietą pola albo (okres) pod całą grupą.
+  for (const [pole, klucze] of [["system_rozliczenia", ["pomoc_system"]], ["taryfa", ["pomoc_taryfa"]], ["rodzaj_ceny", ["pomoc_rodzaj_ceny"]], ["cena_energii_netto_zl_kwh", ["pomoc_cena_stala", "pomoc_cena_dynamiczna"]]]) {
+    const d = q(`[data-pole='${pole}'] > legend + details.pomoc`);
+    if (!d || q("summary", d)?.dataset.tekst !== "co_to_znaczy" || klucze.some((k) => !q(`[data-tekst='${k}']`, d))) bledy.push(`„Co to znaczy?” przy ${pole}`);
+  }
+  if (!q("label.opcja:has(#p-okres-inny) + details.pomoc > summary[data-tekst='co_to_znaczy'] + p[data-tekst='pomoc_okres']")) bledy.push("„Co to znaczy?” przy okresie");
+  if (document.querySelectorAll("details.pomoc").length !== 5) bledy.push("liczba części „Co to znaczy?”");
+  // Numery przy polach jak na rysunku faktury, ukryte przed czytnikiem ekranu.
+  const NUMERY = { rodzaj_faktury: 1, okres_miesiac: 2, okres_od: 2, okres_do: 2, sprzedawca: 3, taryfa: 4, system_rozliczenia: 5, cena_energii_netto_zl_kwh: 6,
+    oplaty_stale_inne: 7, oplata_mocowa_zl_mies: 8, oplata_abonamentowa_zl_mies: 9, oplata_stala_sieciowa_zl_mies: 10, oplata_przejsciowa_zl_mies: 11, rodzaj_ceny: 12 };
+  for (const [pole, nr] of Object.entries(NUMERY)) {
+    const znaczki = [...document.querySelectorAll(`[data-pole='${pole}'] .nr`)];
+    if (znaczki.length !== 1 || znaczki[0].textContent !== String(nr) || znaczki[0].getAttribute("aria-hidden") !== "true") bledy.push(`numer przy polu ${pole}`);
+  }
+  if (document.querySelectorAll(".nr").length !== Object.keys(NUMERY).length) bledy.push("liczba numerów przy polach");
+  // Pola z liczbą (ceny w strefach są sprawdzane osobno, bo powstają po wyborze taryfy).
+  for (const wybor of ["#p-oplata_mocowa_zl_mies", "#p-oplata_abonamentowa_zl_mies", "#p-oplata_stala_sieciowa_zl_mies", "#p-oplata_przejsciowa_zl_mies", "#p-moc_pv_kwp",
+    "#p-magazyn_pojemnosc_kwh", "#p-moc_przed_kwp", "#p-cena", "[data-czesc='kwota']"]) {
+    if (q(wybor)?.getAttribute("inputmode") !== "decimal") bledy.push(`inputmode decimal: ${wybor}`);
+  }
+  // Krok 5: podgląd, rozmiar, zgoda, numer, zdanie na końcu kroku.
+  ciag("krok 5: tytuł, podgląd, rozmiar, zgoda, numer, zdanie na końcu", q("#krok-sprawdzenie"),
+    ["h1", "h2[data-tekst='podglad_tytul']", "#podglad", "#podglad-rozmiar", "div.zgoda", "p[data-tekst='zgoda_bez']", "p#numer", "p[data-tekst='sprawdzenie_dalej']:last-child"]);
+  ciag("zgoda: pole, etykieta, odnośnik", q(".zgoda"), ["input#p-zgoda", "label#zgoda-etykieta", "span#zgoda-wiecej"]);
+  // Krok 6: tytuł, powód blokady, trzy widoki; w wysyłce formularz z adresem, ramką, przyciskiem.
+  ciag("krok 6: tytuł, powód blokady, widoki", q("#krok-wysylka"), ["h1#wysylka-tytul", "p#zapis-powod[aria-live='polite']", "#widok-wysylka", "#widok-zapasowa", "#widok-wyslane"]);
+  ciag("krok 6: wysyłka niedostępna, formularz, droga zapasowa", q("#widok-wysylka"), ["p#wysylka-niedostepna", "#wysylka-formularz", "button#zapasowa-pokaz"]);
+  ciag("krok 6: adres, ramka, komunikat, przycisk, czekanie", q("#wysylka-formularz"), ["div.pole[data-pole='adres']", "p#wysylka-co", "p#wysylka-komunikat[role='alert']", "button#wyslij", "p#wysylka-czekanie"]);
+  ciag("krok 6: pole adresu", q("[data-pole='adres']"),
+    ["label[for='p-adres']", "input#p-adres[type='email'][autocomplete='email'][inputmode='email'][aria-describedby='adres-pomoc']", "p#adres-pomoc", "p#adres-blad[role='alert']"]);
+  // Droga zapasowa: tytuł, dwa kroki (zapis, wiadomość), powrót.
+  ciag("droga zapasowa: tytuł, kroki, powrót", q("#widok-zapasowa"), ["h2#zapasowa-tytul[tabindex='-1']", "div#droga-zapis", "button#zapasowa-wroc"]);
+  const drogi = [...document.querySelectorAll("#droga-zapis > .krok-drogi")];
+  if (drogi.length !== 2) bledy.push("droga zapasowa: dwa kroki");
+  else {
+    ciag("droga zapasowa, krok 1: zapis, potwierdzenie, zapis_gdzie", drogi[0], ["h3[data-tekst='droga_zapis_krok1']", "button#zapisz", "p#zapis-gotowe[aria-live='polite']", "p#zapis-ponownie", "p[data-tekst='zapis_gdzie']"]);
+    ciag("droga zapasowa, krok 2: wiadomość", drogi[1], ["h3[data-tekst='droga_zapis_krok2']", "p#po-zapisie[aria-live='polite']", "p#mailto-bez-zalacznika", "a#mailto[aria-disabled='true']", "p#mailto-najpierw-zapisz"]);
+  }
+  // Ekran po wysłaniu.
+  ciag("ekran po wysłaniu: tytuł, numer, potwierdzenie, ramka, pytanie, przycisk na stronę", q("#widok-wyslane"),
+    ["h1#wyslane-tytul", "div.ramka-numer", "p#wyslane-potwierdzenie", "p#wyslane-brak", "p[data-tekst='wyslane_pytanie']", "a.przycisk[href='/'][target='_blank'][rel='noopener noreferrer']"]);
+  ciag("ekran po wysłaniu: numer dużym krojem", q("#widok-wyslane .ramka-numer"), ["span[data-tekst='wyslane_numer']", "span#wyslane-numer.numer-duzy", "span[data-tekst='wyslane_numer_pomoc']"]);
+  return bledy;
+}
 
 async function proba() {
   PRACA = mkdtempSync(join(tmpdir(), "proba-przegladarki-"));
@@ -319,7 +423,6 @@ async function proba() {
       pasekUkryty: document.querySelector('#pasek').getAttribute('aria-hidden') === 'true',
       wstecz: widac('#kreator-wstecz'), dalej: widac('#kreator-dalej'), dalejAktywny: !document.querySelector('#kreator-dalej').disabled,
       fokusNaglowek: document.activeElement === s?.querySelector('h1'), przewiniecie: Math.round(window.scrollY),
-      przyklejony: getComputedStyle(document.querySelector('#kreator-przyciski')).position !== 'static',
       komunikat: (() => { const k = s?.querySelector('.kreator-komunikat'); return Boolean(k) && widac('section.krok:not([hidden]) .kreator-komunikat') && k.textContent; })(),
       fokus: document.activeElement === s?.querySelector('.kreator-komunikat') ? 'komunikat' : (document.activeElement?.id || document.activeElement?.tagName || '') }; })()`);
   // Pytanie przy opuszczaniu strony: zdarzenie beforeunload, które strona odwołuje.
@@ -350,10 +453,13 @@ async function proba() {
       przyciski: widac('#kreator-przyciski'), tytul: widac('#wysylka-tytul'), adres: document.querySelector('#p-adres').value,
       fokus: document.activeElement?.id ?? '', zapisz: !document.querySelector('#zapisz').disabled,
       czekanie: widac('#wysylka-czekanie') && document.querySelector('#wysylka-czekanie').textContent }; })()`);
+  let fetchWZadaniu = null; // wynik podmiany `fetch` z ostatniego wyslijZAdresem
   async function wyslijZAdresem(adres, ms = 800) {
     await wpisz("#p-adres", adres, "input");
     const przed = zgloszenia().length;
-    await js("document.querySelector('#wyslij').click()");
+    // Podmiana `fetch` na czas kliknięcia: czy żądanie wyszło w tym samym zadaniu co kliknięcie.
+    fetchWZadaniu = await js(`(() => { const f = window.fetch; let wywolany = false; window.fetch = function (...a) { wywolany = true; return f.apply(this, a); };
+      document.querySelector('#wyslij').click(); window.fetch = f; return wywolany; })()`);
     await czekaj(ms);
     return zgloszenia().length - przed;
   }
@@ -403,6 +509,17 @@ async function proba() {
   const listy = await js("[...document.querySelectorAll('[data-miesiac=\"magazyn_od\"] select')].map(s => s.options[0].textContent)");
   sprawdz("puste pozycje list: „miesiąc” i „rok”", JSON.stringify(listy) === JSON.stringify(["miesiąc", "rok"]), JSON.stringify(listy));
   const [rokTeraz, miesiacTeraz] = await js("(() => { const d = new Date(); return [String(d.getFullYear()), String(d.getMonth() + 1).padStart(2, '0')]; })()");
+  const strukturaBledy = await js(`(${strukturaStrony.toString()})()`);
+  sprawdz("struktura strony: kroki, kolejność pól, zdań i uwag, numery przy polach, „Co to znaczy?”, rozwijane części zwinięte, ekran po wysłaniu",
+    strukturaBledy.length === 0, strukturaBledy.join("; "));
+  // Bez JavaScriptu (przed uruchomieniem skryptu strony) widoczny jest tylko krok 1: pozostałe kroki
+  // chowa atrybut hidden w HTML-u, nie dopiero skrypt.
+  await strona("Emulation.setScriptExecutionDisabled", { value: true });
+  await otworz();
+  const bezSkryptu = await js("[...document.querySelectorAll('section.krok:not([hidden])')].map((e) => e.dataset.krok)");
+  await strona("Emulation.setScriptExecutionDisabled", { value: false });
+  await otworz();
+  sprawdz("bez JavaScriptu widoczny tylko krok 1, pozostałe schowane w HTML-u", JSON.stringify(bezSkryptu) === JSON.stringify(["1"]), JSON.stringify(bezSkryptu));
 
   // Miesiąc faktury w dwóch listach (miesiąc i rok). Gdy pliki mają pełne miesiące, najpierw
   // pozycja „inny miesiąc” na liście miesięcy z pliku, która te dwie listy pokazuje. Zdarzenie
@@ -436,7 +553,9 @@ async function proba() {
     let st = await stanKreatora();
     sprawdz(w("start: widoczny tylko krok 1, napis „Krok 1 z 6”, jeden odcinek paska, bez „Wstecz”, z „Dalej”"),
       st.krok === 1 && st.widoczne === 1 && st.napis === "Krok 1 z 6" && st.pasek === 1 && st.pasekUkryty && !st.wstecz && st.dalej, JSON.stringify(st));
-    sprawdz(w("przyciski kreatora nie są przyklejone do ekranu"), !st.przyklejony);
+    const przyklejone = await js("[...document.querySelectorAll('body *')].filter((e) => ['sticky', 'fixed'].includes(getComputedStyle(e).position)).map((e) => e.id || e.className || e.tagName)");
+    sprawdz(w("nic na stronie nie jest przyklejone do ekranu (position: sticky ani fixed)"), przyklejone.length === 0, przyklejone.join(", "));
+    const dlugoscHistorii = await js("history.length");
     sprawdz(w("krok 1: tytuł, wstęp i akapit o operatorze"), (await tekstEl("#krok-pliki h1")) === "Plik z eLicznika" &&
       (await tekstEl('[data-tekst="wstep_opis"]')).startsWith("Narzędzie przygotowuje z Twojego pliku nowy plik") && (await widoczny('[data-tekst="wstep_operator"]')));
     sprawdz(w("przed dodaniem pliku bez pytania przy opuszczaniu strony"), !(await pytaPrzedWyjsciem()));
@@ -665,13 +784,22 @@ async function proba() {
       "pomiary_2.csvdane godzinowe z pliku eLicznik_styczen.csv, bez numeru punktu poboru i numeru płatnika",
     ]) && podglad.otwarte === 0, JSON.stringify(podglad.lista));
     sprawdz(w("podgląd: rozmiar zgłoszenia po kompresji w KB"), /^Rozmiar zgłoszenia: \d+ KB\.$/.test(podglad.rozmiar || ""), String(podglad.rozmiar));
+    const miesiace = await js(`(() => { const d = document.querySelector('#podglad details.miesiace');
+      return { jest: Boolean(d), otwarte: d?.open, naglowki: [...(d?.querySelectorAll('th') ?? [])].length, wiersze: [...(d?.querySelectorAll('tbody tr') ?? [])].map((tr) => tr.cells[0].textContent) }; })()`);
+    sprawdz(w("podgląd: tabela miesięcy osobno, zwinięta, z miesiącami słownie i rokiem (13 wierszy, trzy kolumny)"),
+      miesiace.jest && !miesiace.otwarte && miesiace.naglowki === 3 && miesiace.wiersze.length === 13 && miesiace.wiersze.includes("styczeń 2025") && miesiace.wiersze.includes("styczeń 2026"), JSON.stringify(miesiace));
     const zgodaBez = await js("(() => { const z = document.querySelector('.zgoda').nextElementSibling; return z?.dataset.tekst === 'zgoda_bez' && !z.hidden && z.getClientRects().length > 0 && z.textContent; })()");
     sprawdz(w("zgoda_bez pod polem zgody, numer pod spodem"), zgodaBez === "Darmowy raport przygotujemy także bez tej zgody: pomagasz nam samym plikiem i danymi z faktury, z którymi porównamy obliczenia. Bez zgody plik i liczby z faktury usuniemy najpóźniej 3 dni po wysłaniu raportu." &&
       (await widoczny("#numer")), String(zgodaBez));
+    // Pozycja rozwinięta przez klienta zostaje rozwinięta po przeliczeniu (zmiana zgody przebudowuje podgląd).
+    await js("document.querySelector('#podglad details[data-plik=\"faktury.json\"]').open = true");
     await klik("#p-zgoda");
     await czekaj(500);
     sprawdz(w("zgoda zmienia ZIP: podgląd „Zgoda zaznaczona”, rozmiar znów widoczny po kompresji"),
       (await tekstEl("#podglad")).includes("Zgoda zaznaczona") && /^Rozmiar zgłoszenia: \d+ KB\.$/.test(await tekstEl("#podglad-rozmiar")) && !(await js("document.querySelector('#podglad-rozmiar').hidden")));
+    const otwartePo = await js("[...document.querySelectorAll('#podglad details[open]')].map((d) => d.dataset.plik)");
+    sprawdz(w("podgląd: przeliczenie nie zwija pozycji rozwiniętej przez klienta, pozostałe zostają zwinięte"), JSON.stringify(otwartePo) === JSON.stringify(["faktury.json"]), JSON.stringify(otwartePo));
+    await js("document.querySelector('#podglad details[data-plik=\"faktury.json\"]').open = false");
     const ostatniaLinia = await js(`(() => { const s = document.querySelector('#krok-sprawdzenie'); const p = s.lastElementChild;
       const pr = p.getBoundingClientRect(), pn = document.querySelector('#numer').getBoundingClientRect(), pp = document.querySelector('#kreator-przyciski').getBoundingClientRect();
       return { tekst: p.textContent, klasa: p.className, widac: !p.hidden && p.getClientRects().length > 0,
@@ -688,6 +816,7 @@ async function proba() {
     let s6 = await stan6();
     sprawdz(w("krok 6 z 6: pasek pełny, „Wstecz” bez „Dalej”, fokus na tytule „Wysyłka”"),
       st.krok === 6 && st.napis === "Krok 6 z 6" && st.pasek === 6 && st.wstecz && !st.dalej && st.fokusNaglowek && (await tekstEl("#wysylka-tytul")) === "Wysyłka", JSON.stringify(st));
+    sprawdz(w("przejście przez sześć kroków nie dodaje wpisów do historii przeglądarki"), (await js("history.length")) === dlugoscHistorii, `${dlugoscHistorii} -> ${await js("history.length")}`);
     sprawdz(w("krok 6 na serwerze próbnym (127.0.0.1): pole adresu, przycisk aktywny, odnośnik do drogi zapasowej, bez wysylka_niedostepna"),
       s6.wysylka && s6.formularz && !s6.zapasowa && s6.niedostepna === false && s6.przycisk === "Wyślij zgłoszenie" && s6.aktywny && s6.pokazZapasowa, JSON.stringify(s6));
     const pole = await js("(() => { const p = document.querySelector('#p-adres'); return [p.type, p.autocomplete, p.inputMode, document.querySelector('label[for=\"p-adres\"]').textContent, document.querySelector('#adres-pomoc').textContent]; })()");
@@ -722,6 +851,9 @@ async function proba() {
     let n = await wyslijZAdresem(`zly-adres@${D}`);
     s6 = await stan6();
     sprawdz(w("400 zly_adres: jedno żądanie, wysylka_adres_blad przy polu, przycisk znów aktywny"), n === 1 && s6.adresBlad === ADRES_BLAD && s6.komunikat === false && s6.aktywny && s6.przycisk === "Wyślij zgłoszenie", JSON.stringify(s6));
+    // Żądanie wychodzi w tym samym zadaniu co kliknięcie: przed `fetch` strona niczego nie czeka
+    // (na przykład na kompresję), bo ZIP jest gotowy od wejścia na krok 5.
+    sprawdz(w("wysyłka: żądanie wychodzi w tym samym zadaniu co kliknięcie, bez czekania na kompresję"), fetchWZadaniu === true);
     for (const [lokalna, tekst, opis] of [["za-duze", ZA_DUZY, "413 za_duze: wysylka_za_duzy"], ["limit", LIMIT, "429 limit: wysylka_blad_limit"], ["niedostepne", SERWER, "503 niedostepne: wysylka_blad_serwera"]]) {
       n = await wyslijZAdresem(`${lokalna}@${D}`);
       s6 = await stan6();
@@ -841,12 +973,35 @@ async function proba() {
       s6.zapasowa && !s6.wysylka && s6.wroc && s6.zapisz && s6.fokus === "zapasowa-tytul" && zapasowa.tytul === "Zapisz plik i wyślij go sam" &&
       JSON.stringify(zapasowa.kroki) === JSON.stringify(["Krok 1. Zapisz plik na tym urządzeniu.", "Krok 2. Napisz wiadomość i dołącz zapisany plik."]) && !zapasowa.href && zapasowa.aria === "true" &&
       zapasowa.wroc === "Wróć do wysyłki przez stronę", JSON.stringify({ s6, zapasowa }));
+    const ZAPISANO = `Zapisano plik prosumentlab_${numer}.zip.`;
+    const potwierdzenie = () => js(`(() => { const g = document.querySelector('#zapis-gotowe'), p = document.querySelector('#zapis-ponownie'), m = document.querySelector('#mailto');
+      return { gotowe: !g.hidden && g.getClientRects().length > 0 && g.textContent, ponownie: !p.hidden && p.getClientRects().length > 0 && p.textContent,
+        href: m.getAttribute('href') ?? '', aria: m.getAttribute('aria-disabled'), poZapisie: !document.querySelector('#po-zapisie').hidden,
+        odnosnikPoZapisie: document.querySelector('#po-zapisie a')?.getAttribute('href') ?? null, tekstOdnosnika: document.querySelector('#po-zapisie a')?.textContent ?? null,
+        opis: m.getAttribute('aria-describedby'), najpierw: !document.querySelector('#mailto-najpierw-zapisz').hidden && document.querySelector('#mailto-najpierw-zapisz').getClientRects().length > 0,
+        kursor: getComputedStyle(m).cursor }; })()`);
+    const przedZapisem = await potwierdzenie();
+    sprawdz(w("wiadomość przed zapisem: opis „najpierw zapisz” widoczny, wygląd nieaktywny (kursor)"), przedZapisem.najpierw && przedZapisem.kursor === "not-allowed", JSON.stringify(przedZapisem));
+    sprawdz(w("wiadomość przed zapisem: w mailto_bez_zalacznika nazwa pliku z numerem zgłoszenia"), (await tekstEl("#mailto-bez-zalacznika")).includes(`prosumentlab_${numer}.zip`));
     sprawdz(w("zapis_gdzie bez zdania o tym, że narzędzie niczego nie wysyła"), zapasowa.gdzie === "Plik zapisze się na tym urządzeniu: na komputerze zwykle w folderze Pobrane, na iPhonie w aplikacji Pliki (w Safari w folderze „Pobrane rzeczy”, w Chrome w folderze „Chrome”).");
     sprawdz(w(`droga zapasowa, ${px} px: bez poziomego przewijania`), await bezPrzewijaniaWPoziomie(px));
     await zrzut(`${wariant}-8-zapasowa`);
     let przed = zapisy();
-    await js("document.querySelector('#zapisz').click()");
+    // Zapis w tym samym zadaniu co kliknięcie (przeglądarka wymaga gestu użytkownika przy pobraniu):
+    // potwierdzenie i wiadomość są od razu, pytanie przed opuszczeniem strony zdjęte przed pobraniem
+    // pliku (przeglądarka może uznać pobranie za opuszczenie strony).
+    const odRazu = await js(`(() => {
+      const kolejnosc = [];
+      window.removeEventListener = function (typ, ...reszta) { if (typ === 'beforeunload') kolejnosc.push('pytanie zdjęte'); return EventTarget.prototype.removeEventListener.call(this, typ, ...reszta); };
+      const klik = HTMLAnchorElement.prototype.click;
+      HTMLAnchorElement.prototype.click = function () { if (this.hasAttribute('download')) kolejnosc.push('pobranie'); return klik.call(this); };
+      document.querySelector('#zapisz').click();
+      delete window.removeEventListener; delete HTMLAnchorElement.prototype.click;
+      const g = document.querySelector('#zapis-gotowe'), m = document.querySelector('#mailto');
+      return { kolejnosc, gotowe: !g.hidden, wiadomosc: m.hasAttribute('href') }; })()`);
     const nowe = await czekajNaZapis(przed, numer);
+    sprawdz(w("zapis: potwierdzenie i aktywna wiadomość od razu po kliknięciu, bez czekania"), odRazu.gotowe && odRazu.wiadomosc, JSON.stringify(odRazu));
+    sprawdz(w("zapis: pytanie przed opuszczeniem strony zdjęte przed pobraniem pliku"), JSON.stringify(odRazu.kolejnosc) === JSON.stringify(["pytanie zdjęte", "pobranie"]), JSON.stringify(odRazu.kolejnosc));
     const sciezkaZip = join(PRACA, "pobrane", `prosumentlab_${numer}.zip`);
     sprawdz(w("ZIP zapisany pod nazwą z numerem, od razu po kliknięciu"), nowe === 1 && readdirSync(join(PRACA, "pobrane")).includes(`prosumentlab_${numer}.zip`));
     if (nowe === 1) {
@@ -867,14 +1022,14 @@ async function proba() {
       sprawdz(w("instalacja.json w wersji 2: magazyn, pompa ciepła i rozbudowa z mocą przed"),
         inst.wersja_formatu === 2 && inst.magazyn_od === "2022-04" && JSON.stringify(inst.zmiany) === JSON.stringify([{ rodzaj: "pompa_ciepla", miesiac: "2025-07" }, { rodzaj: "rozbudowa_pv", miesiac: "2025-05", moc_przed_kwp: "3.70" }]), JSON.stringify(inst));
     }
-    const ZAPISANO = `Zapisano plik prosumentlab_${numer}.zip.`;
-    const potwierdzenie = () => js(`(() => { const g = document.querySelector('#zapis-gotowe'), p = document.querySelector('#zapis-ponownie'), m = document.querySelector('#mailto');
-      return { gotowe: !g.hidden && g.getClientRects().length > 0 && g.textContent, ponownie: !p.hidden && p.getClientRects().length > 0 && p.textContent,
-        href: m.getAttribute('href') ?? '', aria: m.getAttribute('aria-disabled'), poZapisie: !document.querySelector('#po-zapisie').hidden }; })()`);
     let pz = await potwierdzenie();
     sprawdz(w("po zapisie: zapis_gotowe, „Napisz nową wiadomość” aktywne z mailto, komunikat po zapisie"),
       pz.gotowe === ZAPISANO && pz.ponownie === false && pz.href.startsWith("mailto:raporty@prosumentlab.pl?subject=Dane%20do%20darmowego%20raportu%2C%20zg%C5%82oszenie%20") &&
       pz.href.endsWith(`&body=${encodeURIComponent(`Pamiętaj o załączniku: plik prosumentlab_${numer}.zip. Bez niego nie przygotujemy raportu.`)}`) && pz.aria === null && pz.poZapisie, JSON.stringify(pz));
+    sprawdz(w("po zapisie: adres w komunikacie to odnośnik z tym samym mailto: co „Napisz nową wiadomość”"),
+      pz.odnosnikPoZapisie === pz.href && pz.tekstOdnosnika === "raporty@prosumentlab.pl", JSON.stringify(pz));
+    sprawdz(w("po zapisie: wiadomość bez aria-describedby „najpierw zapisz”"), pz.opis === null, JSON.stringify(pz));
+    sprawdz(w("po zapisie: opis „najpierw zapisz” schowany, wiadomość wygląda na aktywną (kursor)"), !pz.najpierw && pz.kursor !== "not-allowed", JSON.stringify(pz));
     sprawdz(w("po zapisie strona nie pyta przed opuszczeniem"), !(await pytaPrzedWyjsciem()));
     przed = zapisy();
     await js("document.querySelector('#zapisz').click()");
@@ -892,12 +1047,25 @@ async function proba() {
     await klik("#zapasowa-pokaz");
     pz = await potwierdzenie();
     sprawdz(w("po zmianie danych potwierdzenie zapisu schowane, wiadomość znów nieaktywna"), pz.gotowe === false && pz.href === "" && pz.aria === "true", JSON.stringify(pz));
+    sprawdz(w("po zmianie danych wiadomość znów z aria-describedby „najpierw zapisz”"), pz.opis === "mailto-najpierw-zapisz", JSON.stringify(pz));
+    sprawdz(w("po zmianie danych opis „najpierw zapisz” znów widoczny, wiadomość wygląda na nieaktywną (kursor)"), pz.najpierw && pz.kursor === "not-allowed", JSON.stringify(pz));
     przed = zapisy();
     await js("document.querySelector('#zapisz').click()");
     await czekajNaZapis(przed, numer);
     pz = await potwierdzenie();
     sprawdz(w("zapis innej treści w tej samej wizycie: zapis_gotowe i zapis_ponownie"), zapisy() === przed + 1 && pz.gotowe === ZAPISANO &&
       pz.ponownie === "To nowsza wersja pliku. Wyślij tylko ją; jeśli przeglądarka dopisała do nazwy (1) albo (2), wybierz plik z najwyższym numerem.", JSON.stringify(pz));
+    // Zmiana danych chowa także zapis_ponownie (dotyczy zapisanego pliku); kolejny zapis znów go pokazuje.
+    await wstecz();
+    await klik("#p-zgoda");
+    await czekaj(500);
+    await dalej();
+    await klik("#zapasowa-pokaz");
+    pz = await potwierdzenie();
+    sprawdz(w("po zmianie danych zapis_ponownie też schowany"), pz.gotowe === false && pz.ponownie === false, JSON.stringify(pz));
+    przed = zapisy();
+    await js("document.querySelector('#zapisz').click()");
+    await czekajNaZapis(przed, numer);
     await klik("#zapasowa-wroc");
     s6 = await stan6();
     sprawdz(w("zapasowa_wroc: z powrotem widok wysyłki, fokus na tytule kroku"), s6.wysylka && !s6.zapasowa && s6.fokus === "wysylka-tytul", JSON.stringify(s6));
@@ -1105,7 +1273,9 @@ async function proba() {
     podgladTeraz.includes('"okres_od": "2026-01-01"') && podgladTeraz.includes('"sprzedawca": "tauron_sprzedaz"') && podgladTeraz.includes('"oplata_mocowa_zl_mies": "12.34"'));
 
   await naKrok(3);
+  const kilkaPrzed = await widoczny('[data-tekst="faktura_cena_kilka"]');
   await klik('input[name="rodzaj_ceny"][value="dynamiczna"]');
+  sprawdz("cena dynamiczna: zdanie faktura_cena_kilka (o kilku cenach) jest przy cenie stałej, przy dynamicznej znika", kilkaPrzed && !(await widoczny('[data-tekst="faktura_cena_kilka"]')));
   const dyn = await js(`(() => ({
     tryb: document.querySelector('#cena-tryb').hidden,
     pola: document.querySelectorAll('#cena-pola input').length,
@@ -1146,6 +1316,14 @@ async function proba() {
     (await widoczny("#p-okres_od")) && (await widoczny("#p-okres_do")) && !(await widoczny('[data-pole="okres_miesiac"]')) &&
     (await js("document.querySelector('#p-okres_od').value + '/' + document.querySelector('#p-okres_do').value")) === "2026-01-01/2026-01-31" &&
     (await fakturyWPodgladzie()).includes('"okres_od": "2026-01-01",\n    "okres_do": "2026-01-31",'));
+  // Pola dat przyjmują lata z zakresu narzędzia: poza nim przeglądarka zgłasza rangeUnderflow albo
+  // rangeOverflow. Wartości wpisane w pola wracają po sprawdzeniu (bez zdarzeń, strona ich nie widzi).
+  const zakresDat = await js(`(() => { const pola = ['#p-okres_od', '#p-okres_do'].map((s) => document.querySelector(s)); const stare = pola.map((p) => p.value);
+    const ocena = (v) => pola.map((p) => { p.value = v; return [p.validity.rangeUnderflow, p.validity.rangeOverflow].map(Number).join(''); }).join('/');
+    const wynik = [${JSON.stringify(`${ROK_MIN - 1}-12-31`)}, ${JSON.stringify(`${ROK_MIN}-01-01`)}, ${JSON.stringify(`${ROK_MAKS}-12-31`)}, ${JSON.stringify(`${ROK_MAKS + 1}-01-01`)}].map(ocena);
+    pola.forEach((p, i) => { p.value = stare[i]; }); return wynik; })()`);
+  sprawdz("pola dat okresu: rok przed zakresem i po zakresie narzędzia to błąd pola, granice zakresu przechodzą",
+    JSON.stringify(zakresDat) === JSON.stringify(["10/10", "00/00", "00/00", "01/01"]), JSON.stringify(zakresDat));
   await wpisz("#p-okres_do", "2099-12-31");
   await czekaj(300);
   sprawdz("okres z przyszłości: błąd przy polu i blokada zapisu",
@@ -1185,14 +1363,40 @@ async function proba() {
   const plakietkiTeraz = () => js("[...document.querySelectorAll('.plakietka')].map(e => e.textContent)");
   const tekstPliku = (i) => js(`document.querySelectorAll('.plik')[${i}]?.textContent ?? ""`);
   await otworz();
+  // Liczy odczyty plików przez stronę: pliki spoza pierwszej dziesiątki nie mogą trafić do pamięci.
+  await js("window.__odczyty = 0; const odczyt = File.prototype.arrayBuffer; File.prototype.arrayBuffer = function () { window.__odczyty++; return odczyt.call(this); };");
   await ustawPliki(plikiDni, 3000);
+  const odczytanePliki = await js("window.__odczyty");
   const dwanascie = await plakietkiTeraz();
   sprawdz("12 plików: 10 przyjętych, 11. i 12. odrzucone", dwanascie.length === 12 && dwanascie.slice(0, 10).every((p) => p === "Przyjęty") && dwanascie.slice(10).every((p) => p === "Odrzucony"), dwanascie.join(", "));
   sprawdz("11. plik z komunikatem o limicie 10 plików", (await tekstPliku(10)).includes("najwyżej 10 plików"));
+  sprawdz("12 plików: strona odczytała tylko pierwsze 10, pozostałe nie trafiły do pamięci", odczytanePliki === 10, String(odczytanePliki));
   await js("document.querySelectorAll('.plik')[0].querySelector('button').click()");
   await czekaj(1500);
   const poUsunieciu = await plakietkiTeraz();
   sprawdz("po usunięciu pliku z pierwszej dziesiątki następny jest czytany", poUsunieciu.length === 11 && poUsunieciu.slice(0, 10).every((p) => p === "Przyjęty") && poUsunieciu[10] === "Odrzucony", poUsunieciu.join(", "));
+
+  // Odczyt pliku w toku. Na liście jest już 11 plików, więc ten plik jest dwunasty, poza pierwszą
+  // dziesiątką: strona go nie czyta. Sprawdzany jest więc stan blokady, który strona ustawia przed
+  // odczytem (w tym samym zadaniu co zmiana pola wyboru), nie sam odczyt: pole wyboru, przyciski
+  // „Usuń” i „Dalej” nieaktywne, etykieta „Dodaj plik” wygląda na nieaktywną; po chwili wszystko wraca.
+  const odczyt = await js(`(async () => {
+    const wejscie = document.querySelector('#wybor-plikow'), dalej = document.querySelector('#kreator-dalej'), etykieta = document.querySelector('label[for="wybor-plikow"]');
+    const stan = () => ({ wejscie: wejscie.disabled, dalej: dalej.disabled, usun: [...document.querySelectorAll('#lista-plikow button')].every((b) => b.disabled), kursor: getComputedStyle(etykieta).cursor });
+    const przed = stan();
+    const lista = new DataTransfer();
+    lista.items.add(new File(['x'], 'odczyt.csv', { type: 'text/csv' }));
+    wejscie.files = lista.files;
+    wejscie.dispatchEvent(new Event('change', { bubbles: true }));
+    const w = stan();
+    await new Promise((ok) => setTimeout(ok, 1500));
+    return { przed, w, po: stan() };
+  })()`);
+  sprawdz("odczyt pliku w toku: pole wyboru plików nieaktywne, po odczycie znów aktywne", !odczyt.przed.wejscie && odczyt.w.wejscie && !odczyt.po.wejscie, JSON.stringify(odczyt));
+  sprawdz("odczyt pliku w toku: przyciski „Usuń” nieaktywne, po odczycie znów aktywne", !odczyt.przed.usun && odczyt.w.usun && !odczyt.po.usun, JSON.stringify(odczyt));
+  sprawdz("odczyt pliku w toku: „Dalej” nieaktywne, po odczycie znów aktywne", !odczyt.przed.dalej && odczyt.w.dalej && !odczyt.po.dalej, JSON.stringify(odczyt));
+  sprawdz("odczyt pliku w toku: etykieta „Dodaj plik” wygląda na nieaktywną (kursor), po odczycie znów jak aktywna",
+    odczyt.przed.kursor !== "not-allowed" && odczyt.w.kursor === "not-allowed" && odczyt.po.kursor !== "not-allowed", JSON.stringify(odczyt));
 
   await otworz();
   await ustawPliki([plikStyczen, plikKopia]);
@@ -1224,7 +1428,8 @@ async function proba() {
   await js(`(() => { document.querySelector('input[name="taryfa"][value="inna"]').click(); document.querySelector('input[name="cena_tryb"][value="strefy"]').click(); })()`);
   await czekaj(300);
   sprawdz("taryfa inna, osobna cena w każdej strefie: podpowiedź o kolejności stref", !(await js("document.querySelector('#strefy-kolejnosc').hidden")));
-  sprawdz("podpowiedź przy polu nazwy taryfy", (await js("[...document.querySelectorAll('[data-pole=\"taryfa_nazwa\"] .podpowiedz')].map(p => !p.hidden && p.textContent).join('')")).startsWith("Wpisz tylko nazwę z faktury"));
+  const podpowiedziNazw = await js(`Object.fromEntries(["sprzedawca_nazwa", "taryfa_nazwa", "oplaty_stale_inne"].map((p) => { const e = document.querySelector('[data-pole="' + p + '"] > .podpowiedz'); return [p, Boolean(e) && !e.hidden && e.textContent.startsWith("Wpisz tylko nazwę z faktury")]; }))`);
+  sprawdz("podpowiedź przy każdym polu na nazwę (sprzedawca, taryfa, opłaty stałe): stale w polu, nie schowana", Object.values(podpowiedziNazw).every(Boolean), JSON.stringify(podpowiedziNazw));
   await wpisz("#p-taryfa_nazwa", "Taryfa PPE", "input");
   await czekaj(600);
   const POLA = "W polach wpisanych ręcznie jest coś";
@@ -1469,6 +1674,7 @@ async function proba() {
     sprawdz(w("G12: podpowiedź cena_strefy_jedna i pomoc do ceny stałej"),
       (await tekstEl("#cena-strefy-jedna")) === "Jeśli faktura podaje jedną cenę dla wszystkich stref, wpisz ją w każde pole." &&
       JSON.stringify(await pomoc()) === JSON.stringify(["Cena netto za 1 kWh z części faktury o sprzedaży energii (punkt 6 na rysunku)."]), JSON.stringify(await pomoc()));
+    sprawdz(w("G12: pola cen w strefach mają inputmode=decimal"), JSON.stringify(await js("[...document.querySelectorAll('#cena-pola input')].map((e) => e.getAttribute('inputmode'))")) === JSON.stringify(["decimal", "decimal"]));
     const bladCeny = () => tekstEl('[data-pole="cena_energii_netto_zl_kwh"] > .blad');
     await wpisz("#p-cena-0", "0,60", "input");
     await czekaj(500);
@@ -1655,9 +1861,28 @@ async function proba() {
     await naKrok(1);
     await naKrok(2);
     sprawdz(w("„Dalej” i „Wstecz” nie zmieniają wyboru z listy"), (await wartoscListy()) === "2025-06" && (await okresWPliku("2025-06-01", "2025-06-30")) && !(await stanMiesiaca()).dwie);
+    // Dodanie pliku po wyborze z listy: wybrany miesiąc, który jest też na nowej liście, zostaje wybrany.
+    await naKrok(1);
+    await ustawPliki([plikBezNumerow]);
+    await naKrok(2);
+    sprawdz(w("plik dodany po wyborze z listy: wybrany miesiąc zostaje wybrany, okres bez zmian"), (await wartoscListy()) === "2025-06" && (await okresWPliku("2025-06-01", "2025-06-30")), await wartoscListy());
     await wybierzZListy("");
     await czekaj(300);
     sprawdz(w("pusta pozycja: bez okresu w faktury.json"), !(await fakturyWPodgladzie()).includes('"okres_od"'), await fakturyWPodgladzie());
+
+    // Lista z pliku znika przy pustej pozycji: dwie listy też są puste, bo wartości schowane w nich
+    // nie obowiązywały (klient nie wybrał miesiąca).
+    await otworz();
+    await ustawPliki([plikiDni[0], plikStyczen]);
+    await naKrok(2);
+    await wybierzMiesiac("05", "2025");
+    await wybierzZListy("");
+    await czekaj(300);
+    await naKrok(1);
+    await usunPlik(1);
+    await naKrok(2);
+    s = await stanMiesiaca();
+    sprawdz(w("lista z pliku znika przy pustej pozycji: dwie listy puste, bez schowanego wcześniej wyboru"), !s.lista && s.dwie && s.wartosciDwoch === "/", JSON.stringify(s));
 
     // Plik z danymi do końca bieżącego miesiąca: ten miesiąc jest na liście, a jego wybór to błąd
     // pola; „Dalej” zatrzymuje się z fokusem na liście z pliku.
@@ -1693,6 +1918,9 @@ async function proba() {
   // 8. Czas przeliczenia po zmianie jednego pola przy czterech plikach rocznych.
   await otworz();
   await ustawPliki(plikiRoczne, 5000);
+  // Zmiana pola składa zgłoszenie z gotowego odczytu plików: strona nie dekoduje plików od nowa,
+  // więc największy odczyt tekstu przy zmianie pola to mały plik JSON podglądu, nie plik z licznika.
+  await js("window.__najwiekszyOdczyt = 0; const dekoduj = TextDecoder.prototype.decode; TextDecoder.prototype.decode = function (b, ...r) { window.__najwiekszyOdczyt = Math.max(window.__najwiekszyOdczyt, b?.byteLength ?? 0); return dekoduj.call(this, b, ...r); };");
   const czas = await js(`(() => {
     const e = document.querySelector('#p-oplata_mocowa_zl_mies');
     const czasy = [];
@@ -1701,6 +1929,8 @@ async function proba() {
     return czasy[3];
   })()`);
   sprawdz("cztery pliki roczne przyjęte", (await js("[...document.querySelectorAll('.plakietka')].filter(e => e.textContent === 'Przyjęty').length")) === 4);
+  const najwiekszyOdczyt = await js("window.__najwiekszyOdczyt");
+  sprawdz("zmiana pola przy czterech plikach rocznych nie czyta plików od nowa (największy odczyt tekstu poniżej 64 KiB)", najwiekszyOdczyt > 0 && najwiekszyOdczyt < 65536, `${najwiekszyOdczyt} B`);
 
   // 9. Sieć, konsola, polityka treści, przechowywanie w przeglądarce.
   // Zdarzenia sieci pochodzą z karty ze stroną, więc sprawdzenie dotyczy zapytań strony. Ruch samej
